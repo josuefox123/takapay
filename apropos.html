@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>À propos de nous — Takapay</title>
+    <style>
+        :root {
+            --noir: #0d0d0d;
+            --rouge: #C8202F;
+            --jaune: #F5B921;
+            --creme: #FFF9EC;
+            --gris: #6B5A55
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0
+        }
+
+        html {
+            scroll-behavior: smooth
+        }
+
+        body {
+            font-family: Georgia, 'Times New Roman', serif;
+            background: var(--creme);
+            color: var(--noir);
+            line-height: 1.7;
+            font-size: 20px;
+            overflow-x: hidden
+        }
+
+        h1,
+        h2,
+        h3,
+        .btn {
+            font-family: 'Trebuchet MS', Verdana, sans-serif
+        }
+
+        .wrap {
+            max-width: 960px;
+            margin: 0 auto;
+            padding: 0 22px
+        }
+
+        /* Hero noir centré */
+        .hero {
+            position: relative;
+            background: var(--noir);
+            color: #fff;
+            text-align: center;
+            padding: 110px 22px 100px;
+            overflow: hidden
+        }
+
+        .hero .in {
+            position: relative;
+            z-index: 1;
+            max-width: 640px;
+            margin: 0 auto;
+            animation: entree .9s ease-out both
+        }
+
+        .hero h1 {
+            font-size: clamp(38px, 8vw, 68px);
+            line-height: 1.05
+        }
+
+        .hero h1::after {
+            content: "";
+            display: block;
+            width: 90px;
+            height: 6px;
+            background: var(--jaune);
+            border-radius: 9px;
+            margin: 22px auto 0
+        }
+
+        .hero p {
+            margin-top: 22px;
+            font-size: 20px;
+            color: #d9d3cc
+        }
+
+        .bulle {
+            position: absolute;
+            border-radius: 50%;
+            opacity: .9;
+            animation: flotte 7s ease-in-out infinite
+        }
+
+        .b1 {
+            width: 70px;
+            height: 70px;
+            background: var(--jaune);
+            top: 14%;
+            left: 9%
+        }
+
+        .b2 {
+            width: 34px;
+            height: 34px;
+            background: var(--rouge);
+            top: 62%;
+            left: 18%;
+            animation-delay: -2s
+        }
+
+        .b3 {
+            width: 50px;
+            height: 50px;
+            background: var(--rouge);
+            top: 20%;
+            right: 12%;
+            animation-delay: -4s
+        }
+
+        .b4 {
+            width: 26px;
+            height: 26px;
+            background: var(--jaune);
+            bottom: 14%;
+            right: 20%;
+            animation-delay: -1s
+        }
+
+        @keyframes flotte {
+
+            0%,
+            100% {
+                transform: translateY(0)
+            }
+
+            50% {
+                transform: translateY(-22px)
+            }
+        }
+
+        @keyframes entree {
+            from {
+                opacity: 0;
+                transform: translateY(24px)
+            }
+
+            to {
+                opacity: 1;
+                transform: none
+            }
+        }
+
+        .anneau {
+            stroke-dasharray: 264;
+            stroke-dashoffset: 264;
+            animation: remplit 2.6s ease-out .6s forwards
+        }
+
+        @keyframes remplit {
+            to {
+                stroke-dashoffset: 0
+            }
+        }
+
+        /* Sections */
+        section {
+            padding: 72px 0
+        }
+
+        .duo {
+            display: grid;
+            gap: 44px;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            align-items: center
+        }
+
+        .duo.inverse .visuel {
+            order: -1
+        }
+
+        h2 {
+            font-size: clamp(26px, 4vw, 34px);
+            margin-bottom: 14px
+        }
+
+        .texte p {
+            color: #3a2f2b
+        }
+
+        .visuel {
+            display: grid;
+            place-items: center
+        }
+
+        .visuel svg {
+            width: 100%;
+            max-width: 300px;
+            height: auto;
+            animation: flotte 6s ease-in-out infinite
+        }
+
+        .blanc {
+            background: #fff
+        }
+
+        /* Valeurs */
+        .centre {
+            text-align: center
+        }
+
+        .valeurs {
+            display: grid;
+            gap: 34px;
+            margin-top: 38px;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr))
+        }
+
+        .valeur .rond {
+            width: 74px;
+            height: 74px;
+            border-radius: 50%;
+            background: var(--noir);
+            display: grid;
+            place-items: center;
+            font-size: 32px;
+            margin: 0 auto 14px;
+            transition: transform .25s
+        }
+
+        .valeur:hover .rond {
+            transform: scale(1.1) rotate(-6deg);
+            background: var(--rouge)
+        }
+
+        .valeur h3 {
+            font-size: 19px
+        }
+
+        .valeur p {
+            font-size: 16px;
+            color: var(--gris);
+            line-height: 1.55;
+            max-width: 15em;
+            margin: 6px auto 0
+        }
+
+        /* Appel final */
+        .fin {
+            background: var(--noir);
+            color: #fff;
+            text-align: center;
+            padding: 70px 22px
+        }
+
+        .fin p {
+            color: #d9d3cc;
+            max-width: 30em;
+            margin: 0 auto
+        }
+
+        .btn {
+            display: inline-block;
+            margin-top: 26px;
+            background: var(--jaune);
+            color: var(--noir);
+            font-weight: 700;
+            padding: 14px 30px;
+            border-radius: 99px;
+            text-decoration: none;
+            transition: transform .2s, background .2s
+        }
+
+        .btn:hover {
+            transform: translateY(-3px);
+            background: #fff
+        }
+
+        .btn:focus-visible {
+            outline: 3px solid #fff;
+            outline-offset: 3px
+        }
+
+        /* Apparition au défilement */
+        .rev {
+            opacity: 0;
+            transform: translateY(28px);
+            transition: opacity .7s, transform .7s
+        }
+
+        .rev.vu {
+            opacity: 1;
+            transform: none
+        }
+
+        @media (prefers-reduced-motion:reduce) {
+            * {
+                animation: none !important;
+                transition: none !important
+            }
+
+            .rev {
+                opacity: 1;
+                transform: none
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <header class="hero">
+        <span class="bulle b1"></span><span class="bulle b2"></span><span class="bulle b3"></span><span
+            class="bulle b4"></span>
+        <div class="in">
+            <h1>À propos de nous</h1>
+            <p>Nous permettons à chacun d'acheter ce dont il a besoin et de le payer à son rythme.
+                </p>
+        </div>
+    </header>
+
+    <section>
+        <div class="wrap duo">
+            <div class="texte rev">
+                <h2>Notre histoire</h2>
+                <p>
+                    Parfois, le besoin ne peut pas attendre.
+                </p>
+
+                <p style="margin-top: 14px;">
+                    Un téléphone pour rester connecté, un ordinateur pour travailler,
+                    des fournitures pour la rentrée…
+                </p>
+
+                <p style="margin-top: 14px;">
+                    <strong>Mais le budget, lui, n’est pas toujours disponible en une seule fois.</strong>
+                </p>
+
+                <p style="margin-top:14px">C’est de cette réalité qu’est né <span
+                        style="font-weight: bold; color: #C8202F;">Takapay</span> : permettre d’acheter maintenant et
+                    de payer progressivement, simplement et en toute clarté.</p>
+
+            </div>
+            <div class="visuel rev">
+                <svg viewBox="0 0 220 300" role="img" aria-label="Téléphone affichant une cagnotte remplie à 100 %">
+                    <rect x="30" y="10" width="160" height="280" rx="26" fill="#0d0d0d" />
+                    <rect x="42" y="34" width="136" height="232" rx="14" fill="#FFF9EC" />
+                    <text x="110" y="58" text-anchor="middle" font-size="13" font-family="Trebuchet MS,sans-serif"
+                        font-weight="700" fill="#0d0d0d">Ma cagnotte</text>
+                    <circle cx="110" cy="124" r="42" fill="none" stroke="#eadfca" stroke-width="12" />
+                    <circle class="anneau" cx="110" cy="124" r="42" fill="none" stroke="#C8202F" stroke-width="12"
+                        stroke-linecap="round" transform="rotate(-90 110 124)" />
+                    <text x="110" y="132" text-anchor="middle" font-size="24" font-family="Trebuchet MS,sans-serif"
+                        font-weight="800" fill="#0d0d0d">100%</text>
+                    <text x="110" y="196" text-anchor="middle" font-size="12" font-family="Trebuchet MS,sans-serif"
+                        font-weight="700" fill="#C8202F">Objectif atteint !</text>
+                    <g font-family="Trebuchet MS,sans-serif" font-size="11" fill="#0d0d0d">
+                        <circle cx="62" cy="220" r="7" fill="#F5B921" /><text x="76" y="224">Paiement reçu</text><text
+                            x="150" y="224" font-weight="700">✓</text>
+                    </g>
+                    <rect x="62" y="238" width="96" height="20" rx="10" fill="#0d0d0d" />
+                    <text x="110" y="252" text-anchor="middle" font-size="10.5" font-family="Trebuchet MS,sans-serif"
+                        font-weight="700" fill="#F5B921">Récupérer</text>
+                </svg>
+            </div>
+        </div>
+    </section>
+
+    <section class="blanc">
+        <div class="wrap duo inverse">
+            <div class="texte rev">
+                <h2>Notre mission</h2>
+                <p>
+                    Acheter aujourd’hui. Payer à son rythme.
+                </p>
+
+                <p style="margin-top: 14px;">
+                    Takapay rend l’achat échelonné simple, sûr et accessible.
+                    Les clients peuvent étaler leurs dépenses, tandis que les commerçants développent leurs ventes avec
+                    des paiements sécurisés.
+                </p>
+
+            </div>
+            <div class="visuel rev">
+                <svg viewBox="0 0 240 240" role="img" aria-label="Sac de courses et pièces">
+                    <circle cx="120" cy="130" r="100" fill="#FFF9EC" />
+                    <path d="M70 100h100l10 100a10 10 0 0 1-10 11H70a10 10 0 0 1-10-11z" fill="#C8202F" />
+                    <path d="M95 100v-14a25 25 0 0 1 50 0v14" fill="none" stroke="#0d0d0d" stroke-width="9"
+                        stroke-linecap="round" />
+                    <circle cx="185" cy="70" r="24" fill="#F5B921" /><text x="185" y="78" text-anchor="middle"
+                        font-size="22" font-weight="700" font-family="Trebuchet MS,sans-serif" fill="#0d0d0d">F</text>
+                    <circle cx="52" cy="60" r="14" fill="#F5B921" />
+                    <path d="M100 160l14 14 28-30" fill="none" stroke="#fff" stroke-width="9" stroke-linecap="round"
+                        stroke-linejoin="round" />
+                </svg>
+            </div>
+        </div>
+    </section>
+
+    <section>
+        <div class="wrap centre">
+            <h2 class="rev">Ce qui nous guide</h2>
+            <div class="valeurs">
+                <div class="valeur rev">
+                    <div class="rond">🤝</div>
+                    <h3>Confiance</h3>
+                    <p>Chaque échéance est visible avant de valider.</p>
+                </div>
+                <div class="valeur rev">
+                    <div class="rond">🔒</div>
+                    <h3>Sécurité</h3>
+                    <p>Des paiements protégés, des données respectées.</p>
+                </div>
+                <div class="valeur rev">
+                    <div class="rond">📱</div>
+                    <h3>Simplicité</h3>
+                    <p>Une application légère, faite pour le mobile.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <footer class="fin">
+        <h2>Une question ? Parlons-en.</h2>
+        <p>Client ou commerçant, nous répondons avec plaisir.</p>
+        <a class="btn" href="mailto:contact@exemple.com">Nous contacter</a>
+    </footer>
+
+    <script>
+        const io = new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting) { e.target.classList.add('vu'); io.unobserve(e.target) } }), { threshold: .2 });
+        document.querySelectorAll('.rev').forEach(el => io.observe(el));
+    </script>
+</body>
+
+</html>
