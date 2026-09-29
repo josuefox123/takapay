@@ -3,3 +3,4 @@
 .env.production
 /vendor
 /node_modules
+GIT_WORKFLOW.md
