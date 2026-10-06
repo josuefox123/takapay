@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\AdresseController;
 use App\Http\Controllers\Api\LivreurController;
 use App\Http\Controllers\Api\DocumentController;
 use App\Http\Controllers\Api\NotificationController;
+use App\Http\Controllers\Api\AuditController;
 
 
 
@@ -18,6 +19,7 @@ Route::apiResource('adresses', AdresseController::class)
 Route::apiResource('livreurs', LivreurController::class);
 Route::apiResource('documents', DocumentController::class);
 Route::apiResource('notifications', NotificationController::class);
+Route::apiResource('audits', AuditController::class)->only(['index', 'store', 'show']);
 
 
 
