@@ -59,6 +59,6 @@ class DocumentController extends Controller
     {
         //
         $document->delete();
-        return response()->noContent();
+       return response()->json(['message' => 'Document supprimé avec succes']);
     }
 }
