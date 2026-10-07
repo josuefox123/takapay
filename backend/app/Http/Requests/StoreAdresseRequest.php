@@ -26,10 +26,10 @@ class StoreAdresseRequest extends FormRequest
             //
             'utilisateur_id' => 'required|exists:users,id',
             'description' => 'required|string|max:255',
-            'adresse' => 'require|string|max:255',
-            'quartier' => 'require|string|max:255',
-            'ville' => 'require|string|max:255',
-            'pays' => 'require|string|max:255',
+            'adresse' => 'required|string|max:255',
+            'quartier' => 'required|string|max:255',
+            'ville' => 'required|string|max:255',
+            'pays' => 'required|string|max:255',
             'latitude' => 'nullable|numeric|between:-90,90',
             'longitude' => 'nullable|numeric|between:-180,180',
         ];
