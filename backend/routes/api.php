@@ -9,6 +9,16 @@ use App\Http\Controllers\Api\PromotionController;
 use App\Http\Controllers\Api\ParametreProduitController;
 
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\Api\AdresseController;
+use App\Http\Controllers\Api\LivreurController;
+use App\Http\Controllers\Api\DocumentController;
+use App\Http\Controllers\Api\NotificationController;
+use App\Http\Controllers\Api\AuditController;
+
+
+
+
+
 
 Route::apiResource('users', UserController::class);
 Route::apiResource('categories', CategorieController::class);
