@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Categorie;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use App\Http\Resources\CategorieResource;
+use App\Http\Resources\SousCategorieResource;
 use App\Http\Requests\StoreCategorieRequest;
 use App\Http\Requests\UpdateCategorieRequest;
 use Illuminate\Http\JsonResponse;
@@ -60,4 +61,10 @@ class CategorieController extends Controller
 
         return response()->json(['message' => 'Catégorie supprimée avec succès.']);
     }
+    public function sousCategories(Categorie $category): AnonymousResourceCollection
+{
+    return SousCategorieResource::collection(
+        $category->sousCategories()->get()
+    );
+}
 }
