@@ -38,8 +38,8 @@ Route::apiResource('documents', DocumentController::class);
 
 Route::apiResource('notifications', NotificationController::class);
 
-Route::apiResource('audits', AuditController::class)
-    ->only(['index', 'store', 'show']);
+Route::apiResource('audits', AuditController::class);
+ 
 
 Route::apiResource('commandes', CommandeController::class);
 
