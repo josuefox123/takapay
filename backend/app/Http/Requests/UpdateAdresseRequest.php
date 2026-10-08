@@ -24,7 +24,7 @@ class UpdateAdresseRequest extends FormRequest
     {
         return [
             //
-            'utilisateur_id' => 'sometimes|exist:users,id' ,
+            'utilisateur_id' => 'sometimes|exists:users,id' ,
             'description' => 'sometimes|string|max:255' ,
             'adresse' => 'sometimes|string|max:255',
             'quartier' => 'sometimes|string|max:255',
