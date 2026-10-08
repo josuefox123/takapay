@@ -56,7 +56,7 @@ return new AuditResource($audit);
         $audit->delete();
 
         return response()->json([
-            'message' => 'Audit supprimée avec succès.'
+            'message' => 'Audit supprimé avec succès.'
         ]);
     }
     
