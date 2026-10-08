@@ -23,7 +23,7 @@ class DocumentController extends Controller
     /**
      * Store a newly created resource in storage.
      */
-    public function store(Request $request)
+    public function store(StoreDocumentRequest $request)
     {
         //
         $document = Document::create($request->validated());
@@ -45,7 +45,7 @@ class DocumentController extends Controller
     /**
      * Update the specified resource in storage.
      */
-    public function update(Request $request, Document $document)
+    public function update(UpdateDocumentRequest $request, Document $document)
     {
         //
         $document->update($request->validated());
@@ -59,6 +59,6 @@ class DocumentController extends Controller
     {
         //
         $document->delete();
-        return response()->noContent();
+       return response()->json(['message' => 'Document supprimé avec succes']);
     }
 }
