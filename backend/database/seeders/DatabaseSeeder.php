@@ -19,7 +19,7 @@ class DatabaseSeeder extends Seeder
                 'nom' => 'Super',
                 'prenom' => 'Admin',
                 'telephone' => '+22990000000',
-                'password' => 'AdminTakaPay2026!',
+                'password' => env('SUPER_ADMIN_PASSWORD', 'password123'),
                 'role' => 'super_admin',
                 'statut_compte' => 'actif',
             ]
@@ -32,7 +32,7 @@ class DatabaseSeeder extends Seeder
                 'nom' => 'Manager',
                 'prenom' => 'TakaPay',
                 'telephone' => '+22990000001',
-                'password' => 'ManagerTakaPay2026!',
+                'password' => env('ADMIN_PASSWORD', 'password123'),
                 'role' => 'admin',
                 'statut_compte' => 'actif',
             ]
