@@ -9,7 +9,6 @@ use App\Http\Resources\LivreurResource;
 use App\Models\Livreur;
 use Illuminate\Http\JsonResponse;
 
-
 class LivreurController extends Controller
 {
     /**
@@ -57,6 +56,6 @@ class LivreurController extends Controller
     {
         $livreur->delete();
 
-        return response()->noContent;
+        return response()->noContent();
     }
 }

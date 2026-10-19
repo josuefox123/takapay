@@ -12,53 +12,66 @@ use Illuminate\Http\Request;
 class DocumentController extends Controller
 {
     /**
-     * Display a listing of the resource.
+     * Liste des documents KYC : les siens, ou tous pour un administrateur.
      */
-    public function index()
+    public function index(Request $request)
     {
-        //
-        return DocumentResource::collection(Document::all());
+        $user = $request->user();
+
+        $query = $user->isAdmin()
+            ? Document::query()
+            : Document::where('utilisateur_id', $user->id);
+
+        return DocumentResource::collection($query->with(['utilisateur', 'verificateur'])->latest()->get());
     }
 
     /**
-     * Store a newly created resource in storage.
+     * Déposer un document.
      */
     public function store(StoreDocumentRequest $request)
     {
-        //
-        $document = Document::create($request->validated());
-            return (new DocumentResource($document))
-                ->response()
-                ->setStatusCode(201);
+        $data = $request->validated();
+
+        // Le déposant est toujours dérivé du jeton ; le statut reste "en_attente"
+        // tant que l'administration n'a pas vérifié (défaut en base).
+        $data['utilisateur_id'] ??= $request->user()->id;
+
+        $document = Document::create($data);
+
+        return (new DocumentResource($document))
+            ->response()
+            ->setStatusCode(201);
     }
 
     /**
-     * Display the specified resource.
+     * Afficher un document.
      */
-    public function show(Document $document)
+    public function show(Request $request, Document $document)
     {
-        //
-        
+        $this->authorizeOwnerOrAdmin($request, $document);
+
         return new DocumentResource($document);
     }
 
     /**
-     * Update the specified resource in storage.
+     * Modifier un document.
      */
     public function update(UpdateDocumentRequest $request, Document $document)
     {
-        //
         $document->update($request->validated());
+
         return new DocumentResource($document);
     }
 
     /**
-     * Remove the specified resource from storage.
+     * Supprimer un document.
      */
-    public function destroy(Document $document)
+    public function destroy(Request $request, Document $document)
     {
-        //
+        $this->authorizeOwnerOrAdmin($request, $document);
+
         $document->delete();
-       return response()->json(['message' => 'Document supprimé avec succes']);
+
+        return response()->json(['message' => 'Document supprimé avec succes']);
     }
 }

@@ -12,7 +12,7 @@ class UpdateParametreProduitRequest extends FormRequest
      */
     public function authorize(): bool
     {
-        return true;
+        return $this->user()?->isAdmin() ?? false;
     }
 
     /**
@@ -22,7 +22,7 @@ class UpdateParametreProduitRequest extends FormRequest
      */
     public function rules(): array
     {
-       return [
+        return [
             'promotion_id' => ['sometimes', 'nullable', 'exists:promotions,id'],
             'reference' => ['sometimes', 'required', 'string', 'max:255'],
             'prix_minimum' => ['sometimes', 'required', 'numeric', 'min:0'],

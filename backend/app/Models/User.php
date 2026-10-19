@@ -64,6 +64,14 @@ class User extends Authenticatable
         return $this->hasMany(Adresse::class, 'utilisateur_id');
     }
 
+    /**
+     * L'utilisateur est-il un administrateur (admin ou super_admin) ?
+     */
+    public function isAdmin(): bool
+    {
+        return in_array($this->role, ['admin', 'super_admin'], true);
+    }
+
     public function documents(): HasMany
     {
         return $this->hasMany(Document::class, 'utilisateur_id');

@@ -8,11 +8,12 @@ use Illuminate\Foundation\Http\FormRequest;
 class StoreAdresseRequest extends FormRequest
 {
     /**
-     * Determine if the user is authorized to make this request.
+     * Tout utilisateur authentifié peut créer une adresse :
+     * le propriétaire est forcé côté contrôleur.
      */
     public function authorize(): bool
     {
-        return true;
+        return $this->user() !== null;
     }
 
     /**
@@ -23,8 +24,9 @@ class StoreAdresseRequest extends FormRequest
     public function rules(): array
     {
         return [
-            //
-            'utilisateur_id' => 'required|exists:users,id',
+            'utilisateur_id' => $this->user()?->isAdmin()
+                ? ['sometimes', 'exists:users,id']
+                : ['prohibited'],
             'description' => 'required|string|max:255',
             'adresse' => 'required|string|max:255',
             'quartier' => 'required|string|max:255',

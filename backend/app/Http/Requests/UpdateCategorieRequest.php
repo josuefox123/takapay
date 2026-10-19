@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Rules\ImageContent;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 
@@ -12,7 +13,7 @@ class UpdateCategorieRequest extends FormRequest
      */
     public function authorize(): bool
     {
-        return true;
+        return $this->user()?->isAdmin() ?? false;
     }
 
     /**
@@ -23,8 +24,9 @@ class UpdateCategorieRequest extends FormRequest
     public function rules(): array
     {
         return [
-        'nom' => ['sometimes', 'required', 'string', 'max:255'],
-
+            'nom' => ['sometimes', 'required', 'string', 'max:255'],
+            'image' => ['nullable', new ImageContent],
+            'nom_fichier' => ['nullable', 'string', 'max:255'],
         ];
     }
 }

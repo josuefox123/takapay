@@ -17,6 +17,7 @@ class DocumentResource extends JsonResource
         return [
             'id' => $this->id,
             'utilisateur_id' => $this->utilisateur_id,
+            'utilisateur' => new UserResource($this->whenLoaded('utilisateur')),
             'type' => $this->type,
             'chemin' => $this->chemin,
             'nom_origine' => $this->nom_origine,
@@ -25,8 +26,10 @@ class DocumentResource extends JsonResource
             'statut' => $this->statut,
             'date_modification' => $this->date_modification,
             'verifier_par' => $this->verifier_par,
+            'verificateur' => new UserResource($this->whenLoaded('verificateur')),
             'motif' => $this->motif,
-
+            'created_at' => $this->created_at,
+            'updated_at' => $this->updated_at,
         ];
     }
 }

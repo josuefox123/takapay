@@ -8,24 +8,39 @@ use App\Http\Requests\UpdateCommandeRequest;
 use App\Http\Resources\CommandeResource;
 use App\Models\Commande;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Support\Facades\DB;
 
 class CommandeController extends Controller
 {
     /**
-     * Liste paginée des commandes.
+     * Liste paginée des commandes : les siennes, ou toutes pour un administrateur.
      */
-    public function index(): AnonymousResourceCollection
+    public function index(Request $request): AnonymousResourceCollection
     {
-        return CommandeResource::collection(Commande::latest()->paginate(15));
+        $user = $request->user();
+
+        $query = $user->isAdmin()
+            ? Commande::query()
+            : Commande::where('utilisateur_id', $user->id);
+
+        return CommandeResource::collection($query->latest()->paginate(15));
     }
 
     /**
-     * Créer une commande.
+     * Créer une commande (le total reste à 0 tant qu'aucune ligne n'est ajoutée).
      */
     public function store(StoreCommandeRequest $request): JsonResponse
     {
-        $commande = Commande::create($request->validated());
+        $data = $request->validated();
+
+        // Le propriétaire est toujours dérivé du jeton d'authentification
+        $data['utilisateur_id'] ??= $request->user()->id;
+        // Total initial : recalculé par le serveur à chaque ligne ajoutée
+        $data['prix_total'] ??= 0;
+
+        $commande = Commande::create($data);
 
         return (new CommandeResource($commande))
             ->response()
@@ -35,8 +50,10 @@ class CommandeController extends Controller
     /**
      * Afficher une commande.
      */
-    public function show(Commande $commande): CommandeResource
+    public function show(Request $request, Commande $commande): CommandeResource
     {
+        $this->authorizeOwnerOrAdmin($request, $commande);
+
         return new CommandeResource($commande);
     }
 
@@ -55,12 +72,17 @@ class CommandeController extends Controller
     /**
      * Supprimer une commande.
      */
-    public function destroy(Commande $commande): JsonResponse
+    public function destroy(Request $request, Commande $commande): JsonResponse
     {
-        $commande->delete();
+        $this->authorizeOwnerOrAdmin($request, $commande);
+
+        DB::transaction(function () use ($commande) {
+            $commande->commandeProduits()->delete();
+            $commande->delete();
+        });
 
         return response()->json([
-            'message' => 'Commande supprimée avec succès.'
+            'message' => 'Commande supprimée avec succès.',
         ]);
     }
 }

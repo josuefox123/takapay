@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Rules\ImageContent;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 
@@ -12,7 +13,7 @@ class UpdateImageProduitRequest extends FormRequest
      */
     public function authorize(): bool
     {
-        return true;
+        return $this->user()?->isAdmin() ?? false;
     }
 
     /**
@@ -24,7 +25,8 @@ class UpdateImageProduitRequest extends FormRequest
     {
         return [
             'produit_id' => ['sometimes', 'required', 'exists:produits,id'],
-            'chemin' => ['sometimes', 'required', 'string', 'max:255'],
+            'chemin' => ['sometimes', 'required', new ImageContent],
+            'nom_fichier' => ['nullable', 'string', 'max:255'],
             'position' => ['sometimes', 'required', 'integer', 'min:0'],
             'is_principal' => ['sometimes', 'required', 'boolean'],
         ];

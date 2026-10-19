@@ -2,34 +2,31 @@
 
 namespace App\Http\Requests;
 
-
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class StoreNotificationRequest extends FormRequest
 {
     /**
-     * Determine if the user is authorized to make this request.
+     * Seule l'administration peut envoyer une notification.
      */
     public function authorize(): bool
     {
-        return true;
+        return $this->user()?->isAdmin() ?? false;
     }
 
     /**
-     * Get the validation rules that apply to the request.
-     *
-     * @return array<string, ValidationRule|array<mixed>|string>
+     * @return array<string, mixed>
      */
     public function rules(): array
     {
         return [
-            //
-           'utilisateur_id' => 'required|exists:users,id',
+            'utilisateur_id' => 'required|exists:users,id',
             'cagnotte_id' => 'nullable|exists:cagnottes,id',
             'titre' => 'required|string|max:255',
             'message' => 'required|string',
             'type' => 'required|string|max:100',
-            'statut' => 'required|string|max:50',
+            'statut' => ['sometimes', Rule::in(['non_lue', 'lue'])],
         ];
     }
 }

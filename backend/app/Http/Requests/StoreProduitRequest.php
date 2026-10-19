@@ -12,7 +12,7 @@ class StoreProduitRequest extends FormRequest
      */
     public function authorize(): bool
     {
-        return true;
+        return $this->user()?->isAdmin() ?? false;
     }
 
     /**
@@ -20,15 +20,15 @@ class StoreProduitRequest extends FormRequest
      *
      * @return array<string, ValidationRule|array<mixed>|string>
      */
-public function rules(): array
-{
-    return [
-        'sous_categorie_id' => ['required', 'exists:sous_categories,id'],
-        'nom' => ['required', 'string', 'max:255'],
-        'description' => ['nullable', 'string'],
-        'stock' => ['required', 'integer', 'min:0'],
-        'duree' => ['required', 'integer', 'min:0'],
-        'couleur' => ['nullable', 'string', 'max:100'],
-    ];
+    public function rules(): array
+    {
+        return [
+            'sous_categorie_id' => ['required', 'exists:sous_categories,id'],
+            'nom' => ['required', 'string', 'max:255'],
+            'description' => ['nullable', 'string'],
+            'stock' => ['required', 'integer', 'min:0'],
+            'duree' => ['required', 'integer', 'min:0'],
+            'couleur' => ['nullable', 'string', 'max:100'],
+        ];
     }
 }

@@ -12,7 +12,7 @@ class UpdateSousCategorieRequest extends FormRequest
      */
     public function authorize(): bool
     {
-        return true;
+        return $this->user()?->isAdmin() ?? false;
     }
 
     /**
@@ -24,7 +24,7 @@ class UpdateSousCategorieRequest extends FormRequest
     {
         return [
             'nom' => ['sometimes', 'required', 'string', 'max:255'],
-            
+
         ];
     }
 }

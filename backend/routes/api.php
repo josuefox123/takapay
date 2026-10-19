@@ -1,7 +1,7 @@
 <?php
 
-use App\Http\Controllers\Api\AdresseController;
 use App\Http\Controllers\Api\AdminController;
+use App\Http\Controllers\Api\AdresseController;
 use App\Http\Controllers\Api\AuditController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CagnotteController;
@@ -24,28 +24,34 @@ use Illuminate\Support\Facades\Route;
 
 /*
 |--------------------------------------------------------------------------
-| AUTHENTIFICATION PUBLIQUE
+| AUTHENTIFICATION PUBLIQUE (anti brute-force)
 |--------------------------------------------------------------------------
 */
-Route::post('/register', [AuthController::class, 'register']);
-Route::post('/login', [AuthController::class, 'login']);
+Route::post('/register', [AuthController::class, 'register'])->middleware('throttle:10,1');
+Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:5,1')->name('login');
+Route::post('/auth/google', [AuthController::class, 'googleAuth'])->middleware('throttle:10,1');
 
 /*
 |--------------------------------------------------------------------------
-| CATALOGUE PUBLIQUE (Consultation)
+| CATALOGUE PUBLIQUE (Consultation & synchronisation client/dashboard)
 |--------------------------------------------------------------------------
 */
+Route::get('categories', [CategorieController::class, 'index'])->name('categories.index');
 Route::get('categories/{category}/sous-categories', [CategorieController::class, 'sousCategories'])
     ->name('categories.sous-categories');
+Route::get('sous-categories', [SousCategorieController::class, 'index'])->name('sous-categories.index');
 Route::get('sous-categories/{sous_category}/produits', [SousCategorieController::class, 'produits'])
     ->name('sous-categories.produits');
+Route::get('produits', [ProduitController::class, 'index'])->name('produits.index');
+Route::get('produits/{produit}', [ProduitController::class, 'show'])->name('produits.show');
+Route::get('promotions', [PromotionController::class, 'index'])->name('promotions.index');
 
 /*
 |--------------------------------------------------------------------------
-| ROUTES PROTÉGÉES PAR SANCTUM
+| ROUTES PROTÉGÉES PAR SANCTUM (+ compte actif)
 |--------------------------------------------------------------------------
 */
-Route::middleware('auth:sanctum')->group(function () {
+Route::middleware(['auth:sanctum', 'active'])->group(function () {
 
     // Authentification & Profil
     Route::get('/me', [AuthController::class, 'me']);
@@ -53,36 +59,51 @@ Route::middleware('auth:sanctum')->group(function () {
 
     /*
     |--------------------------------------------------------------------------
-    | ADMINISTRATION (SUPER ADMIN & ADMIN)
+    | RÉSERVÉ AUX ADMINISTRATEURS (SUPER ADMIN & ADMIN)
     |--------------------------------------------------------------------------
     */
-    Route::middleware('role:super_admin,admin')->prefix('admin')->group(function () {
-        Route::post('/users', [AdminController::class, 'createAdminUser']);
-        Route::patch('/users/{user}/status', [AdminController::class, 'updateUserStatus']);
-        Route::patch('/documents/{document}/verify', [AdminController::class, 'verifyDocument']);
-        Route::patch('/livreurs/{livreur}/status', [AdminController::class, 'updateLivreurStatus']);
+    Route::middleware('role:super_admin,admin')->group(function () {
+
+        // Back-office
+        Route::prefix('admin')->group(function () {
+            Route::get('/stats', [AdminController::class, 'stats']);
+            Route::post('/produits', [AdminController::class, 'storeFullProduit']);
+            Route::post('/users', [AdminController::class, 'createAdminUser']);
+            Route::patch('/users/{user}/status', [AdminController::class, 'updateUserStatus']);
+            Route::patch('/documents/{document}/verify', [AdminController::class, 'verifyDocument']);
+            Route::patch('/livreurs/{livreur}/status', [AdminController::class, 'updateLivreurStatus']);
+        });
+
+        // Gestion des comptes, du KYC, des audits et des livreurs
+        Route::apiResource('users', UserController::class);
+        Route::apiResource('audits', AuditController::class);
+        Route::apiResource('livreurs', LivreurController::class);
+
+        // Catalogue (écriture réservée à l'administration)
+        Route::apiResource('categories', CategorieController::class)->except(['index', 'show']);
+        Route::apiResource('sous-categories', SousCategorieController::class)->except(['index', 'show']);
+        Route::apiResource('produits', ProduitController::class)->except(['index', 'show']);
+        Route::apiResource('image-produits', ImageProduitController::class);
+        Route::apiResource('promotions', PromotionController::class)->except(['index', 'show']);
+
+        // Paramètres & cycle financier (écriture et lecture réservées à l'administration)
+        Route::apiResource('parametre-produits', ParametreProduitController::class);
+        Route::apiResource('cagnottes', CagnotteController::class);
+        Route::apiResource('echeances', EcheanceController::class);
+        Route::apiResource('transactions', TransactionController::class);
+        Route::apiResource('livraisons', LivraisonController::class);
     });
 
-    // Ressources métier
-    Route::apiResource('users', UserController::class);
+    /*
+    |--------------------------------------------------------------------------
+    | RESSOURCES PROPRIÉTAIRES (propriétaire OU administrateur)
+    | Le filtrage par propriétaire est assuré dans les contrôleurs/FormRequests.
+    |--------------------------------------------------------------------------
+    */
     Route::apiResource('adresses', AdresseController::class)
         ->parameters(['adresses' => 'adresse']);
     Route::apiResource('documents', DocumentController::class);
-    Route::apiResource('livreurs', LivreurController::class);
     Route::apiResource('notifications', NotificationController::class);
-    Route::apiResource('audits', AuditController::class);
-
-    Route::apiResource('categories', CategorieController::class);
-    Route::apiResource('sous-categories', SousCategorieController::class);
-    Route::apiResource('produits', ProduitController::class);
-    Route::apiResource('parametre-produits', ParametreProduitController::class);
-    Route::apiResource('promotions', PromotionController::class);
-    Route::apiResource('image-produits', ImageProduitController::class);
-
     Route::apiResource('commandes', CommandeController::class);
     Route::apiResource('commande-produits', CommandeProduitController::class);
-    Route::apiResource('cagnottes', CagnotteController::class);
-    Route::apiResource('echeances', EcheanceController::class);
-    Route::apiResource('transactions', TransactionController::class);
-    Route::apiResource('livraisons', LivraisonController::class);
 });
