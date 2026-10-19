@@ -18,6 +18,7 @@ class ParametreProduitResource extends JsonResource
             'id' => $this->id,
             'produit_id' => $this->produit_id,
             'promotion_id' => $this->promotion_id,
+            'promotion' => new PromotionResource($this->whenLoaded('promotion')),
             'reference' => $this->reference,
             'prix_minimum' => $this->prix_minimum,
             'prix_echelonne' => $this->prix_echelonne,
@@ -27,6 +28,8 @@ class ParametreProduitResource extends JsonResource
             'frequence' => $this->frequence,
             'seuil_livraison' => $this->seuil_livraison,
             'prix_cash' => $this->prix_cash,
+            'created_at' => $this->created_at,
+            'updated_at' => $this->updated_at,
         ];
     }
 }

@@ -14,6 +14,7 @@ class Categorie extends Model
 
     protected $fillable = [
         'nom',
+        'image',
     ];
 
     public function sousCategories(): HasMany

@@ -12,7 +12,7 @@ class UpdateLivreurRequest extends FormRequest
      */
     public function authorize(): bool
     {
-        return true;
+        return $this->user()?->isAdmin() ?? false;
     }
 
     /**
@@ -24,9 +24,9 @@ class UpdateLivreurRequest extends FormRequest
     {
         return [
             //
-            'utilisateur_id' =>'sometimes|exists:users,id',
-            'type_vehicule'  =>'sometimes|string|max:255',
-            'statut' =>'sometimes|string|max:50',
+            'utilisateur_id' => 'sometimes|exists:users,id',
+            'type_vehicule' => 'sometimes|string|max:255',
+            'statut' => 'sometimes|string|max:50',
         ];
     }
 }

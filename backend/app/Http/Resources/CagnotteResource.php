@@ -15,6 +15,9 @@ class CagnotteResource extends JsonResource
         return [
             'id' => $this->id,
             'produit_id' => $this->produit_id,
+            'produit' => new ProduitResource($this->whenLoaded('produit')),
+            'echeances' => EcheanceResource::collection($this->whenLoaded('echeances')),
+            'transactions' => TransactionResource::collection($this->whenLoaded('transactions')),
             'prix_unitaire' => $this->prix_unitaire,
             'montant_verse' => $this->montant_verse,
             'moyen_paiement' => $this->moyen_paiement,

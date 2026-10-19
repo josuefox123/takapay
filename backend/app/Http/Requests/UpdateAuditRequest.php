@@ -12,7 +12,7 @@ class UpdateAuditRequest extends FormRequest
      */
     public function authorize(): bool
     {
-        return true;
+        return $this->user()?->isAdmin() ?? false;
     }
 
     /**
@@ -22,18 +22,17 @@ class UpdateAuditRequest extends FormRequest
      */
     public function rules(): array
     {
-     
 
-            return [
-        'utilisateur_id' => 'sometimes|nullable|exists:users,id',
-        'action' => 'sometimes|string|max:255',
-        'table_cible' => 'sometimes|string|max:255',
-        'record_id' => 'sometimes|integer',
-        'ancienne_valeur' => 'sometimes|nullable',
-        'nouvelle_valeur' => 'sometimes|nullable',
-        'ip_address' => 'sometimes|nullable|ip',
-        'user_agent' => 'sometimes|nullable|string',
-];
-        
+        return [
+            'utilisateur_id' => 'sometimes|nullable|exists:users,id',
+            'action' => 'sometimes|string|max:255',
+            'table_cible' => 'sometimes|string|max:255',
+            'record_id' => 'sometimes|integer',
+            'ancienne_valeur' => 'sometimes|nullable',
+            'nouvelle_valeur' => 'sometimes|nullable',
+            'ip_address' => 'sometimes|nullable|ip',
+            'user_agent' => 'sometimes|nullable|string',
+        ];
+
     }
 }

@@ -3,12 +3,16 @@
 namespace App\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class UpdateTransactionRequest extends FormRequest
 {
+    /**
+     * Les transactions sont modifiables par l'administration uniquement.
+     */
     public function authorize(): bool
     {
-        return true;
+        return $this->user()?->isAdmin() ?? false;
     }
 
     /**
@@ -16,11 +20,20 @@ class UpdateTransactionRequest extends FormRequest
      */
     public function rules(): array
     {
+        $transaction = $this->route('transaction');
+        $transactionId = is_object($transaction) ? $transaction->id : $transaction;
+
         return [
-            'reference_externe' => ['sometimes', 'required', 'string', 'max:255'],
+            'reference_externe' => [
+                'sometimes',
+                'required',
+                'string',
+                'max:255',
+                Rule::unique('transactions', 'reference_externe')->ignore($transactionId),
+            ],
             'date' => ['sometimes', 'required', 'date'],
-            'statut' => ['sometimes', 'required', 'string', 'max:255'],
-            'montant' => ['sometimes', 'required', 'numeric', 'min:0'],
+            'statut' => ['sometimes', Rule::in(['succes', 'reussi', 'en_attente', 'echoue', 'rembourse'])],
+            'montant' => ['sometimes', 'required', 'numeric', 'min:0.01'],
             'prestataire' => ['sometimes', 'required', 'string', 'max:255'],
             'type' => ['sometimes', 'required', 'string', 'max:255'],
             'moyen_paiement' => ['sometimes', 'required', 'string', 'max:255'],

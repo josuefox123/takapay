@@ -3,12 +3,16 @@
 namespace App\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class StoreTransactionRequest extends FormRequest
 {
+    /**
+     * Les transactions sont créées par l'administration (ou la passerelle de paiement).
+     */
     public function authorize(): bool
     {
-        return true;
+        return $this->user()?->isAdmin() ?? false;
     }
 
     /**
@@ -17,10 +21,11 @@ class StoreTransactionRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'reference_externe' => ['required', 'string', 'max:255'],
+            // Référence unique : un paiement ne peut pas être enregistré deux fois
+            'reference_externe' => ['required', 'string', 'max:255', 'unique:transactions,reference_externe'],
             'date' => ['required', 'date'],
-            'statut' => ['required', 'string', 'max:255'],
-            'montant' => ['required', 'numeric', 'min:0'],
+            'statut' => ['required', Rule::in(['succes', 'reussi', 'en_attente', 'echoue', 'rembourse'])],
+            'montant' => ['required', 'numeric', 'min:0.01'],
             'prestataire' => ['required', 'string', 'max:255'],
             'type' => ['required', 'string', 'max:255'],
             'moyen_paiement' => ['required', 'string', 'max:255'],

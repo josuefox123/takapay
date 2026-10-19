@@ -12,7 +12,7 @@ class StoreParametreProduitRequest extends FormRequest
      */
     public function authorize(): bool
     {
-        return true;
+        return $this->user()?->isAdmin() ?? false;
     }
 
     /**
@@ -22,7 +22,7 @@ class StoreParametreProduitRequest extends FormRequest
      */
     public function rules(): array
     {
-          return [
+        return [
             'produit_id' => ['required', 'exists:produits,id'],
             'promotion_id' => ['nullable', 'exists:promotions,id'],
             'reference' => ['required', 'string', 'max:255'],

@@ -12,7 +12,7 @@ class UpdateProduitRequest extends FormRequest
      */
     public function authorize(): bool
     {
-        return false;
+        return $this->user()?->isAdmin() ?? false;
     }
 
     /**
@@ -20,14 +20,14 @@ class UpdateProduitRequest extends FormRequest
      *
      * @return array<string, ValidationRule|array<mixed>|string>
      */
-  public function rules(): array
-{
-    return [
-        'nom' => ['sometimes', 'required', 'string', 'max:255'],
-        'description' => ['sometimes', 'nullable', 'string'],
-        'stock' => ['sometimes', 'required', 'integer', 'min:0'],
-        'duree' => ['sometimes', 'required', 'integer', 'min:0'],
-        'couleur' => ['sometimes', 'nullable', 'string', 'max:100'],
-    ];
-}
+    public function rules(): array
+    {
+        return [
+            'nom' => ['sometimes', 'required', 'string', 'max:255'],
+            'description' => ['sometimes', 'nullable', 'string'],
+            'stock' => ['sometimes', 'required', 'integer', 'min:0'],
+            'duree' => ['sometimes', 'required', 'integer', 'min:0'],
+            'couleur' => ['sometimes', 'nullable', 'string', 'max:100'],
+        ];
+    }
 }
