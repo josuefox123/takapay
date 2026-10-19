@@ -3,5 +3,20 @@
 .env.production
 /vendor
 /node_modules
+/public/hot
+/storage/*.key
 GIT_WORKFLOW.md
 /postman
+# Local IDE & AI assistants
+.agents/
+.claude/
+.mcp.json
+boost.json
+opencode.json
+.phpunit.result.cache
+dashboard/.agents/
+/public/storage
+*.sqlite
+*.sqlite-journal
+AGENTS.md
+CLAUDE.md
