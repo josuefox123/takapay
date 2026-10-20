@@ -19,6 +19,25 @@ export const resolveImageUrl = (path) => {
   return `/storage/produits/${path}`;
 };
 
+export const getColorHex = (name) => {
+  if (!name || typeof name !== 'string') return '#374151';
+  const n = name.trim().toLowerCase();
+  if (n.includes('noir') || n.includes('black') || n.includes('sombre')) return '#18181b';
+  if (n.includes('blanc') || n.includes('white') || n.includes('perle') || n.includes('neige')) return '#f8fafc';
+  if (n.includes('gris') || n.includes('grey') || n.includes('gray') || n.includes('argent') || n.includes('silver')) return '#94a3b8';
+  if (n.includes('bleu') || n.includes('blue') || n.includes('cobalt') || n.includes('azur') || n.includes('ocean')) return '#2563eb';
+  if (n.includes('rouge') || n.includes('red') || n.includes('bordeaux') || n.includes('carmin')) return '#dc2626';
+  if (n.includes('or') || n.includes('gold') || n.includes('dore') || n.includes('ambre')) return '#d97706';
+  if (n.includes('vert') || n.includes('green') || n.includes('olive') || n.includes('emeraude')) return '#16a34a';
+  if (n.includes('rose') || n.includes('pink')) return '#ec4899';
+  if (n.includes('violet') || n.includes('purple') || n.includes('pourpre')) return '#8b5cf6';
+  if (n.includes('orange')) return '#ea580c';
+  if (n.includes('jaune') || n.includes('yellow')) return '#eab308';
+  if (n.includes('marron') || n.includes('brown') || n.includes('chocolat')) return '#78350f';
+  if (n.includes('titane') || n.includes('titanium')) return '#64748b';
+  return '#4b5563';
+};
+
 /**
  * Convertit un produit issu de la base de données Laravel / du dashboard admin
  * vers le format attendu par les composants du portail client.
@@ -100,16 +119,49 @@ export const mapAdminProductToClient = (p) => {
     images: imageList.length > 0 ? imageList : [primaryImg],
     video: p.video || null,
     stockCount: p.stock !== undefined ? Number(p.stock) : 15,
-    availabilityDuration: p.duree ? `Financement sur ${p.duree} mois` : 'Disponible',
+    availabilityDuration: p.duree ? `${p.duree} mois de disponibilité` : 'Disponible',
+    duree: Number(p.duree || 6),
     d: p.description || p.d || 'Article de qualité certifiée disponible sur TakaPay.',
-    colors: p.couleur ? [{ name: p.couleur, hex: '#333333' }] : (p.colors || [{ name: 'Standard', hex: '#333333' }]),
+    colors: (() => {
+      if (p.couleur) {
+        try {
+          if (typeof p.couleur === 'string' && (p.couleur.startsWith('[') || p.couleur.startsWith('{'))) {
+            const arr = JSON.parse(p.couleur);
+            if (Array.isArray(arr) && arr.length > 0) {
+              return arr.map((c) => {
+                const cName = typeof c === 'string' ? c : (c.nom || c.name || 'Standard');
+                const hasCustom = typeof c === 'object' && c.prix !== undefined && c.prix !== null && c.prix !== '' && Number(c.prix) > 0;
+                const rawCPrice = hasCustom ? Number(c.prix) : price;
+                const cDiscountedPrice = promoPercent > 0 ? Math.round(rawCPrice * (1 - promoPercent / 100)) : rawCPrice;
+                const cOldPrice = promoPercent > 0 ? rawCPrice : null;
+                return {
+                  name: cName,
+                  price: cDiscountedPrice,
+                  rawPrice: rawCPrice,
+                  oldPrice: cOldPrice,
+                  hasCustomPrice: hasCustom,
+                  hex: getColorHex(cName),
+                };
+              });
+            }
+          } else if (typeof p.couleur === 'string' && p.couleur.includes(',')) {
+            return p.couleur.split(',').map((c) => {
+              const name = c.trim();
+              return { name, price: discountedPrice, rawPrice: price, oldPrice, hex: getColorHex(name), hasCustomPrice: false };
+            });
+          }
+        } catch { /* ignore */ }
+        return [{ name: p.couleur, price: discountedPrice, rawPrice: price, oldPrice, hex: getColorHex(p.couleur), hasCustomPrice: false }];
+      }
+      return p.colors || [{ name: 'Standard', price: discountedPrice, rawPrice: price, oldPrice, hex: '#374151', hasCustomPrice: false }];
+    })(),
     seuilLivraison: seuilLivraisonVal,
     payment: {
-      mode: param.mode_paiement === 'cash' ? 'cash' : param.mode_paiement === 'libre' ? 'libre' : 'echelon',
-      minimumStart: Number(param.prix_minimum || Math.round(price * 0.15)),
-      installmentAmount: Number(param.prix_echelonne || Math.round(price / Math.max(1, p.duree || 6))),
-      frequency: param.frequence || 'mensuelle',
-      estimatedEnd: `${p.duree || 6} mois`,
+      mode: param.mode_paiement === 'libre' ? 'libre' : 'echelon',
+      minimumStart: Number(param.prix_minimum || Math.round(price * 0.1)),
+      installmentAmount: param.mode_paiement === 'libre' ? null : Number(param.prix_echelonne || Math.round(price / Math.max(1, p.duree || 6))),
+      frequency: param.mode_paiement === 'libre' ? null : (param.frequence || 'mensuelle'),
+      estimatedEnd: param.mode_paiement === 'libre' ? null : `${p.duree || 6} mois`,
       seuilLivraison: seuilLivraisonVal,
       demo: true,
     },
@@ -390,6 +442,112 @@ export const DEFAULT_CAGNOTTE = {
       client: 'Koffi DOSSOU',
     },
   ],
+};
+
+export const createCagnotteFromOrder = (orderData, user = null) => {
+  const prod = orderData?.product || {};
+  const initialPaid = Number(orderData?.initialAmount) || 0;
+  const totalOrderPrice = Number(orderData?.totalPrice) || Number(prod.p) || 0;
+  const remaining = Math.max(0, totalOrderPrice - initialPaid);
+  const percent = totalOrderPrice > 0 ? Math.min(100, Math.round((initialPaid / totalOrderPrice) * 100)) : 100;
+  const now = new Date();
+  const dateFormatted =
+    now.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' }) +
+    ' ' +
+    now.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+
+  const clientName =
+    user?.n ||
+    `${user?.prenom || ''} ${user?.nom || ''}`.trim() ||
+    orderData?.user?.n ||
+    'Client TakaPay';
+
+  const clientPhone = user?.phone || user?.telephone || '+229 0162180290';
+
+  return {
+    id: `cag-${Date.now()}`,
+    product: {
+      id: prod.id || Date.now(),
+      n: prod.n || prod.nom || 'Article TakaPay',
+      c: prod.c || prod.category || prod.categorie_nom || 'Catalogue',
+      subcategory: prod.subcategory || prod.sous_categorie_nom || 'Article',
+      p: totalOrderPrice,
+      im: prod.im || (prod.images && prod.images[0]) || '/assets/category-phones.jpg',
+      variant: orderData?.selectedColor?.name
+        ? `${orderData.selectedColor.name} · 1 unité`
+        : 'Standard · 1 unité',
+    },
+    dateCommande: now.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' }),
+    prixTotal: totalOrderPrice,
+    montantVerse: initialPaid,
+    resteAPayer: remaining,
+    pourcentage: percent,
+    prochainVersement: {
+      montant: prod.payment?.installmentAmount || Math.round(totalOrderPrice * 0.1),
+      date: 'Le mois prochain',
+    },
+    dateFinEstimee: `${prod.duree || 6} mois`,
+    moisRestants: prod.duree || 6,
+    statut: remaining === 0 ? 'completed' : 'active',
+    transactions: [
+      {
+        id: `tx-${Date.now()}`,
+        reference: `TK-${orderData?.provider === 'Moov' ? 'MOOV' : 'MM'}-${Math.floor(100000 + Math.random() * 900000)}`,
+        titre: 'Premier versement (Acompte)',
+        methode: orderData?.provider === 'Moov' ? 'Moov Money' : 'MTN Mobile Money',
+        date: dateFormatted,
+        montant: initialPaid,
+        statut: 'Réussi',
+        type: 'versement',
+        periode: 'aujourdhui',
+        telephone: clientPhone,
+        client: clientName,
+      },
+    ],
+  };
+};
+
+export const getStoredCagnottes = (user = null) => {
+  let list = [];
+  try {
+    const raw = localStorage.getItem('takapay-client-cagnottes');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        list = parsed;
+      }
+    }
+  } catch {}
+
+  // Si aucune liste takapay-client-cagnottes mais des commandes enregistrées
+  if (list.length === 0) {
+    try {
+      const ordersRaw = localStorage.getItem('takapay-client-orders');
+      if (ordersRaw) {
+        const ordersList = JSON.parse(ordersRaw);
+        if (Array.isArray(ordersList) && ordersList.length > 0) {
+          list = ordersList.map((ord) => createCagnotteFromOrder(ord, user));
+        }
+      }
+    } catch {}
+  }
+
+  // Si toujours vide, inclure takapay-demo-cagnotte ou DEFAULT_CAGNOTTE
+  if (list.length === 0) {
+    try {
+      const savedSingle = localStorage.getItem('takapay-demo-cagnotte');
+      if (savedSingle) {
+        const parsed = JSON.parse(savedSingle);
+        if (parsed && parsed.product) list.push(parsed);
+      }
+    } catch {}
+  }
+
+  if (list.length === 0) {
+    list.push(DEFAULT_CAGNOTTE);
+  }
+
+  return list;
 };
 
 export const DEFAULT_NOTIFICATIONS = [

@@ -200,6 +200,10 @@ export default function ClientOrderFlow({
     }
   };
 
+  const effectivePrice = selectedColor?.price || product?.p || 0;
+  const priceRatio = (product?.p && product.p > 0) ? (effectivePrice / product.p) : 1;
+  const initialAmount = Math.round((product?.payment?.minimumStart || Math.round(effectivePrice * 0.1)) * priceRatio);
+
   // Étape 4 : Validation Paiement
   const handlePaymentSubmit = (e) => {
     e.preventDefault();
@@ -211,16 +215,15 @@ export default function ClientOrderFlow({
     setTimeout(() => {
       setSubmitting(false);
       onCompleteOrder({
-        product,
+        product: { ...product, p: effectivePrice },
         selectedColor,
         provider,
-        initialAmount: product.payment?.minimumStart || product.p,
+        initialAmount,
+        totalPrice: effectivePrice,
         date: new Date().toISOString(),
       });
     }, 800);
   };
-
-  const initialAmount = product?.payment?.minimumStart || product?.p || 0;
 
   return (
     <div className="flow-shell auth-flow-shell">

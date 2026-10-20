@@ -24,10 +24,21 @@ class UpdateProduitRequest extends FormRequest
     {
         return [
             'nom' => ['sometimes', 'required', 'string', 'max:255'],
+            'sous_categorie_id' => ['sometimes', 'nullable', 'exists:sous_categories,id'],
             'description' => ['sometimes', 'nullable', 'string'],
             'stock' => ['sometimes', 'required', 'integer', 'min:0'],
-            'duree' => ['sometimes', 'required', 'integer', 'min:0'],
-            'couleur' => ['sometimes', 'nullable', 'string', 'max:100'],
+            'duree' => ['sometimes', 'nullable', 'integer', 'min:0'],
+            'couleur' => ['sometimes', 'nullable', 'string'],
+            'reference' => ['sometimes', 'nullable', 'string', 'max:255'],
+            'prix_total' => ['sometimes', 'nullable', 'numeric', 'min:0'],
+            'prix_minimum' => ['sometimes', 'nullable', 'numeric', 'min:0'],
+            'prix_echelonne' => ['sometimes', 'nullable', 'numeric', 'min:0'],
+            'prix_cash' => ['sometimes', 'nullable', 'numeric', 'min:0'],
+            'mode_paiement' => ['sometimes', 'nullable', 'string', 'max:100'],
+            'frequence' => ['sometimes', 'nullable', 'string', 'max:100'],
+            'seuil_livraison' => ['sometimes', 'nullable', 'numeric', 'min:0'],
+            'promotion_id' => ['sometimes', 'nullable', 'exists:promotions,id'],
+            'images' => ['sometimes', 'nullable', 'array'],
         ];
     }
 }

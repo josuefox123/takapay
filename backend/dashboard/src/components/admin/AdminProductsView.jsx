@@ -29,18 +29,59 @@ export default function AdminProductsView({ onShowToast }) {
     sous_categorie_id: '',
     description: '',
     stock: 10,
-    duree: 6,
-    couleur: 'Standard',
+    duree: 6, // Durée de disponibilité de l'article (mois)
     reference: '',
     prix_total: '',
     prix_minimum: '',
     prix_echelonne: '',
-    prix_cash: '',
-    mode_paiement: 'planifie',
+    mode_paiement: 'echelonne', // 'echelonne' | 'libre'
     frequence: 'mensuelle',
     seuil_livraison: '',
     promotion_id: '',
   });
+
+  // Gestion des couleurs : distinction nette entre tarif standard et tarif spécifique
+  const [couleursStandard, setCouleursStandard] = useState([{ nom: 'Standard' }]);
+  const [couleursSpecifiques, setCouleursSpecifiques] = useState([]);
+
+  const handleAddStandardColor = () => {
+    setCouleursStandard((prev) => [...prev, { nom: '' }]);
+  };
+  const handleRemoveStandardColor = (index) => {
+    setCouleursStandard((prev) => (prev.length > 1 ? prev.filter((_, idx) => idx !== index) : prev));
+  };
+  const handleStandardColorChange = (index, value) => {
+    setCouleursStandard((prev) =>
+      prev.map((c, idx) => (idx === index ? { ...c, nom: value } : c))
+    );
+  };
+
+  const handleAddSpecificColor = () => {
+    setCouleursSpecifiques((prev) => [...prev, { nom: '', prix: '' }]);
+  };
+  const handleRemoveSpecificColor = (index) => {
+    setCouleursSpecifiques((prev) => prev.filter((_, idx) => idx !== index));
+  };
+  const handleSpecificColorChange = (index, field, value) => {
+    setCouleursSpecifiques((prev) =>
+      prev.map((c, idx) => (idx === index ? { ...c, [field]: value } : c))
+    );
+  };
+
+  const formatColorsDisplay = (couleurStr) => {
+    if (!couleurStr) return 'Standard';
+    try {
+      if (typeof couleurStr === 'string' && (couleurStr.startsWith('[') || couleurStr.startsWith('{'))) {
+        const arr = JSON.parse(couleurStr);
+        if (Array.isArray(arr) && arr.length > 0) {
+          return arr
+            .map((c) => (c.prix ? `${c.nom} (${Number(c.prix).toLocaleString('fr-FR')} F)` : c.nom))
+            .join(' · ');
+        }
+      }
+    } catch { /* ignore */ }
+    return couleurStr;
+  };
 
   // Images : Fichiers locaux uniquement (aucun champ d'URL manuelle)
   const [images, setImages] = useState([]);
@@ -220,6 +261,8 @@ export default function AdminProductsView({ onShowToast }) {
     const matchingSubs = sousCategories.filter(
       (s) => String(s.categorie_id) === String(initialCatId) || String(s.categorie?.id) === String(initialCatId)
     );
+    setCouleursStandard([{ nom: 'Standard' }]);
+    setCouleursSpecifiques([]);
     setForm({
       nom: '',
       categorie_id: initialCatId,
@@ -227,13 +270,11 @@ export default function AdminProductsView({ onShowToast }) {
       description: '',
       stock: 10,
       duree: 6,
-      couleur: 'Standard',
       reference: '',
       prix_total: '',
       prix_minimum: '',
       prix_echelonne: '',
-      prix_cash: '',
-      mode_paiement: 'planifie',
+      mode_paiement: 'echelonne',
       frequence: 'mensuelle',
       seuil_livraison: '',
       promotion_id: '',
@@ -263,6 +304,40 @@ export default function AdminProductsView({ onShowToast }) {
     const activeCatId = cat?.id || item.categorie_id || sub?.categorie_id || (categories[0]?.id || '');
     const activeSubId = item.sous_categorie_id || item.sous_categorie?.id || '';
 
+    // Parsing des couleurs (séparation entre tarif standard et tarif spécifique)
+    let loadedStandards = [];
+    let loadedSpecifiques = [];
+    if (item.couleur) {
+      try {
+        if (typeof item.couleur === 'string' && (item.couleur.startsWith('[') || item.couleur.startsWith('{'))) {
+          const parsed = JSON.parse(item.couleur);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            parsed.forEach((c) => {
+              const nom = typeof c === 'string' ? c : (c.nom || c.name || '');
+              const hasPrice = typeof c === 'object' && c.prix !== undefined && c.prix !== null && c.prix !== '' && Number(c.prix) > 0;
+              if (hasPrice) {
+                loadedSpecifiques.push({ nom, prix: Number(c.prix) });
+              } else if (nom) {
+                loadedStandards.push({ nom });
+              }
+            });
+          }
+        } else if (typeof item.couleur === 'string' && item.couleur.includes(',')) {
+          loadedStandards = item.couleur.split(',').map((c) => ({ nom: c.trim() })).filter((c) => c.nom);
+        } else if (typeof item.couleur === 'string') {
+          loadedStandards = [{ nom: item.couleur.trim() }];
+        }
+      } catch {
+        loadedStandards = [{ nom: item.couleur || 'Standard' }];
+      }
+    }
+    if (loadedStandards.length === 0 && loadedSpecifiques.length === 0) {
+      loadedStandards = [{ nom: 'Standard' }];
+    }
+    setCouleursStandard(loadedStandards);
+    setCouleursSpecifiques(loadedSpecifiques);
+
+    const activeMode = param.mode_paiement === 'libre' ? 'libre' : 'echelonne';
     setForm({
       nom: item.nom || '',
       categorie_id: activeCatId,
@@ -270,13 +345,11 @@ export default function AdminProductsView({ onShowToast }) {
       description: item.description || '',
       stock: item.stock !== undefined ? item.stock : 10,
       duree: item.duree !== undefined ? item.duree : 6,
-      couleur: item.couleur || 'Standard',
       reference: param.reference || '',
       prix_total: param.prix_total !== undefined ? param.prix_total : '',
       prix_minimum: param.prix_minimum !== undefined ? param.prix_minimum : '',
       prix_echelonne: param.prix_echelonne !== undefined ? param.prix_echelonne : '',
-      prix_cash: param.prix_cash !== undefined ? param.prix_cash : '',
-      mode_paiement: param.mode_paiement || 'planifie',
+      mode_paiement: activeMode,
       frequence: param.frequence || 'mensuelle',
       seuil_livraison: param.seuil_livraison !== undefined ? param.seuil_livraison : '',
       promotion_id: param.promotion_id || '',
@@ -330,7 +403,7 @@ export default function AdminProductsView({ onShowToast }) {
       errs.stock = "Le stock disponible est requis (minimum 0).";
     }
     if (form.duree === '' || form.duree === null || Number(form.duree) < 1) {
-      errs.duree = "La durée de cotisation doit être d'au moins 1 mois.";
+      errs.duree = "La durée de disponibilité de l'article doit être d'au moins 1 mois.";
     }
     return errs;
   };
@@ -352,10 +425,30 @@ export default function AdminProductsView({ onShowToast }) {
       categories.find((c) => String(c.id) === String(form.categorie_id)) ||
       (targetSub ? categories.find((c) => String(c.id) === String(targetSub.categorie_id)) : null);
 
+    const cleanedStandards = couleursStandard
+      .map((c) => ({
+        nom: (c.nom || '').trim(),
+        prix: null,
+        hasCustomPrice: false,
+      }))
+      .filter((c) => c.nom.length > 0);
+
+    const cleanedSpecifiques = couleursSpecifiques
+      .map((c) => ({
+        nom: (c.nom || '').trim(),
+        prix: c.prix !== '' && Number(c.prix) > 0 ? Number(c.prix) : null,
+        hasCustomPrice: true,
+      }))
+      .filter((c) => c.nom.length > 0);
+
+    const combinedColors = [...cleanedStandards, ...cleanedSpecifiques];
+    const finalColors = combinedColors.length > 0 ? combinedColors : [{ nom: 'Standard', prix: null, hasCustomPrice: false }];
+
     setSubmitting(true);
     try {
       const payload = {
         ...form,
+        couleur: JSON.stringify(finalColors),
         images,
         video,
         categorie_id: form.categorie_id || targetCat?.id || '',
@@ -482,11 +575,18 @@ export default function AdminProductsView({ onShowToast }) {
 
   // Calcul auto des suggestions financières
   const autoMinStart = form.prix_total ? Math.round(Number(form.prix_total) * 0.1) : 0;
+  const dureeDispo = Math.max(1, Number(form.duree || 6));
   const autoEch =
-    form.prix_total && form.duree
-      ? Math.round((Number(form.prix_total) - autoMinStart) / Math.max(1, Number(form.duree)))
+    form.prix_total
+      ? Math.round((Number(form.prix_total) - autoMinStart) / dureeDispo)
       : 0;
   const autoSeuil = form.prix_total ? Math.round(Number(form.prix_total) * 0.4) : 0;
+  // Durée de fin estimée calculée mathématiquement à partir du versement périodique
+  const activeEchVal = form.prix_echelonne && Number(form.prix_echelonne) > 0 ? Number(form.prix_echelonne) : autoEch;
+  const autoDureeEstimeeMois =
+    form.prix_total && activeEchVal > 0
+      ? Math.ceil(Math.max(0, Number(form.prix_total) - (form.prix_minimum ? Number(form.prix_minimum) : autoMinStart)) / activeEchVal)
+      : dureeDispo;
 
   // =========================================================================
   // VUE 1 : GESTION DES CATÉGORIES (PAGE INTÉGRÉE BIEN AÉRÉE)
@@ -921,7 +1021,7 @@ export default function AdminProductsView({ onShowToast }) {
 
               <div className="admin-field" style={{ margin: 0 }}>
                 <label style={{ fontSize: '14px', fontWeight: 700, marginBottom: '6px', display: 'block' }}>
-                  Durée de cotisation (mois) *
+                  Durée de disponibilité de l'article (mois) *
                 </label>
                 <input
                   type="number"
@@ -940,24 +1040,14 @@ export default function AdminProductsView({ onShowToast }) {
                     fontSize: '15px',
                   }}
                 />
+                <span style={{ fontSize: '12px', color: 'var(--mut)', marginTop: '4px', display: 'block' }}>
+                  Période pendant laquelle l'offre reste disponible au catalogue sur Takapay (distincte de la durée de paiement client).
+                </span>
                 {errors.duree && (
                   <span style={{ color: '#dc2626', fontSize: '13px', fontWeight: 600, marginTop: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}>
                     ⚠ {errors.duree}
                   </span>
                 )}
-              </div>
-
-              <div className="admin-field" style={{ margin: 0 }}>
-                <label style={{ fontSize: '14px', fontWeight: 700, marginBottom: '6px', display: 'block' }}>
-                  Couleur / Finition
-                </label>
-                <input
-                  type="text"
-                  placeholder="Ex: Noir Sidéral, Blanc, Standard..."
-                  value={form.couleur}
-                  onChange={(e) => setForm({ ...form, couleur: e.target.value })}
-                  style={{ width: '100%', padding: '13px 16px', borderRadius: '12px', border: '1.5px solid var(--line)', fontSize: '15px' }}
-                />
               </div>
 
               <div className="admin-field" style={{ margin: 0 }}>
@@ -973,6 +1063,248 @@ export default function AdminProductsView({ onShowToast }) {
                 />
               </div>
             </div>
+
+            {/* GESTION MULTI-COULEURS ET DÉCLINAISONS (STANDARD ET PRIX DIFFÉRENTS) */}
+            <div style={{ marginTop: '24px', padding: '22px', background: 'var(--bg)', borderRadius: '16px', border: '1.5px solid var(--line)' }}>
+              <div style={{ marginBottom: '18px' }}>
+                <label style={{ fontSize: '16px', fontWeight: 800, color: 'var(--ink)' }}>
+                  Couleurs & Déclinaisons de l'article
+                </label>
+                <span style={{ fontSize: '13px', color: 'var(--mut)', display: 'block', marginTop: '2px' }}>
+                  Définissez les couleurs disponibles. Séparez les couleurs vendues au tarif normal et celles bénéficiant d'un prix spécifique.
+                </span>
+              </div>
+
+              {/* 1. COULEURS AU TARIF STANDARD */}
+              <div style={{ marginBottom: '20px', padding: '16px', background: 'var(--card)', borderRadius: '14px', border: '1px solid var(--line)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
+                  <div>
+                    <span style={{ fontSize: '14px', fontWeight: 700, color: 'var(--ink)' }}>
+                      1. Couleurs au tarif standard ({form.prix_total ? `${Number(form.prix_total).toLocaleString('fr-FR')} F` : 'Prix de base'})
+                    </span>
+                    <small style={{ display: 'block', color: 'var(--mut)', fontSize: '12px', marginTop: '2px' }}>
+                      Ces couleurs partagent le prix normal de vente défini dans la section financière ci-dessous.
+                    </small>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleAddStandardColor}
+                    className="admin-btn"
+                    style={{ padding: '6px 14px', fontSize: '12px', borderRadius: '8px' }}
+                  >
+                    + Ajouter couleur standard
+                  </button>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '10px' }}>
+                  {couleursStandard.map((c, idx) => (
+                    <div
+                      key={idx}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        background: 'var(--bg)',
+                        padding: '6px 10px',
+                        borderRadius: '10px',
+                        border: '1px solid var(--line)',
+                      }}
+                    >
+                      <input
+                        type="text"
+                        placeholder="Ex: Noir, Blanc..."
+                        value={c.nom}
+                        onChange={(e) => handleStandardColorChange(idx, e.target.value)}
+                        style={{
+                          flex: 1,
+                          padding: '8px 10px',
+                          borderRadius: '6px',
+                          border: '1px solid var(--line)',
+                          fontSize: '13px',
+                          background: 'var(--card)',
+                        }}
+                      />
+                      {couleursStandard.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveStandardColor(idx)}
+                          style={{
+                            background: '#fee2e2',
+                            color: '#dc2626',
+                            border: 'none',
+                            borderRadius: '6px',
+                            padding: '6px 10px',
+                            cursor: 'pointer',
+                            fontSize: '12px',
+                            fontWeight: 700,
+                          }}
+                          title="Supprimer cette couleur"
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* 2. COULEURS AVEC TARIF SPÉCIFIQUE */}
+              <div style={{ marginBottom: '16px', padding: '16px', background: 'var(--card)', borderRadius: '14px', border: '1px solid var(--line)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
+                  <div>
+                    <span style={{ fontSize: '14px', fontWeight: 700, color: 'var(--ink)' }}>
+                      2. Couleurs avec tarif spécifique (prix différent)
+                    </span>
+                    <small style={{ display: 'block', color: 'var(--mut)', fontSize: '12px', marginTop: '2px' }}>
+                      Renseignez ici uniquement les déclinaisons dont le prix est différent (ex: finition titane, or, etc.).
+                    </small>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleAddSpecificColor}
+                    className="admin-btn"
+                    style={{ padding: '6px 14px', fontSize: '12px', borderRadius: '8px' }}
+                  >
+                    + Ajouter couleur avec prix différent
+                  </button>
+                </div>
+
+                {couleursSpecifiques.length === 0 ? (
+                  <div style={{ padding: '12px', textAlign: 'center', color: 'var(--mut)', fontSize: '12px', background: 'var(--bg)', borderRadius: '8px', border: '1px dashed var(--line)' }}>
+                    Aucune couleur à prix spécifique. Toutes les couleurs utilisent le prix standard.
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    {couleursSpecifiques.map((c, idx) => (
+                      <div
+                        key={idx}
+                        style={{
+                          display: 'grid',
+                          gridTemplateColumns: '1.2fr 1fr auto',
+                          gap: '12px',
+                          alignItems: 'center',
+                          background: 'var(--bg)',
+                          padding: '10px 14px',
+                          borderRadius: '10px',
+                          border: '1px solid var(--line)',
+                        }}
+                      >
+                        <div>
+                          <label style={{ fontSize: '11px', color: 'var(--mut)', display: 'block', marginBottom: '3px', fontWeight: 600 }}>
+                            Nom de la déclinaison *
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="Ex: Titane Naturel, Or 24K..."
+                            value={c.nom}
+                            onChange={(e) => handleSpecificColorChange(idx, 'nom', e.target.value)}
+                            style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--line)', fontSize: '13px', background: 'var(--card)' }}
+                          />
+                        </div>
+
+                        <div>
+                          <label style={{ fontSize: '11px', color: 'var(--mut)', display: 'block', marginBottom: '3px', fontWeight: 600 }}>
+                            Prix spécifique (FCFA) *
+                          </label>
+                          <input
+                            type="number"
+                            min="0"
+                            placeholder="Ex: 520000"
+                            value={c.prix}
+                            onChange={(e) => handleSpecificColorChange(idx, 'prix', e.target.value)}
+                            style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--line)', fontSize: '13px', background: 'var(--card)', fontWeight: 700 }}
+                          />
+                        </div>
+
+                        <div style={{ paddingTop: '16px' }}>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveSpecificColor(idx)}
+                            style={{
+                              background: '#fee2e2',
+                              color: '#dc2626',
+                              border: 'none',
+                              borderRadius: '6px',
+                              padding: '8px 12px',
+                              cursor: 'pointer',
+                              fontSize: '12px',
+                              fontWeight: 700,
+                            }}
+                            title="Supprimer cette déclinaison"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* TABLEAU RÉCAPITULATIF DES PARAMÈTRES PAR DÉCLINAISON */}
+              <div style={{ background: 'var(--card)', padding: '16px', borderRadius: '14px', border: '1px solid var(--line)' }}>
+                <strong style={{ fontSize: '13px', color: 'var(--ink)', display: 'block', marginBottom: '10px' }}>
+                  📊 Synthèse des paramètres appliqués par couleur :
+                </strong>
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', fontSize: '13px', borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr style={{ textAlign: 'left', borderBottom: '1.5px solid var(--line)', color: 'var(--mut)' }}>
+                        <th style={{ padding: '8px' }}>Couleur</th>
+                        <th style={{ padding: '8px' }}>Type</th>
+                        <th style={{ padding: '8px' }}>Prix Total</th>
+                        <th style={{ padding: '8px' }}>1er Versement (10%)</th>
+                        {form.mode_paiement !== 'libre' && <th style={{ padding: '8px' }}>Versement Échelonné</th>}
+                        <th style={{ padding: '8px' }}>Seuil Livraison (40%)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[
+                        ...couleursStandard.filter((c) => (c.nom || '').trim().length > 0).map((c) => ({
+                          nom: c.nom,
+                          prix: Number(form.prix_total || 0),
+                          isCustom: false,
+                        })),
+                        ...couleursSpecifiques.filter((c) => (c.nom || '').trim().length > 0).map((c) => ({
+                          nom: c.nom,
+                          prix: c.prix && Number(c.prix) > 0 ? Number(c.prix) : Number(form.prix_total || 0),
+                          isCustom: true,
+                        })),
+                      ].map((item, idx) => {
+                        const minStart = Math.round(item.prix * 0.1);
+                        const echVal = Math.round((item.prix - minStart) / dureeDispo);
+                        const seuilVal = Math.round(item.prix * 0.4);
+                        return (
+                          <tr key={idx} style={{ borderBottom: '1px solid var(--line)' }}>
+                            <td style={{ padding: '8px', fontWeight: 600 }}>{item.nom}</td>
+                            <td style={{ padding: '8px' }}>
+                              <span
+                                style={{
+                                  fontSize: '11px',
+                                  padding: '2px 8px',
+                                  borderRadius: '99px',
+                                  background: item.isCustom ? 'rgba(217, 119, 6, 0.15)' : 'rgba(22, 163, 74, 0.12)',
+                                  color: item.isCustom ? '#b45309' : '#15803d',
+                                  fontWeight: 700,
+                                }}
+                              >
+                                {item.isCustom ? 'Tarif spécifique' : 'Tarif standard'}
+                              </span>
+                            </td>
+                            <td style={{ padding: '8px', fontWeight: 700, color: 'var(--r)' }}>{item.prix.toLocaleString('fr-FR')} F</td>
+                            <td style={{ padding: '8px' }}>{minStart.toLocaleString('fr-FR')} F</td>
+                            {form.mode_paiement !== 'libre' && (
+                              <td style={{ padding: '8px' }}>{echVal.toLocaleString('fr-FR')} F / {form.frequence || 'mois'}</td>
+                            )}
+                            <td style={{ padding: '8px' }}>{seuilVal.toLocaleString('fr-FR')} F</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* SECTION 2 : TARIFICATION & PARAMÈTRES FINANCIERS */}
@@ -982,146 +1314,230 @@ export default function AdminProductsView({ onShowToast }) {
               2. Tarification & Modalités Financières
             </h2>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px', marginBottom: '20px' }}>
-              <div className="admin-field" style={{ margin: 0 }}>
-                <label style={{ fontSize: '14px', fontWeight: 700, marginBottom: '6px', display: 'block' }}>
-                  Prix Total de Vente (FCFA) *
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  placeholder="Ex: 450000"
-                  value={form.prix_total}
-                  onChange={(e) => {
-                    setForm({ ...form, prix_total: e.target.value });
-                    if (errors.prix_total) setErrors((prev) => ({ ...prev, prix_total: null }));
-                  }}
-                  style={{
-                    width: '100%',
-                    padding: '13px 16px',
-                    borderRadius: '12px',
-                    border: errors.prix_total ? '2px solid #dc2626' : '1.5px solid var(--line)',
-                    fontSize: '15px',
-                    fontWeight: 700,
-                  }}
-                />
-                {errors.prix_total && (
-                  <span style={{ color: '#dc2626', fontSize: '13px', fontWeight: 600, marginTop: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    ⚠ {errors.prix_total}
-                  </span>
-                )}
-              </div>
-
-              <div className="admin-field" style={{ margin: 0 }}>
-                <label style={{ fontSize: '14px', fontWeight: 700, marginBottom: '6px', display: 'block' }}>
-                  1er Versement Minimum (FCFA)
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  placeholder={`Suggéré: ${autoMinStart} FCFA`}
-                  value={form.prix_minimum}
-                  onChange={(e) => setForm({ ...form, prix_minimum: e.target.value })}
-                  style={{ width: '100%', padding: '13px 16px', borderRadius: '12px', border: '1.5px solid var(--line)', fontSize: '15px' }}
-                />
-              </div>
-
-              <div className="admin-field" style={{ margin: 0 }}>
-                <label style={{ fontSize: '14px', fontWeight: 700, marginBottom: '6px', display: 'block' }}>
-                  Versement Périodique Échelonné (FCFA)
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  placeholder={`Suggéré: ${autoEch} FCFA`}
-                  value={form.prix_echelonne}
-                  onChange={(e) => setForm({ ...form, prix_echelonne: e.target.value })}
-                  style={{ width: '100%', padding: '13px 16px', borderRadius: '12px', border: '1.5px solid var(--line)', fontSize: '15px' }}
-                />
-              </div>
-
-              <div className="admin-field" style={{ margin: 0 }}>
-                <label style={{ fontSize: '14px', fontWeight: 700, marginBottom: '6px', display: 'block' }}>
-                  Seuil de Livraison Anticipée (FCFA)
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  placeholder={`Suggéré: ${autoSeuil} FCFA (Dès 40%)`}
-                  value={form.seuil_livraison}
-                  onChange={(e) => setForm({ ...form, seuil_livraison: e.target.value })}
-                  style={{ width: '100%', padding: '13px 16px', borderRadius: '12px', border: '1.5px solid var(--line)', fontSize: '15px', fontWeight: 600 }}
-                />
-                <span style={{ fontSize: '12px', color: 'var(--mut)', marginTop: '4px', display: 'block' }}>
-                  Montant à partir duquel le client est éligible pour récupérer son produit.
-                </span>
-              </div>
+            {/* SÉLECTEUR DE MODE DE PAIEMENT (2 MODES UNIQUEMENT : ÉCHELONNÉ OU LIBRE) */}
+            <div style={{ marginBottom: '22px' }}>
+              <label style={{ fontSize: '14px', fontWeight: 700, marginBottom: '6px', display: 'block' }}>
+                Mode de Versement / Cotisation *
+              </label>
+              <select
+                value={form.mode_paiement === 'libre' ? 'libre' : 'echelonne'}
+                onChange={(e) => setForm({ ...form, mode_paiement: e.target.value })}
+                style={{
+                  width: '100%',
+                  padding: '13px 16px',
+                  borderRadius: '12px',
+                  border: '1.5px solid var(--line)',
+                  fontSize: '15px',
+                  fontWeight: 600,
+                  background: 'var(--card)',
+                  color: 'var(--ink)',
+                }}
+              >
+                <option value="echelonne">Paiement échelonné (versements périodiques planifiés)</option>
+                <option value="libre">Cotisation libre (à son rythme, sans durée finale imposée)</option>
+              </select>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '20px' }}>
-              <div className="admin-field" style={{ margin: 0 }}>
-                <label style={{ fontSize: '14px', fontWeight: 700, marginBottom: '6px', display: 'block' }}>
-                  Prix Cash / Comptant (FCFA)
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  placeholder="Même montant que le prix total si non précisé"
-                  value={form.prix_cash}
-                  onChange={(e) => setForm({ ...form, prix_cash: e.target.value })}
-                  style={{ width: '100%', padding: '13px 16px', borderRadius: '12px', border: '1.5px solid var(--line)', fontSize: '15px' }}
-                />
-              </div>
+            {/* SI MODE LIBRE : PARAMÈTRES ADAPTÉS */}
+            {form.mode_paiement === 'libre' ? (
+              <>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px', marginBottom: '20px' }}>
+                  <div className="admin-field" style={{ margin: 0 }}>
+                    <label style={{ fontSize: '14px', fontWeight: 700, marginBottom: '6px', display: 'block' }}>
+                      Prix Total de Vente (FCFA) *
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      placeholder="Ex: 450000"
+                      value={form.prix_total}
+                      onChange={(e) => {
+                        setForm({ ...form, prix_total: e.target.value });
+                        if (errors.prix_total) setErrors((prev) => ({ ...prev, prix_total: null }));
+                      }}
+                      style={{
+                        width: '100%',
+                        padding: '13px 16px',
+                        borderRadius: '12px',
+                        border: errors.prix_total ? '2px solid #dc2626' : '1.5px solid var(--line)',
+                        fontSize: '15px',
+                        fontWeight: 700,
+                      }}
+                    />
+                    {errors.prix_total && (
+                      <span style={{ color: '#dc2626', fontSize: '13px', fontWeight: 600, marginTop: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        ⚠ {errors.prix_total}
+                      </span>
+                    )}
+                  </div>
 
-              <div className="admin-field" style={{ margin: 0 }}>
-                <label style={{ fontSize: '14px', fontWeight: 700, marginBottom: '6px', display: 'block' }}>
-                  Mode de Versement
-                </label>
-                <select
-                  value={form.mode_paiement}
-                  onChange={(e) => setForm({ ...form, mode_paiement: e.target.value })}
-                  style={{ width: '100%', padding: '13px 16px', borderRadius: '12px', border: '1.5px solid var(--line)', fontSize: '15px' }}
-                >
-                  <option value="planifie">Paiement échelonné planifié</option>
-                  <option value="libre">Cotisation libre à son rythme</option>
-                  <option value="cash">Paiement au comptant</option>
-                </select>
-              </div>
+                  <div className="admin-field" style={{ margin: 0 }}>
+                    <label style={{ fontSize: '14px', fontWeight: 700, marginBottom: '6px', display: 'block' }}>
+                      1er Versement Minimum pour ouvrir la cagnotte (FCFA)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      placeholder={`Suggéré: ${autoMinStart} FCFA`}
+                      value={form.prix_minimum}
+                      onChange={(e) => setForm({ ...form, prix_minimum: e.target.value })}
+                      style={{ width: '100%', padding: '13px 16px', borderRadius: '12px', border: '1.5px solid var(--line)', fontSize: '15px' }}
+                    />
+                  </div>
 
-              <div className="admin-field" style={{ margin: 0 }}>
-                <label style={{ fontSize: '14px', fontWeight: 700, marginBottom: '6px', display: 'block' }}>
-                  Fréquence de Versement
-                </label>
-                <select
-                  value={form.frequence}
-                  onChange={(e) => setForm({ ...form, frequence: e.target.value })}
-                  style={{ width: '100%', padding: '13px 16px', borderRadius: '12px', border: '1.5px solid var(--line)', fontSize: '15px' }}
-                >
-                  <option value="mensuelle">Mensuelle</option>
-                  <option value="bimensuelle">Bimensuelle (tous les 15 jours)</option>
-                  <option value="hebdomadaire">Hebdomadaire</option>
-                  <option value="journaliere">Journalière</option>
-                </select>
-              </div>
+                  <div className="admin-field" style={{ margin: 0 }}>
+                    <label style={{ fontSize: '14px', fontWeight: 700, marginBottom: '6px', display: 'block' }}>
+                      Seuil de Livraison Anticipée (FCFA)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      placeholder={`Suggéré: ${autoSeuil} FCFA (Dès 40%)`}
+                      value={form.seuil_livraison}
+                      onChange={(e) => setForm({ ...form, seuil_livraison: e.target.value })}
+                      style={{ width: '100%', padding: '13px 16px', borderRadius: '12px', border: '1.5px solid var(--line)', fontSize: '15px', fontWeight: 600 }}
+                    />
+                    <span style={{ fontSize: '12px', color: 'var(--mut)', marginTop: '4px', display: 'block' }}>
+                      Montant cotisé à partir duquel le client peut récupérer son produit.
+                    </span>
+                  </div>
 
-              <div className="admin-field" style={{ margin: 0 }}>
-                <label style={{ fontSize: '14px', fontWeight: 700, marginBottom: '6px', display: 'block' }}>
-                  Promotion Associée
-                </label>
-                <select
-                  value={form.promotion_id}
-                  onChange={(e) => setForm({ ...form, promotion_id: e.target.value })}
-                  style={{ width: '100%', padding: '13px 16px', borderRadius: '12px', border: '1.5px solid var(--line)', fontSize: '15px' }}
-                >
-                  <option value="">Aucune promotion</option>
-                  {promotions.map((pr) => (
-                    <option key={pr.id} value={pr.id}>
-                      {pr.titre} (-{pr.pourcentage_promo}%)
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
+                  <div className="admin-field" style={{ margin: 0 }}>
+                    <label style={{ fontSize: '14px', fontWeight: 700, marginBottom: '6px', display: 'block' }}>
+                      Promotion Associée
+                    </label>
+                    <select
+                      value={form.promotion_id}
+                      onChange={(e) => setForm({ ...form, promotion_id: e.target.value })}
+                      style={{ width: '100%', padding: '13px 16px', borderRadius: '12px', border: '1.5px solid var(--line)', fontSize: '15px' }}
+                    >
+                      <option value="">Aucune promotion</option>
+                      {promotions.map((pr) => (
+                        <option key={pr.id} value={pr.id}>
+                          {pr.titre} (-{pr.pourcentage_promo}%)
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </>
+            ) : (
+              /* SI MODE ÉCHELONNÉ : PARAMÈTRES COMPLETS AVEC DURÉE DE PAIEMENT CLIENT ESTIMÉE ET VERSEMENT PÉRIODIQUE */
+              <>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px', marginBottom: '20px' }}>
+                  <div className="admin-field" style={{ margin: 0 }}>
+                    <label style={{ fontSize: '14px', fontWeight: 700, marginBottom: '6px', display: 'block' }}>
+                      Prix Total de Vente (FCFA) *
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      placeholder="Ex: 450000"
+                      value={form.prix_total}
+                      onChange={(e) => {
+                        setForm({ ...form, prix_total: e.target.value });
+                        if (errors.prix_total) setErrors((prev) => ({ ...prev, prix_total: null }));
+                      }}
+                      style={{
+                        width: '100%',
+                        padding: '13px 16px',
+                        borderRadius: '12px',
+                        border: errors.prix_total ? '2px solid #dc2626' : '1.5px solid var(--line)',
+                        fontSize: '15px',
+                        fontWeight: 700,
+                      }}
+                    />
+                    {errors.prix_total && (
+                      <span style={{ color: '#dc2626', fontSize: '13px', fontWeight: 600, marginTop: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        ⚠ {errors.prix_total}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="admin-field" style={{ margin: 0 }}>
+                    <label style={{ fontSize: '14px', fontWeight: 700, marginBottom: '6px', display: 'block' }}>
+                      1er Versement Minimum (FCFA)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      placeholder={`Suggéré: ${autoMinStart} FCFA`}
+                      value={form.prix_minimum}
+                      onChange={(e) => setForm({ ...form, prix_minimum: e.target.value })}
+                      style={{ width: '100%', padding: '13px 16px', borderRadius: '12px', border: '1.5px solid var(--line)', fontSize: '15px' }}
+                    />
+                  </div>
+
+                  <div className="admin-field" style={{ margin: 0 }}>
+                    <label style={{ fontSize: '14px', fontWeight: 700, marginBottom: '6px', display: 'block' }}>
+                      Versement Périodique Échelonné (FCFA)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      placeholder={`Suggéré: ${autoEch} FCFA`}
+                      value={form.prix_echelonne}
+                      onChange={(e) => setForm({ ...form, prix_echelonne: e.target.value })}
+                      style={{ width: '100%', padding: '13px 16px', borderRadius: '12px', border: '1.5px solid var(--line)', fontSize: '15px', fontWeight: 600 }}
+                    />
+                    <span style={{ fontSize: '12px', color: 'var(--mut)', marginTop: '4px', display: 'block' }}>
+                      💡 Fin estimée calculée mathématiquement : <strong>~{autoDureeEstimeeMois} {form.frequence === 'hebdomadaire' ? 'semaines' : form.frequence === 'journaliere' ? 'jours' : 'mois'}</strong> pour solder l'article selon le versement périodique saisi.
+                    </span>
+                  </div>
+
+                  <div className="admin-field" style={{ margin: 0 }}>
+                    <label style={{ fontSize: '14px', fontWeight: 700, marginBottom: '6px', display: 'block' }}>
+                      Fréquence de Versement
+                    </label>
+                    <select
+                      value={form.frequence}
+                      onChange={(e) => setForm({ ...form, frequence: e.target.value })}
+                      style={{ width: '100%', padding: '13px 16px', borderRadius: '12px', border: '1.5px solid var(--line)', fontSize: '15px' }}
+                    >
+                      <option value="mensuelle">Mensuelle</option>
+                      <option value="bimensuelle">Bimensuelle (tous les 15 jours)</option>
+                      <option value="hebdomadaire">Hebdomadaire</option>
+                      <option value="journaliere">Journalière</option>
+                    </select>
+                  </div>
+
+                  <div className="admin-field" style={{ margin: 0 }}>
+                    <label style={{ fontSize: '14px', fontWeight: 700, marginBottom: '6px', display: 'block' }}>
+                      Seuil de Livraison Anticipée (FCFA)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      placeholder={`Suggéré: ${autoSeuil} FCFA (Dès 40%)`}
+                      value={form.seuil_livraison}
+                      onChange={(e) => setForm({ ...form, seuil_livraison: e.target.value })}
+                      style={{ width: '100%', padding: '13px 16px', borderRadius: '12px', border: '1.5px solid var(--line)', fontSize: '15px', fontWeight: 600 }}
+                    />
+                    <span style={{ fontSize: '12px', color: 'var(--mut)', marginTop: '4px', display: 'block' }}>
+                      Montant à partir duquel le client est éligible pour récupérer son produit.
+                    </span>
+                  </div>
+
+                  <div className="admin-field" style={{ margin: 0 }}>
+                    <label style={{ fontSize: '14px', fontWeight: 700, marginBottom: '6px', display: 'block' }}>
+                      Promotion Associée
+                    </label>
+                    <select
+                      value={form.promotion_id}
+                      onChange={(e) => setForm({ ...form, promotion_id: e.target.value })}
+                      style={{ width: '100%', padding: '13px 16px', borderRadius: '12px', border: '1.5px solid var(--line)', fontSize: '15px' }}
+                    >
+                      <option value="">Aucune promotion</option>
+                      {promotions.map((pr) => (
+                        <option key={pr.id} value={pr.id}>
+                          {pr.titre} (-{pr.pourcentage_promo}%)
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
 
           {/* SECTION 3 : GALERIE PHOTOS (FICHIERS UNIQUEMENT) */}
@@ -1490,7 +1906,7 @@ export default function AdminProductsView({ onShowToast }) {
                   <th>Sous-Catégorie</th>
                   <th>Stock</th>
                   <th>Prix Total</th>
-                  <th>Échéance</th>
+                  <th>Modalités de versement</th>
                   <th>Seuil Livr.</th>
                   <th>Promotion</th>
                   <th style={{ textAlign: 'right' }}>Actions</th>
@@ -1514,7 +1930,7 @@ export default function AdminProductsView({ onShowToast }) {
                       <td>
                         <strong style={{ fontSize: '15px' }}>{item.nom}</strong>
                         <span className="admin-sub-text">
-                          Réf: {param.reference || `PRD-${item.id}`} · {item.couleur || 'Standard'}
+                          Réf: {param.reference || `PRD-${item.id}`} · {formatColorsDisplay(item.couleur)}
                           {item.video && ' · 🎥 Vidéo'}
                         </span>
                       </td>
@@ -1532,12 +1948,34 @@ export default function AdminProductsView({ onShowToast }) {
                         {prixTotal.toLocaleString('fr-FR')} F
                       </td>
                       <td>
-                        <span style={{ fontSize: '13px' }}>
-                          {prixEch.toLocaleString('fr-FR')} F / {param.frequence || 'mois'}
-                        </span>
-                        <span className="admin-sub-text">
-                          Durée: {item.duree || 6} mois ({param.mode_paiement || 'planifié'})
-                        </span>
+                        {param.mode_paiement === 'libre' ? (
+                          <>
+                            <span
+                              className="admin-badge"
+                              style={{
+                                fontSize: '12px',
+                                display: 'inline-block',
+                                marginBottom: '4px',
+                                background: '#e0f2fe',
+                                color: '#0369a1',
+                              }}
+                            >
+                              Cotisation Libre
+                            </span>
+                            <span className="admin-sub-text">
+                              Dispo: {item.duree || 6} mois (sans fin imposée)
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            <span style={{ fontSize: '13px', fontWeight: 600 }}>
+                              {prixEch.toLocaleString('fr-FR')} F / {param.frequence || 'mois'}
+                            </span>
+                            <span className="admin-sub-text">
+                              Dispo: {item.duree || 6} mois · Échéancier
+                            </span>
+                          </>
+                        )}
                       </td>
                       <td>
                         <span style={{ fontSize: '13px', fontWeight: 600 }}>

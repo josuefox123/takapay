@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreProduitRequest;
 use App\Http\Requests\UpdateProduitRequest;
 use App\Http\Resources\ProduitResource;
+use App\Models\ImageProduit;
+use App\Models\ParametreProduit;
 use App\Models\Produit;
 use App\Services\ImageStorageService;
 use Illuminate\Http\JsonResponse;
@@ -50,9 +52,56 @@ class ProduitController extends Controller
      */
     public function update(UpdateProduitRequest $request, Produit $produit)
     {
-        $produit->update($request->validated());
+        $validated = $request->validated();
 
-        return new ProduitResource($produit->load(['sousCategorie.categorie', 'parametreProduit.promotion', 'imageProduits']));
+        DB::transaction(function () use ($produit, $validated) {
+            $produitFields = ['nom', 'sous_categorie_id', 'description', 'stock', 'duree', 'couleur'];
+            $produitData = array_intersect_key($validated, array_flip($produitFields));
+            if (!empty($produitData)) {
+                $produit->update($produitData);
+            }
+
+            $paramFields = [
+                'reference', 'prix_total', 'prix_minimum', 'prix_echelonne',
+                'prix_cash', 'mode_paiement', 'frequence', 'seuil_livraison', 'promotion_id'
+            ];
+            $paramData = array_intersect_key($validated, array_flip($paramFields));
+
+            if (!empty($paramData)) {
+                if ($produit->parametreProduit) {
+                    $produit->parametreProduit->update($paramData);
+                } else {
+                    $paramData['produit_id'] = $produit->id;
+                    if (empty($paramData['reference'])) {
+                        $paramData['reference'] = 'PRD-' . str_pad($produit->id, 4, '0', STR_PAD_LEFT);
+                    }
+                    if (!isset($paramData['prix_total'])) {
+                        $paramData['prix_total'] = 0;
+                    }
+                    ParametreProduit::create($paramData);
+                }
+            }
+
+            if (isset($validated['images']) && is_array($validated['images'])) {
+                $imagesService = app(ImageStorageService::class);
+                foreach ($validated['images'] as $idx => $img) {
+                    if (is_array($img) && !empty($img['chemin']) && str_starts_with($img['chemin'], 'data:image')) {
+                        $preferredName = $img['nom_fichier'] ?? $img['nom'] ?? null;
+                        $savedPath = $imagesService->process($img['chemin'], 'produits', null, "images.{$idx}.chemin", $preferredName);
+                        if ($savedPath) {
+                            ImageProduit::create([
+                                'produit_id' => $produit->id,
+                                'chemin' => $savedPath,
+                                'position' => isset($img['position']) ? (int) $img['position'] : ($idx + 1),
+                                'is_principal' => !empty($img['is_principal']),
+                            ]);
+                        }
+                    }
+                }
+            }
+        });
+
+        return new ProduitResource($produit->fresh(['sousCategorie.categorie', 'parametreProduit.promotion', 'imageProduits']));
     }
 
     /**

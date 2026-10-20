@@ -205,7 +205,7 @@ class AdminController extends Controller
             'description' => ['nullable', 'string'],
             'stock' => ['required', 'integer', 'min:0'],
             'duree' => ['required', 'integer', 'min:0'],
-            'couleur' => ['nullable', 'string', 'max:100'],
+            'couleur' => ['nullable', 'string'],
             'promotion_id' => ['nullable', 'exists:promotions,id'],
             'reference' => ['nullable', 'string', 'max:255'],
             'prix_total' => ['required', 'numeric', 'min:0'],

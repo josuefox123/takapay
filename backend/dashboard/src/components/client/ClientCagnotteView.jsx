@@ -1,7 +1,7 @@
-import { useState } from 'react';
-import { formatFCFA, DEFAULT_CAGNOTTE } from '../../data/clientStore';
+import { useState, useEffect } from 'react';
+import { formatFCFA, DEFAULT_CAGNOTTE, createCagnotteFromOrder, getStoredCagnottes } from '../../data/clientStore';
 
-export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, user = null, onGoLogin }) {
+export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, user = null, onGoLogin, initialCagnotte = null }) {
   if (!user) {
     return (
       <div style={{ maxWidth: '640px', margin: '40px auto', padding: '16px 20px', textAlign: 'center' }}>
@@ -51,14 +51,23 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
     );
   }
 
-  const [cagnotte, setCagnotte] = useState(() => {
-    try {
-      const saved = localStorage.getItem('takapay-demo-cagnotte');
-      return saved ? JSON.parse(saved) : DEFAULT_CAGNOTTE;
-    } catch {
-      return DEFAULT_CAGNOTTE;
-    }
-  });
+  const [cagnottesList, setCagnottesList] = useState(() => getStoredCagnottes(user));
+  const [selectedCagnotteId, setSelectedCagnotteId] = useState(initialCagnotte?.id || null);
+  const [depositTargetId, setDepositTargetId] = useState(null);
+
+  useEffect(() => {
+    const syncFromStorage = () => {
+      const refreshed = getStoredCagnottes(user);
+      setCagnottesList(refreshed);
+    };
+
+    window.addEventListener('storage', syncFromStorage);
+    window.addEventListener('takapay_cagnotte_updated', syncFromStorage);
+    return () => {
+      window.removeEventListener('storage', syncFromStorage);
+      window.removeEventListener('takapay_cagnotte_updated', syncFromStorage);
+    };
+  }, [user]);
 
   const [activeFilter, setActiveFilter] = useState('Tous'); // 'Tous' | "Aujourd'hui" | 'Il y a 7 jours' | 'Il y a 30 jours'
   const [showDepositModal, setShowDepositModal] = useState(false);
@@ -68,7 +77,23 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [selectedReceipt, setSelectedReceipt] = useState(null);
 
-  // Filtrer les versements rattachés
+  // Cagnotte sélectionnée pour la vue détaillée (ou null pour afficher la liste)
+  const activeCagnotte = selectedCagnotteId
+    ? cagnottesList.find((c) => String(c.id) === String(selectedCagnotteId))
+    : null;
+
+  // Cagnotte cible pour les versements
+  const targetCagnotte =
+    (depositTargetId ? cagnottesList.find((c) => String(c.id) === String(depositTargetId)) : null) ||
+    activeCagnotte ||
+    cagnottesList[0] ||
+    {};
+
+  const cagnotte = activeCagnotte || {};
+  const p = cagnotte.product || {};
+  const isFinished = (cagnotte.pourcentage || 0) >= 100;
+
+  // Filtrer les versements rattachés à la cagnotte active
   const transactions = cagnotte.transactions || [];
   const filteredTransactions = transactions.filter((t) => {
     if (activeFilter === 'Tous') return true;
@@ -78,7 +103,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
     return true;
   });
 
-  // Nouveau versement rattaché à la cagnotte
+  // Nouveau versement rattaché à la cagnotte ciblée
   const handleMakeDeposit = (e) => {
     e.preventDefault();
     const amountNum = parseInt(depositAmount, 10);
@@ -89,9 +114,11 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
 
     setIsSubmitting(true);
     setTimeout(() => {
-      const newPaid = cagnotte.montantVerse + amountNum;
-      const newRemaining = Math.max(0, cagnotte.prixTotal - newPaid);
-      const newPercent = Math.min(100, Math.round((newPaid / cagnotte.prixTotal) * 100));
+      const target = targetCagnotte;
+      const targetTotal = Number(target.prixTotal) || 1;
+      const newPaid = (Number(target.montantVerse) || 0) + amountNum;
+      const newRemaining = Math.max(0, targetTotal - newPaid);
+      const newPercent = Math.min(100, Math.round((newPaid / targetTotal) * 100));
 
       const now = new Date();
       const dateFormatted =
@@ -110,21 +137,23 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
         type: 'versement',
         periode: 'aujourdhui',
         telephone: depositPhone,
-        client: 'Koffi DOSSOU',
+        client: user?.n || `${user?.prenom || ''} ${user?.nom || ''}`.trim() || 'Client TakaPay',
       };
 
       const isCompleted = newPercent >= 100;
       const updatedCagnotte = {
-        ...cagnotte,
+        ...target,
         montantVerse: newPaid,
         resteAPayer: newRemaining,
         pourcentage: newPercent,
         statut: isCompleted ? 'completed' : 'active',
-        transactions: [newTx, ...cagnotte.transactions],
+        transactions: [newTx, ...(target.transactions || [])],
       };
 
-      setCagnotte(updatedCagnotte);
+      const updatedList = cagnottesList.map((c) => (String(c.id) === String(target.id) ? updatedCagnotte : c));
+      setCagnottesList(updatedList);
       try {
+        localStorage.setItem('takapay-client-cagnottes', JSON.stringify(updatedList));
         localStorage.setItem('takapay-demo-cagnotte', JSON.stringify(updatedCagnotte));
       } catch {
         // Ignorer
@@ -132,123 +161,400 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
 
       setIsSubmitting(false);
       setShowDepositModal(false);
+      setDepositTargetId(null);
       if (onShowToast) {
         onShowToast(
           isCompleted
-            ? `🎉 Bravo ! Votre cagnotte est désormais financée à 100% !`
-            : `Versement de ${formatFCFA(amountNum)} rattaché à votre cagnotte avec succès !`
+            ? `🎉 Bravo ! Votre cagnotte "${target.product?.n}" est désormais financée à 100% !`
+            : `Versement de ${formatFCFA(amountNum)} rattaché à votre cagnotte "${target.product?.n}" avec succès !`
         );
       }
     }, 600);
   };
 
-  const p = cagnotte.product || {};
-  const isFinished = cagnotte.pourcentage >= 100;
-
   return (
     <div style={{ maxWidth: '1160px', margin: '0 auto', padding: '16px 20px 48px' }}>
-      {/* 1. Barre d'action supérieure */}
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          flexWrap: 'wrap',
-          gap: '16px',
-          marginBottom: '24px',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-          {onBack && (
-            <button
-              type="button"
-              onClick={onBack}
-              aria-label="Retour"
+      {/* VUE 1 : LISTE DE TOUTES LES CAGNOTTES */}
+      {!activeCagnotte && (
+        <>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              gap: '16px',
+              marginBottom: '24px',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+              {onBack && (
+                <button
+                  type="button"
+                  onClick={onBack}
+                  aria-label="Retour"
+                  style={{
+                    width: '42px',
+                    height: '42px',
+                    borderRadius: '50%',
+                    background: '#ffffff',
+                    border: '1.5px solid #ece5de',
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+                    display: 'grid',
+                    placeItems: 'center',
+                    cursor: 'pointer',
+                    fontSize: '20px',
+                    color: '#1b1716',
+                    fontWeight: 800,
+                  }}
+                >
+                  ‹
+                </button>
+              )}
+
+              <div>
+                <h1 style={{ fontSize: '26px', fontWeight: 800, color: '#1b1716', margin: 0, letterSpacing: '-0.5px' }}>
+                  Mes cagnottes
+                </h1>
+                <p style={{ margin: '4px 0 0', color: '#706966', fontSize: '13.5px' }}>
+                  {cagnottesList.length} cagnotte{cagnottesList.length > 1 ? 's' : ''} en cours ou complétée{cagnottesList.length > 1 ? 's' : ''}
+                </p>
+              </div>
+            </div>
+
+            {onGoCatalog && (
+              <button
+                type="button"
+                onClick={onGoCatalog}
+                style={{
+                  padding: '11px 20px',
+                  borderRadius: '12px',
+                  border: 'none',
+                  background: '#dc2626',
+                  color: '#ffffff',
+                  fontWeight: 800,
+                  fontSize: '14px',
+                  cursor: 'pointer',
+                  boxShadow: '0 4px 14px rgba(220,38,38,0.25)',
+                }}
+              >
+                + Démarrer une nouvelle cagnotte
+              </button>
+            )}
+          </div>
+
+          {cagnottesList.length === 0 ? (
+            <div
               style={{
-                width: '42px',
-                height: '42px',
-                borderRadius: '50%',
+                textAlign: 'center',
+                padding: '60px 24px',
                 background: '#ffffff',
-                border: '1.5px solid #ece5de',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
-                display: 'grid',
-                placeItems: 'center',
-                cursor: 'pointer',
-                fontSize: '20px',
-                color: '#1b1716',
-                fontWeight: 800,
+                borderRadius: '24px',
+                border: '1px solid #eee7e0',
+                maxWidth: '560px',
+                margin: '20px auto',
               }}
             >
-              ‹
-            </button>
-          )}
+              <div style={{ fontSize: '48px', marginBottom: '14px' }}>🛍️</div>
+              <h2 style={{ fontSize: '20px', fontWeight: 800, color: '#1b1716', margin: '0 0 10px' }}>
+                Aucune cagnotte pour le moment
+              </h2>
+              <p style={{ color: '#706966', fontSize: '14px', lineHeight: 1.6, margin: '0 0 22px' }}>
+                Vous n'avez pas encore initié de cagnotte. Parcourez notre catalogue et choisissez un article à financer à votre rythme.
+              </p>
+              {onGoCatalog && (
+                <button
+                  type="button"
+                  onClick={onGoCatalog}
+                  className="client-btn"
+                  style={{ padding: '12px 24px', fontSize: '14px' }}
+                >
+                  Découvrir les articles
+                </button>
+              )}
+            </div>
+          ) : (
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 340px), 1fr))',
+                gap: '20px',
+              }}
+            >
+              {cagnottesList.map((item) => {
+                const prod = item.product || {};
+                const isItemFinished = (item.pourcentage || 0) >= 100;
+                return (
+                  <div
+                    key={item.id}
+                    style={{
+                      background: '#ffffff',
+                      borderRadius: '20px',
+                      border: '1.5px solid #eee7e0',
+                      padding: '20px',
+                      boxShadow: '0 4px 16px rgba(0,0,0,0.03)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'space-between',
+                      gap: '16px',
+                    }}
+                  >
+                    <div>
+                      {/* Statut & Date */}
+                      <div
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          gap: '10px',
+                          marginBottom: '14px',
+                        }}
+                      >
+                        <span
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            padding: '4px 12px',
+                            borderRadius: '99px',
+                            background: isItemFinished ? '#dcfce7' : '#fee2e2',
+                            color: isItemFinished ? '#15803d' : '#b91c1c',
+                            fontSize: '11.5px',
+                            fontWeight: 800,
+                          }}
+                        >
+                          {isItemFinished ? '🎉 Complétée' : `● En cours (${item.pourcentage || 0}%)`}
+                        </span>
+                        <span style={{ fontSize: '11.5px', color: '#8c8580' }}>
+                          {item.dateCommande}
+                        </span>
+                      </div>
 
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <h1 style={{ fontSize: '26px', fontWeight: 800, color: '#1b1716', margin: 0, letterSpacing: '-0.5px' }}>
-                Ma cagnotte
-              </h1>
-              <span
+                      {/* Visuel et Titre */}
+                      <div style={{ display: 'flex', gap: '14px', alignItems: 'center', marginBottom: '14px' }}>
+                        <div
+                          style={{
+                            width: '74px',
+                            height: '74px',
+                            borderRadius: '14px',
+                            background: '#f7f2ed',
+                            overflow: 'hidden',
+                            flexShrink: 0,
+                            display: 'grid',
+                            placeItems: 'center',
+                          }}
+                        >
+                          <img
+                            src={prod.im || '/assets/category-phones.jpg'}
+                            alt={prod.n}
+                            style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                            onError={(e) => {
+                              e.target.src = '/assets/category-phones.jpg';
+                            }}
+                          />
+                        </div>
+
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <h3 style={{ fontSize: '16.5px', fontWeight: 800, color: '#1b1716', margin: '0 0 3px', lineHeight: 1.3 }}>
+                            {prod.n}
+                          </h3>
+                          <div style={{ fontSize: '12px', color: '#706966' }}>
+                            {prod.variant || 'Standard'}
+                          </div>
+                          <div style={{ fontSize: '13.5px', color: '#dc2626', fontWeight: 800, marginTop: '4px' }}>
+                            Total : {formatFCFA(item.prixTotal)}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Progression & Chiffres */}
+                      <div
+                        style={{
+                          background: '#faf6f3',
+                          borderRadius: '14px',
+                          padding: '12px 14px',
+                          border: '1px solid #f0e8e0',
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12.5px', marginBottom: '6px' }}>
+                          <span style={{ color: '#706966' }}>
+                            Cotisé : <b style={{ color: '#15803d' }}>{formatFCFA(item.montantVerse)}</b>
+                          </span>
+                          <span style={{ color: '#706966' }}>
+                            Reste : <b style={{ color: '#b91c1c' }}>{formatFCFA(item.resteAPayer)}</b>
+                          </span>
+                        </div>
+
+                        <div style={{ width: '100%', height: '8px', background: '#ece5de', borderRadius: '99px', overflow: 'hidden' }}>
+                          <div
+                            style={{
+                              height: '100%',
+                              width: `${Math.min(100, item.pourcentage || 0)}%`,
+                              background: isItemFinished
+                                ? 'linear-gradient(90deg, #16a34a, #22c55e)'
+                                : 'linear-gradient(90deg, #dc2626, #ef4444)',
+                              borderRadius: '99px',
+                              transition: 'width 0.3s ease',
+                            }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Actions sur chaque carte */}
+                    <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedCagnotteId(item.id)}
+                        style={{
+                          flex: 1,
+                          padding: '11px',
+                          borderRadius: '12px',
+                          border: '1.5px solid #dc2626',
+                          background: '#ffffff',
+                          color: '#dc2626',
+                          fontSize: '13px',
+                          fontWeight: 800,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Détails & Versements →
+                      </button>
+
+                      {!isItemFinished && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDepositTargetId(item.id);
+                            setShowDepositModal(true);
+                          }}
+                          style={{
+                            padding: '11px 16px',
+                            borderRadius: '12px',
+                            border: 'none',
+                            background: '#dc2626',
+                            color: '#ffffff',
+                            fontSize: '13px',
+                            fontWeight: 800,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          Verser
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* VUE 2 : DÉTAIL DE LA CAGNOTTE SÉLECTIONNÉE */}
+      {activeCagnotte && (
+        <>
+          {/* 1. Barre d'action supérieure */}
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              gap: '16px',
+              marginBottom: '24px',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+              <button
+                type="button"
+                onClick={() => setSelectedCagnotteId(null)}
+                aria-label="Retour à mes cagnottes"
                 style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '5px',
-                  padding: '4px 12px',
-                  borderRadius: '99px',
-                  background: isFinished ? '#dcfce7' : '#fee2e2',
-                  color: isFinished ? '#15803d' : '#b91c1c',
-                  fontSize: '12px',
+                  width: '42px',
+                  height: '42px',
+                  borderRadius: '50%',
+                  background: '#ffffff',
+                  border: '1.5px solid #ece5de',
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+                  display: 'grid',
+                  placeItems: 'center',
+                  cursor: 'pointer',
+                  fontSize: '20px',
+                  color: '#1b1716',
                   fontWeight: 800,
                 }}
               >
-                {isFinished ? '🎉 Financement complété' : `● Échéance en cours (${cagnotte.pourcentage}%)`}
-              </span>
+                ‹
+              </button>
+
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <h1 style={{ fontSize: '26px', fontWeight: 800, color: '#1b1716', margin: 0, letterSpacing: '-0.5px' }}>
+                    {p.n || 'Détail de la cagnotte'}
+                  </h1>
+                  <span
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '5px',
+                      padding: '4px 12px',
+                      borderRadius: '99px',
+                      background: isFinished ? '#dcfce7' : '#fee2e2',
+                      color: isFinished ? '#15803d' : '#b91c1c',
+                      fontSize: '12px',
+                      fontWeight: 800,
+                    }}
+                  >
+                    {isFinished ? '🎉 Financement complété' : `● Échéance en cours (${cagnotte.pourcentage}%)`}
+                  </span>
+                </div>
+                <p style={{ margin: '4px 0 0', color: '#706966', fontSize: '13.5px' }}>
+                  Suivez l'avancement de vos cotisations et l'ensemble des versements rattachés.
+                </p>
+              </div>
             </div>
-            <p style={{ margin: '4px 0 0', color: '#706966', fontSize: '13.5px' }}>
-              Suivez l'avancement de vos cotisations et l'ensemble des versements rattachés.
-            </p>
+
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button
+                type="button"
+                onClick={() => setSelectedCagnotteId(null)}
+                style={{
+                  padding: '10px 18px',
+                  borderRadius: '12px',
+                  border: '1px solid #e2dad0',
+                  background: '#ffffff',
+                  color: '#1b1716',
+                  fontWeight: 700,
+                  fontSize: '13.5px',
+                  cursor: 'pointer',
+                }}
+              >
+                ← Toutes mes cagnottes ({cagnottesList.length})
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setDepositTargetId(cagnotte.id);
+                  setShowDepositModal(true);
+                }}
+                style={{
+                  padding: '10px 20px',
+                  borderRadius: '12px',
+                  border: 'none',
+                  background: '#dc2626',
+                  color: '#ffffff',
+                  fontWeight: 800,
+                  fontSize: '14px',
+                  cursor: 'pointer',
+                  boxShadow: '0 4px 14px rgba(220,38,38,0.25)',
+                }}
+              >
+                Effectuer un versement
+              </button>
+            </div>
           </div>
-        </div>
-
-        <div style={{ display: 'flex', gap: '10px' }}>
-          {onGoCatalog && (
-            <button
-              type="button"
-              onClick={onGoCatalog}
-              style={{
-                padding: '10px 18px',
-                borderRadius: '12px',
-                border: '1px solid #e2dad0',
-                background: '#ffffff',
-                color: '#1b1716',
-                fontWeight: 700,
-                fontSize: '13.5px',
-                cursor: 'pointer',
-              }}
-            >
-              + Autre article
-            </button>
-          )}
-
-          <button
-            type="button"
-            onClick={() => setShowDepositModal(true)}
-            style={{
-              padding: '10px 20px',
-              borderRadius: '12px',
-              border: 'none',
-              background: '#dc2626',
-              color: '#ffffff',
-              fontWeight: 800,
-              fontSize: '14px',
-              cursor: 'pointer',
-              boxShadow: '0 4px 14px rgba(220,38,38,0.25)',
-            }}
-          >
-            Effectuer un versement
-          </button>
-        </div>
-      </div>
 
       {/* Bannière de félicitations si complétée */}
       {isFinished && (
@@ -269,10 +575,10 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
         >
           <div>
             <h3 style={{ margin: '0 0 4px', fontSize: '18px', fontWeight: 800 }}>
-              Félicitations Koffi ! Votre iPhone 16 Pro Max est entièrement financé !
+              Félicitations {user?.prenom || 'Koffi'} ! Votre {p.n || 'article'} est entièrement financé !
             </h3>
             <p style={{ margin: 0, fontSize: '13.5px', opacity: 0.95 }}>
-              L'intégralité des 450 000 FCFA a été versée. Notre équipe prépare votre appareil pour la remise en main propre.
+              L'intégralité des {formatFCFA(cagnotte.prixTotal)} a été versée. Notre équipe prépare votre commande pour la remise en main propre.
             </p>
           </div>
           <span style={{ fontSize: '32px' }}>🎁📦</span>
@@ -316,7 +622,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
               }}
             >
               <img
-                src={p.im || '/assets/product-iphone-16.jpg'}
+                src={p.im || '/assets/category-phones.jpg'}
                 alt={p.n}
                 style={{ width: '100%', height: '100%', objectFit: 'contain' }}
                 onError={(e) => {
@@ -482,7 +788,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                 Historique de transactions
               </h3>
               <small style={{ color: '#706966', fontSize: '12px' }}>
-                Versements rattachés à l'iPhone 16 pro max
+                Versements rattachés à {p.n || 'votre article'}
               </small>
             </div>
 
@@ -661,6 +967,8 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
           </div>
         </div>
       </div>
+      </>
+      )}
 
       {/* Modal 1 : Nouveau virement interactif */}
       {showDepositModal && (
@@ -695,12 +1003,15 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
               <div>
                 <h3 style={{ fontSize: '18px', fontWeight: 800, margin: 0 }}>Nouveau versement cagnotte</h3>
                 <small style={{ color: '#706966', fontSize: '12px' }}>
-                  Rattaché à votre iPhone 16 pro max
+                  Rattaché à votre {targetCagnotte?.product?.n || 'article'}
                 </small>
               </div>
               <button
                 type="button"
-                onClick={() => setShowDepositModal(false)}
+                onClick={() => {
+                  setShowDepositModal(false);
+                  setDepositTargetId(null);
+                }}
                 style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#706966' }}
               >
                 ✕
@@ -714,7 +1025,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
               </label>
 
               <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
-                {['25000', '50000', '100000', String(cagnotte.resteAPayer)].map((amt) => (
+                {['25000', '50000', '100000', String(targetCagnotte.resteAPayer || 0)].map((amt) => (
                   <button
                     key={amt}
                     type="button"
@@ -730,7 +1041,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                       cursor: 'pointer',
                     }}
                   >
-                    {amt === String(cagnotte.resteAPayer) ? 'Solde total' : `${parseInt(amt, 10) / 1000}k`}
+                    {amt === String(targetCagnotte.resteAPayer) ? 'Solde total' : `${parseInt(amt, 10) / 1000}k`}
                   </button>
                 ))}
               </div>
@@ -877,11 +1188,11 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
             <div style={{ display: 'grid', gap: '10px', fontSize: '13px', marginBottom: '20px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span style={{ color: '#706966' }}>Bénéficiaire :</span>
-                <b>Koffi DOSSOU</b>
+                <b>{selectedReceipt.client || user?.n || `${user?.prenom || ''} ${user?.nom || ''}`.trim() || 'Client TakaPay'}</b>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span style={{ color: '#706966' }}>Cagnotte article :</span>
-                <b>iPhone 16 pro max</b>
+                <b>{p.n || 'Article TakaPay'}</b>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span style={{ color: '#706966' }}>Moyen utilisé :</span>

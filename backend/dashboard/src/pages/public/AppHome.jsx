@@ -10,7 +10,7 @@ import ClientProfileView from '../../components/client/ClientProfileView';
 import ClientNotificationsView from '../../components/client/ClientNotificationsView';
 import ClientWelcomeModal from '../../components/client/ClientWelcomeModal';
 import ClientCookieBanner from '../../components/client/ClientCookieBanner';
-import { PRODUCTS, DEFAULT_CLIENT_USER, mapAdminProductToClient, getMergedProducts, refreshProductsFromStore } from '../../data/clientStore';
+import { PRODUCTS, DEFAULT_CLIENT_USER, mapAdminProductToClient, getMergedProducts, refreshProductsFromStore, createCagnotteFromOrder, getStoredCagnottes } from '../../data/clientStore';
 import { adminService } from '../../services/adminService';
 import FloatingActionButtons from '../../components/public/FloatingActionButtons';
 import './client.css';
@@ -57,6 +57,9 @@ export default function AppHome({ initialTab = 'home' }) {
       return [];
     }
   });
+
+  const [cagnotteKey, setCagnotteKey] = useState(0);
+  const [currentCagnotte, setCurrentCagnotte] = useState(null);
 
   // Modal de bienvenue
   const [showWelcome, setShowWelcome] = useState(false);
@@ -209,6 +212,28 @@ export default function AppHome({ initialTab = 'home' }) {
     } catch {
       // Ignorer
     }
+
+    // Création de la cagnotte pour le produit sélectionné
+    const newCagnotte = createCagnotteFromOrder(orderData, user);
+    setCurrentCagnotte(newCagnotte);
+
+    // Mettre à jour la liste complète des cagnottes
+    const currentList = getStoredCagnottes(user);
+    const updatedCagnottes = [newCagnotte, ...currentList.filter((c) => c.id !== newCagnotte.id)];
+    try {
+      localStorage.setItem('takapay-client-cagnottes', JSON.stringify(updatedCagnottes));
+      localStorage.setItem('takapay-demo-cagnotte', JSON.stringify(newCagnotte));
+    } catch {
+      // Ignorer
+    }
+
+    try {
+      window.dispatchEvent(new CustomEvent('takapay_cagnotte_updated', { detail: updatedCagnottes }));
+    } catch {
+      // Ignorer
+    }
+
+    setCagnotteKey((k) => k + 1);
     showToast(`Votre commande pour ${orderData.product.n} a été initiée avec succès !`);
     setView('cag');
   };
@@ -293,6 +318,7 @@ export default function AppHome({ initialTab = 'home' }) {
           {view === 'product' && (
             <ClientProductDetail
               productId={activeProductId}
+              product={productsList.find((p) => p.id === Number(activeProductId)) || PRODUCTS.find((p) => p.id === Number(activeProductId))}
               onBack={() => setView(previousView || 'shop')}
               onStartOrder={handleStartOrder}
               onSelectProduct={handleOpenProduct}
@@ -312,6 +338,7 @@ export default function AppHome({ initialTab = 'home' }) {
 
           {view === 'cag' && (
             <ClientCagnotteView
+              key={cagnotteKey}
               user={user}
               onBack={() => setView(previousView || 'home')}
               onShowToast={showToast}

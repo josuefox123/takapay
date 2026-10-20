@@ -1122,13 +1122,27 @@ export default function ClientProfileView({
             </div>
 
             <div style={{ display: 'grid', gap: '12px', maxHeight: '360px', overflowY: 'auto' }}>
-              <div style={{ padding: '12px', background: '#faf6f3', borderRadius: '12px', border: '1px solid #f0e8e0' }}>
-                <b style={{ fontSize: '13.5px', color: '#1b1716', display: 'block' }}>Cagnotte iPhone 16 Pro Max</b>
-                <span style={{ fontSize: '11px', color: '#706966' }}>10 oct 2026 · Acompte 100 000 FCFA</span>
-                <span style={{ display: 'inline-block', fontSize: '11px', color: '#15803d', fontWeight: 700, background: '#dcfce7', padding: '2px 8px', borderRadius: '99px', marginTop: '6px' }}>
-                  En cours (25%)
-                </span>
-              </div>
+              {(() => {
+                let savedCag = null;
+                try {
+                  const raw = localStorage.getItem('takapay-demo-cagnotte');
+                  if (raw) savedCag = JSON.parse(raw);
+                } catch {}
+                const cagProdName = savedCag?.product?.n || 'en cours';
+                const cagDate = savedCag?.dateCommande || 'Récemment';
+                const cagPaid = savedCag ? `${Number(savedCag.montantVerse).toLocaleString()} FCFA` : '100 000 FCFA';
+                const cagPercent = savedCag?.pourcentage !== undefined ? savedCag.pourcentage : 25;
+                const isFinished = cagPercent >= 100;
+                return (
+                  <div style={{ padding: '12px', background: '#faf6f3', borderRadius: '12px', border: '1px solid #f0e8e0' }}>
+                    <b style={{ fontSize: '13.5px', color: '#1b1716', display: 'block' }}>Cagnotte {cagProdName}</b>
+                    <span style={{ fontSize: '11px', color: '#706966' }}>{cagDate} · Acompte {cagPaid}</span>
+                    <span style={{ display: 'inline-block', fontSize: '11px', color: '#15803d', fontWeight: 700, background: '#dcfce7', padding: '2px 8px', borderRadius: '99px', marginTop: '6px' }}>
+                      {isFinished ? 'Financée (100%)' : `En cours (${cagPercent}%)`}
+                    </span>
+                  </div>
+                );
+              })()}
 
               <div style={{ padding: '12px', background: '#faf6f3', borderRadius: '12px', border: '1px solid #f0e8e0' }}>
                 <b style={{ fontSize: '13.5px', color: '#1b1716', display: 'block' }}>Versement MoMo +50 000 FCFA</b>
