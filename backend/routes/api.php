@@ -21,6 +21,7 @@ use App\Http\Controllers\Api\SousCategorieController;
 use App\Http\Controllers\Api\TransactionController;
 use App\Http\Controllers\Api\UserController;
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\PaymentController;
 
 /*
 |--------------------------------------------------------------------------
@@ -106,4 +107,16 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
     Route::apiResource('notifications', NotificationController::class);
     Route::apiResource('commandes', CommandeController::class);
     Route::apiResource('commande-produits', CommandeProduitController::class);
+
+
 });
+
+/*
+|--------------------------------------------------------------------------
+| ROUTES PAIEMENTS FEEXPAY (Initiation, Confirmation & Webhook)
+|--------------------------------------------------------------------------
+*/
+Route::post('/payment/initiate', [PaymentController::class, 'initiatePayment']);
+Route::post('/payment/confirm', [PaymentController::class, 'confirmPayment']);
+Route::post('/payment/webhook', [PaymentController::class, 'handleWebhook']);
+

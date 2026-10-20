@@ -26,6 +26,16 @@ class RegisterRequest extends FormRequest
         if ($this->has('confirmPin') && ! $this->has('code_pin_confirmation')) {
             $merge['code_pin_confirmation'] = $this->confirmPin;
         }
+        if ($this->has('telephone')) {
+            $cleaned = preg_replace('/\s+/', '', (string) $this->telephone);
+            $merge['telephone'] = $cleaned;
+            if (! $this->has('email') || empty($this->email)) {
+                $digits = preg_replace('/\D/', '', $cleaned);
+                if (! empty($digits)) {
+                    $merge['email'] = $digits.'@client.takapay.bj';
+                }
+            }
+        }
         if (! empty($merge)) {
             $this->merge($merge);
         }
@@ -49,8 +59,8 @@ class RegisterRequest extends FormRequest
         return [
             'code_pin.confirmed' => 'La confirmation du code PIN ne correspond pas au premier code saisi.',
             'code_pin.digits' => 'Le code PIN doit comporter exactement 6 chiffres.',
-            'telephone.unique' => 'Ce numéro de téléphone est déjà associé à un compte.',
-            'email.unique' => 'Cette adresse email est déjà associée à un compte.',
+            'telephone.unique' => 'Ce numéro de téléphone est déjà associé à un compte. Veuillez vous connecter.',
+            'email.unique' => 'Ce numéro de téléphone est déjà associé à un compte. Veuillez vous connecter.',
         ];
     }
 }

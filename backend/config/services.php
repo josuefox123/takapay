@@ -35,4 +35,10 @@ return [
         ],
     ],
 
+    'feexpay' => [
+    'shop_id' => env('FEEXPAY_SHOP_ID'),
+    'api_key' => env('FEEXPAY_API_KEY'),
+    'mode' => env('FEEXPAY_MODE', 'SANDBOX'),
+],
+
 ];

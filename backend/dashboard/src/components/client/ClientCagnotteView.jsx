@@ -53,6 +53,62 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
 
   const [cagnotte, setCagnotte] = useState(() => {
     try {
+      const savedOrders = localStorage.getItem('takapay-client-orders');
+      if (savedOrders) {
+        const list = JSON.parse(savedOrders);
+        if (Array.isArray(list) && list.length > 0) {
+          const latest = list[0];
+          const prod = latest.product || {};
+          const total = Number(prod.p || latest.initialAmount || 0);
+          const paid = Number(latest.initialAmount || 0);
+          const remaining = Math.max(0, total - paid);
+          const percent = total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : 100;
+          const d = new Date(latest.date || Date.now());
+          const dateFormatted = d.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' });
+          const timeFormatted = d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+
+          return {
+            product: {
+              id: prod.id,
+              n: prod.n || 'Article',
+              c: prod.c || 'Catalogue',
+              subcategory: prod.subcategory || '',
+              p: total,
+              im: prod.im || '',
+              variant: latest.selectedColor?.name || latest.selectedColor || 'Standard',
+            },
+            dateCommande: dateFormatted,
+            prixTotal: total,
+            montantVerse: paid,
+            resteAPayer: remaining,
+            pourcentage: percent,
+            moyenPaiement: latest.provider === 'MTN' ? 'MTN Mobile Money' : 'Moov Money',
+            prochainVersement: {
+              montant: Math.round(remaining / 3) || 0,
+              date: 'Le mois prochain',
+            },
+            dateFinEstimee: 'Dans 3 mois',
+            moisRestants: 3,
+            statut: percent >= 100 ? 'completed' : 'active',
+            transactions: [
+              {
+                id: `tx-${Date.now()}`,
+                reference: latest.reference || latest.transactionId || 'TK-CMD-001',
+                titre: 'Premier versement (FeexPay)',
+                methode: latest.provider === 'MTN' ? 'MTN Mobile Money' : 'Moov Money',
+                date: `${dateFormatted} ${timeFormatted}`,
+                montant: paid,
+                statut: 'Réussi',
+                type: 'versement',
+                periode: 'aujourdhui',
+                telephone: user?.telephone || user?.phone || '',
+                client: `${user?.prenom || ''} ${user?.nom || ''}`.trim() || 'Client Takapay',
+              },
+            ],
+          };
+        }
+      }
+
       const saved = localStorage.getItem('takapay-demo-cagnotte');
       return saved ? JSON.parse(saved) : DEFAULT_CAGNOTTE;
     } catch {
@@ -64,7 +120,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
   const [showDepositModal, setShowDepositModal] = useState(false);
   const [depositAmount, setDepositAmount] = useState('50000');
   const [depositProvider, setDepositProvider] = useState('MTN');
-  const [depositPhone, setDepositPhone] = useState('+229 0162180290');
+  const [depositPhone, setDepositPhone] = useState(user?.telephone || user?.phone || '+229 0161741402');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [selectedReceipt, setSelectedReceipt] = useState(null);
 
@@ -269,10 +325,10 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
         >
           <div>
             <h3 style={{ margin: '0 0 4px', fontSize: '18px', fontWeight: 800 }}>
-              Félicitations Koffi ! Votre iPhone 16 Pro Max est entièrement financé !
+              Félicitations {user?.prenom || user?.nom || 'Client'} ! Votre {p.n || 'article'} est entièrement financé !
             </h3>
             <p style={{ margin: 0, fontSize: '13.5px', opacity: 0.95 }}>
-              L'intégralité des 450 000 FCFA a été versée. Notre équipe prépare votre appareil pour la remise en main propre.
+              L'intégralité des {formatFCFA(cagnotte.prixTotal)} a été versée. Notre équipe prépare votre commande pour la livraison.
             </p>
           </div>
           <span style={{ fontSize: '32px' }}>🎁📦</span>
@@ -482,7 +538,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                 Historique de transactions
               </h3>
               <small style={{ color: '#706966', fontSize: '12px' }}>
-                Versements rattachés à l'iPhone 16 pro max
+                Versements rattachés à : {p.n || 'votre article'}
               </small>
             </div>
 
@@ -639,7 +695,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                 Mode de prélèvement privilégié
               </small>
               <b style={{ fontSize: '13.5px', color: '#1b1716' }}>
-                MTN Mobile Money (+229 01 62 18 02 90)
+                {cagnotte.moyenPaiement || 'MTN Mobile Money'} ({user?.telephone || user?.phone || depositPhone})
               </b>
             </div>
 
@@ -695,7 +751,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
               <div>
                 <h3 style={{ fontSize: '18px', fontWeight: 800, margin: 0 }}>Nouveau versement cagnotte</h3>
                 <small style={{ color: '#706966', fontSize: '12px' }}>
-                  Rattaché à votre iPhone 16 pro max
+                  Rattaché à votre {p.n || 'article'}
                 </small>
               </div>
               <button
@@ -877,11 +933,11 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
             <div style={{ display: 'grid', gap: '10px', fontSize: '13px', marginBottom: '20px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span style={{ color: '#706966' }}>Bénéficiaire :</span>
-                <b>Koffi DOSSOU</b>
+                <b>{selectedReceipt.client || `${user?.prenom || ''} ${user?.nom || ''}`.trim() || 'Client Takapay'}</b>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span style={{ color: '#706966' }}>Cagnotte article :</span>
-                <b>iPhone 16 pro max</b>
+                <b>{p.n || 'Article'}</b>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span style={{ color: '#706966' }}>Moyen utilisé :</span>

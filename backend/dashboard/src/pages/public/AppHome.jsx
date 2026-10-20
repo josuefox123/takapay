@@ -204,8 +204,59 @@ export default function AppHome({ initialTab = 'home' }) {
   const handleCompleteOrder = (orderData) => {
     const updated = [orderData, ...orders];
     setOrders(updated);
+
+    const prod = orderData.product || {};
+    const total = Number(prod.p || orderData.initialAmount || 0);
+    const paid = Number(orderData.initialAmount || 0);
+    const remaining = Math.max(0, total - paid);
+    const percent = total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : 100;
+    const now = new Date();
+    const dateFormatted = now.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' });
+    const timeFormatted = now.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+
+    const newCagnotte = {
+      product: {
+        id: prod.id,
+        n: prod.n || 'Article',
+        c: prod.c || 'Catalogue',
+        subcategory: prod.subcategory || '',
+        p: total,
+        im: prod.im || '',
+        variant: orderData.selectedColor?.name || orderData.selectedColor || 'Standard',
+      },
+      dateCommande: dateFormatted,
+      prixTotal: total,
+      montantVerse: paid,
+      resteAPayer: remaining,
+      pourcentage: percent,
+      moyenPaiement: orderData.provider === 'MTN' ? 'MTN Mobile Money' : 'Moov Money',
+      prochainVersement: {
+        montant: Math.round(remaining / 3) || 0,
+        date: 'Le mois prochain',
+      },
+      dateFinEstimee: 'Dans 3 mois',
+      moisRestants: 3,
+      statut: percent >= 100 ? 'completed' : 'active',
+      transactions: [
+        {
+          id: `tx-${Date.now()}`,
+          reference: orderData.reference || orderData.transactionId || `TK-MM-${Math.floor(100000 + Math.random() * 900000)}`,
+          titre: 'Premier versement (FeexPay)',
+          methode: orderData.provider === 'MTN' ? 'MTN Mobile Money' : 'Moov Money',
+          date: `${dateFormatted} ${timeFormatted}`,
+          montant: paid,
+          statut: 'Réussi',
+          type: 'versement',
+          periode: 'aujourdhui',
+          telephone: user?.telephone || user?.phone || '',
+          client: `${user?.prenom || ''} ${user?.nom || ''}`.trim() || 'Client Takapay',
+        },
+      ],
+    };
+
     try {
       localStorage.setItem('takapay-client-orders', JSON.stringify(updated));
+      localStorage.setItem('takapay-demo-cagnotte', JSON.stringify(newCagnotte));
     } catch {
       // Ignorer
     }

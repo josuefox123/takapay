@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { FeexPayProvider, FeexPayButton } from '@feexpay/react-sdk';
+import '@feexpay/react-sdk/style.css';
 import { formatFCFA } from '../../data/clientStore';
 import { adminService } from '../../services/adminService';
 
@@ -18,7 +20,7 @@ export default function ClientOrderFlow({
   const [nom, setNom] = useState('');
   const [prenom, setPrenom] = useState('');
   const [phone, setPhone] = useState('+229 ');
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(user?.email && !user.email.endsWith('@client.takapay.bj') ? user.email : '');
   const [terms, setTerms] = useState(true);
 
   // Formulaire connexion
@@ -33,6 +35,7 @@ export default function ClientOrderFlow({
   const [provider, setProvider] = useState('MTN');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [paymentData, setPaymentData] = useState(null);
 
   // Connexion Google
   const handleGoogleAuth = async () => {
@@ -200,24 +203,67 @@ export default function ClientOrderFlow({
     }
   };
 
-  // Étape 4 : Validation Paiement
-  const handlePaymentSubmit = (e) => {
+  // Étape 4 : Initiation et Validation Paiement FeexPay
+  const handlePaymentSubmit = async (e) => {
     e.preventDefault();
     if (!provider) {
       setError('Veuillez choisir votre moyen de paiement.');
       return;
     }
+    setError('');
     setSubmitting(true);
-    setTimeout(() => {
+    try {
+      const initRes = await adminService.initiatePayment({
+        amount: initialAmount,
+        produit_id: product?.id,
+        moyen_paiement: provider,
+        user_id: user?.id,
+      });
+      setPaymentData(initRes);
+    } catch (err) {
+      setError(err.message || 'Impossible d’initialiser le paiement avec FeexPay.');
+    } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleFeexpayCallback = async (response) => {
+    console.log('FeexPay callback reçu :', response);
+    const isSuccess = response && (
+      response.status?.toUpperCase() === 'SUCCESSFUL' ||
+      response.status?.toUpperCase() === 'SUCCESS' ||
+      response.status?.toUpperCase() === 'PAID'
+    );
+
+    if (isSuccess) {
+      const orderRef = paymentData?.reference || response.reference;
+      const customerEmail = response.email || (email && email.trim()) || (user?.email && !user.email.endsWith('@client.takapay.bj') ? user.email : null);
+      try {
+        await adminService.confirmPayment({
+          reference: orderRef,
+          status: 'successful',
+          transaction_id: response.transaction_id || response.reference || orderRef,
+          amount: response.amount || initialAmount,
+          reseau: response.reseau || provider,
+          user_id: user?.id,
+          client_email: customerEmail,
+        });
+      } catch (err) {
+        console.warn('Erreur confirmation backend :', err);
+      }
+
       onCompleteOrder({
         product,
         selectedColor,
-        provider,
-        initialAmount: product.payment?.minimumStart || product.p,
+        provider: response.reseau || provider,
+        initialAmount,
+        reference: orderRef,
+        transactionId: response.transaction_id || orderRef,
         date: new Date().toISOString(),
       });
-    }, 800);
+    } else {
+      setError(response?.message || 'Le paiement FeexPay a été annulé ou n’a pas abouti.');
+    }
   };
 
   const initialAmount = product?.payment?.minimumStart || product?.p || 0;
@@ -503,63 +549,122 @@ export default function ClientOrderFlow({
               </div>
             </div>
 
-            {/* Choix de l'opérateur Mobile Money */}
-            <form onSubmit={handlePaymentSubmit}>
-              <div className="provider-list">
-                <button
-                  type="button"
-                  className={`provider-option ${provider === 'MTN' ? 'on' : ''}`}
-                  onClick={() => setProvider('MTN')}
-                >
-                  <span className="provider-mark" style={{ background: '#fef08a', color: '#854d0e' }}>
-                    M
-                  </span>
-                  <span className="provider-copy">
-                    <b>MTN Mobile Money</b>
-                    <small>Paiement instantané depuis votre compte MTN Bénin</small>
-                  </span>
-                  <span style={{ marginLeft: 'auto', fontWeight: 800 }}>
-                    {provider === 'MTN' ? '●' : '○'}
-                  </span>
-                </button>
+            {/* Choix de l'opérateur Mobile Money et Déclenchement FeexPay */}
+            {paymentData ? (
+              <FeexPayProvider>
+                <div style={{ marginTop: '16px' }}>
+                  <div style={{ marginBottom: '14px', padding: '12px', background: 'rgba(22, 163, 74, 0.08)', borderRadius: '10px', fontSize: '13px', color: '#166534', fontWeight: 600 }}>
+                    Commande prête (Réf: {paymentData.reference}). Cliquez ci-dessous pour ouvrir le module sécurisé FeexPay.
+                  </div>
 
-                <button
-                  type="button"
-                  className={`provider-option ${provider === 'Moov' ? 'on' : ''}`}
-                  onClick={() => setProvider('Moov')}
-                >
-                  <span className="provider-mark" style={{ background: '#fed7aa', color: '#9a3412' }}>
-                    M
-                  </span>
-                  <span className="provider-copy">
-                    <b>Moov Money</b>
-                    <small>Règlement sécurisé via Moov Money Bénin</small>
-                  </span>
-                  <span style={{ marginLeft: 'auto', fontWeight: 800 }}>
-                    {provider === 'Moov' ? '●' : '○'}
-                  </span>
-                </button>
-              </div>
+                  <FeexPayButton
+                    id={paymentData.shop_id}
+                    token={paymentData.api_key}
+                    amount={paymentData.amount}
+                    description={`Takapay - ${product?.n || 'Commande'}`}
+                    mode={paymentData.mode || 'SANDBOX'}
+                    currency="XOF"
+                    customId={paymentData.reference}
+                    first_name={user?.prenom || user?.nom || prenom || nom || 'Client'}
+                    email={user?.email && !user?.email.endsWith('@client.takapay.bj') ? user.email : (email || undefined)}
+                    callback={handleFeexpayCallback}
+                    buttonText={`Payer ${formatFCFA(initialAmount)} avec FeexPay`}
+                    buttonClass="client-btn w100"
+                  />
 
-              <div className="checkout-note">
-                🔒 Transaction sécurisée par notification push Mobile Money sur votre téléphone.
-              </div>
-
-              {error && (
-                <div style={{ color: 'var(--r)', fontSize: '13px', margin: '8px 0', fontWeight: 600 }}>
-                  {error}
+                  <button
+                    type="button"
+                    onClick={() => setPaymentData(null)}
+                    style={{
+                      marginTop: '12px',
+                      background: 'none',
+                      border: 'none',
+                      color: 'var(--mu)',
+                      fontSize: '13px',
+                      cursor: 'pointer',
+                      width: '100%',
+                      textAlign: 'center',
+                      textDecoration: 'underline',
+                    }}
+                  >
+                    ← Changer d'opérateur ou modifier
+                  </button>
                 </div>
-              )}
+              </FeexPayProvider>
+            ) : (
+              <form onSubmit={handlePaymentSubmit}>
+                <div className="provider-list">
+                  <button
+                    type="button"
+                    className={`provider-option ${provider === 'MTN' ? 'on' : ''}`}
+                    onClick={() => setProvider('MTN')}
+                  >
+                    <span className="provider-mark" style={{ background: '#fef08a', color: '#854d0e' }}>
+                      M
+                    </span>
+                    <span className="provider-copy">
+                      <b>MTN Mobile Money</b>
+                      <small>Paiement instantané depuis votre compte MTN Bénin</small>
+                    </span>
+                    <span style={{ marginLeft: 'auto', fontWeight: 800 }}>
+                      {provider === 'MTN' ? '●' : '○'}
+                    </span>
+                  </button>
 
-              <button
-                type="submit"
-                className="client-btn w100"
-                disabled={submitting}
-                style={{ padding: '16px', fontSize: '15px' }}
-              >
-                {submitting ? 'Validation en cours...' : `Confirmer avec ${provider === 'MTN' ? 'MTN MoMo' : 'Moov Money'}`}
-              </button>
-            </form>
+                  <button
+                    type="button"
+                    className={`provider-option ${provider === 'Moov' ? 'on' : ''}`}
+                    onClick={() => setProvider('Moov')}
+                  >
+                    <span className="provider-mark" style={{ background: '#fed7aa', color: '#9a3412' }}>
+                      M
+                    </span>
+                    <span className="provider-copy">
+                      <b>Moov Money</b>
+                      <small>Règlement sécurisé via Moov Money Bénin</small>
+                    </span>
+                    <span style={{ marginLeft: 'auto', fontWeight: 800 }}>
+                      {provider === 'Moov' ? '●' : '○'}
+                    </span>
+                  </button>
+                </div>
+ 
+                {(!user?.email || user.email.endsWith('@client.takapay.bj')) && (
+                  <div style={{ marginTop: '14px', marginBottom: '8px' }}>
+                    <label className="fl" htmlFor="client-receipt-email">
+                      Votre adresse email pour recevoir le reçu (recommandé)
+                    </label>
+                    <input
+                      id="client-receipt-email"
+                      type="email"
+                      className="fi"
+                      placeholder="Ex: votre.email@gmail.com"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                    />
+                  </div>
+                )}
+
+                <div className="checkout-note">
+                  🔒 Transaction sécurisée par notification push Mobile Money sur votre téléphone via FeexPay.
+                </div>
+
+                {error && (
+                  <div style={{ color: 'var(--r)', fontSize: '13px', margin: '8px 0', fontWeight: 600 }}>
+                    {error}
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  className="client-btn w100"
+                  disabled={submitting}
+                  style={{ padding: '16px', fontSize: '15px' }}
+                >
+                  {submitting ? 'Préparation FeexPay...' : `Valider avec ${provider === 'MTN' ? 'MTN MoMo' : 'Moov Money'}`}
+                </button>
+              </form>
+            )}
           </div>
         )}
       </div>

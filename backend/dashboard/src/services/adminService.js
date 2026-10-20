@@ -21,6 +21,48 @@ export const adminService = {
     return localStorage.getItem('takapay_admin_token');
   },
 
+  getClientToken() {
+    return localStorage.getItem('takapay_client_token');
+  },
+
+  async initiatePayment(payload) {
+    const token = this.getClientToken() || this.getToken();
+    const res = await fetch(`${API_BASE}/payment/initiate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data.message || 'Erreur lors de l’initialisation du paiement FeexPay.');
+    }
+    return data;
+  },
+
+  async confirmPayment(payload) {
+    const token = this.getClientToken() || this.getToken();
+    const res = await fetch(`${API_BASE}/payment/confirm`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data.message || 'Erreur lors de la confirmation du paiement.');
+    }
+    return data;
+  },
+
   getUser() {
     try {
       const u = localStorage.getItem('takapay_admin_user');
