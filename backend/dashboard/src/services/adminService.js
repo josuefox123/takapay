@@ -590,10 +590,10 @@ export const adminService = {
   },
 
   // 4. GESTION DES UTILISATEURS
-  async getUsers() {
+  async getUsers(page = 1) {
     const token = this.getToken();
     try {
-      const res = await fetch(`${API_BASE}/users`, {
+      const res = await fetch(`${API_BASE}/users?page=${page}`, {
         headers: {
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
           Accept: 'application/json',
@@ -601,13 +601,19 @@ export const adminService = {
       });
       if (res.ok) {
         const json = await res.json();
-        const list = json.data || json;
-        if (Array.isArray(list)) {
-          return list;
-        }
+        const list = json.data || (Array.isArray(json) ? json : []);
+        return {
+          data: Array.isArray(list) ? list : [],
+          meta: json.meta || {
+            current_page: page,
+            last_page: 1,
+            total: Array.isArray(list) ? list.length : 0,
+            per_page: 15,
+          },
+        };
       }
     } catch (_error) { void _error; }
-    return [];
+    return { data: [], meta: { current_page: 1, last_page: 1, total: 0, per_page: 15 } };
   },
 
   async updateUserStatus(userId, status) {

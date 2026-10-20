@@ -3,22 +3,28 @@ import { adminService } from '../../services/adminService';
 
 export default function AdminUsersView({ onShowToast }) {
   const [users, setUsers] = useState([]);
+  const [meta, setMeta] = useState({ current_page: 1, last_page: 1, total: 0, per_page: 15 });
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [roleFilter, setRoleFilter] = useState('tous');
   const [search, setSearch] = useState('');
 
   useEffect(() => {
     let isMounted = true;
-    adminService.getUsers().then((data) => {
+    setLoading(true);
+    adminService.getUsers(page).then((res) => {
       if (isMounted) {
-        setUsers(data);
+        setUsers(res.data || []);
+        if (res.meta) {
+          setMeta(res.meta);
+        }
         setLoading(false);
       }
     });
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [page]);
 
   const handleStatusChange = async (userId, newStatus) => {
     await adminService.updateUserStatus(userId, newStatus);
@@ -33,6 +39,15 @@ export default function AdminUsersView({ onShowToast }) {
     const matchSearch = fullName.includes(search.toLowerCase()) || (u.telephone || '').includes(search);
     const matchRole = roleFilter === 'tous' || u.role === roleFilter;
     return matchSearch && matchRole;
+  });
+
+  const sorted = [...filtered].sort((a, b) => {
+    const nomA = (a.nom || '').trim().toLowerCase();
+    const nomB = (b.nom || '').trim().toLowerCase();
+    if (nomA !== nomB) return nomA.localeCompare(nomB, 'fr', { sensitivity: 'base' });
+    const prenomA = (a.prenom || '').trim().toLowerCase();
+    const prenomB = (b.prenom || '').trim().toLowerCase();
+    return prenomA.localeCompare(prenomB, 'fr', { sensitivity: 'base' });
   });
 
   return (
@@ -86,10 +101,10 @@ export default function AdminUsersView({ onShowToast }) {
       </div>
 
       {/* Tableau des utilisateurs */}
-      <div className="admin-panel">
+      <div className="admin-panel" style={{ padding: 0, overflow: 'hidden' }}>
         {loading ? (
           <p style={{ textAlign: 'center', color: 'var(--mut)', padding: '24px' }}>Chargement des utilisateurs...</p>
-        ) : filtered.length === 0 ? (
+        ) : sorted.length === 0 ? (
           <p style={{ textAlign: 'center', color: 'var(--mut)', padding: '24px' }}>Aucun utilisateur trouvé.</p>
         ) : (
           <div style={{ overflowX: 'auto' }}>
@@ -104,7 +119,7 @@ export default function AdminUsersView({ onShowToast }) {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((u) => (
+                {sorted.map((u) => (
                   <tr key={u.id}>
                     <td>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -175,6 +190,86 @@ export default function AdminUsersView({ onShowToast }) {
             </table>
           </div>
         )}
+
+        {/* Barre de pagination */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '16px 20px',
+            borderTop: '1px solid var(--line)',
+            flexWrap: 'wrap',
+            gap: '12px',
+          }}
+        >
+          <div style={{ fontSize: '13px', color: 'var(--mut)' }}>
+            Affichage de <strong>{users.length}</strong> sur <strong>{meta.total}</strong> utilisateur{meta.total > 1 ? 's' : ''} (Page {meta.current_page} sur {meta.last_page || 1})
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <button
+              type="button"
+              disabled={page <= 1 || loading}
+              onClick={() => setPage((prev) => Math.max(prev - 1, 1))}
+              style={{
+                padding: '8px 14px',
+                borderRadius: '8px',
+                border: '1px solid var(--line)',
+                background: page <= 1 || loading ? 'var(--bg)' : 'var(--card)',
+                color: page <= 1 || loading ? 'var(--mut)' : 'var(--ink)',
+                fontSize: '13px',
+                fontWeight: 500,
+                cursor: page <= 1 || loading ? 'not-allowed' : 'pointer',
+                fontFamily: 'inherit',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                opacity: page <= 1 || loading ? 0.6 : 1,
+                transition: 'all 0.2s ease',
+              }}
+            >
+              &larr; Précédent
+            </button>
+
+            <span
+              style={{
+                padding: '6px 12px',
+                borderRadius: '8px',
+                background: 'var(--soft)',
+                color: 'var(--r)',
+                fontSize: '13px',
+                fontWeight: 600,
+              }}
+            >
+              {meta.current_page} / {meta.last_page || 1}
+            </span>
+
+            <button
+              type="button"
+              disabled={page >= meta.last_page || loading}
+              onClick={() => setPage((prev) => Math.min(prev + 1, meta.last_page))}
+              style={{
+                padding: '8px 14px',
+                borderRadius: '8px',
+                border: '1px solid var(--line)',
+                background: page >= meta.last_page || loading ? 'var(--bg)' : 'var(--card)',
+                color: page >= meta.last_page || loading ? 'var(--mut)' : 'var(--ink)',
+                fontSize: '13px',
+                fontWeight: 500,
+                cursor: page >= meta.last_page || loading ? 'not-allowed' : 'pointer',
+                fontFamily: 'inherit',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                opacity: page >= meta.last_page || loading ? 0.6 : 1,
+                transition: 'all 0.2s ease',
+              }}
+            >
+              Suivant &rarr;
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );
