@@ -18,7 +18,7 @@ export default function Header({
   onSelectPromo,
   onSearch,
   searchQuery = '',
-  cagnotteCount = 2,
+  cagnotteCount = 0,
 }) {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const location = useLocation();

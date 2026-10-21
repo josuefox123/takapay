@@ -6,7 +6,7 @@ const Container = forwardRef(function Container({ as: Tag = 'div', className = '
   return (
     <Tag
       ref={ref}
-      className={cn('mx-auto w-[calc(100%_-_32px)] sm:w-[min(1640px,calc(100%_-_48px))]', className)}
+      className={cn('mx-auto w-[calc(100%-32px)] sm:w-[min(1640px,calc(100%-48px))]', className)}
       {...props}
     />
   );

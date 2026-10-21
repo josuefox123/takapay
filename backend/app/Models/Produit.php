@@ -21,6 +21,7 @@ class Produit extends Model
         'stock',
         'duree',
         'couleur',
+        'video',
     ];
 
     protected function casts(): array

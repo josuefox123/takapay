@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { adminService } from '../../services/adminService';
 
 export default function ClientProfileView({
@@ -37,7 +37,9 @@ export default function ClientProfileView({
   const [adresse, setAdresse] = useState('');
 
   // Mise à jour automatique des champs lorsque l'utilisateur connecté change
-  useEffect(() => {
+  const [prevUser, setPrevUser] = useState(user);
+  if (user !== prevUser) {
+    setPrevUser(user);
     if (user) {
       const full = (user.prenom && user.nom ? `${user.prenom} ${user.nom}` : user.nom || user.n || '').trim();
       setNom(full || user.nom || user.n || '');
@@ -46,7 +48,7 @@ export default function ClientProfileView({
       if (user.ville) setVille(user.ville);
       if (user.adresse) setAdresse(user.adresse);
     }
-  }, [user]);
+  }
 
   // Formulaire préférences notifications
   const [notifySms, setNotifySms] = useState(true);
@@ -68,8 +70,8 @@ export default function ClientProfileView({
         setAuthError('Veuillez renseigner votre téléphone ou email.');
         return;
       }
-      if (loginPin.length !== 6) {
-        setAuthError('Le code PIN doit comporter 6 chiffres.');
+      if (!loginPin.trim()) {
+        setAuthError('Veuillez renseigner votre code PIN ou mot de passe.');
         return;
       }
 
@@ -104,8 +106,10 @@ export default function ClientProfileView({
         setAuthError('Veuillez renseigner votre prénom.');
         return;
       }
-      if (signupPhone.replace(/\D/g, '').length < 8) {
-        setAuthError('Veuillez renseigner un numéro de téléphone valide.');
+      const digits = signupPhone.replace(/\D/g, '');
+      const localDigits = signupPhone.includes('+229') || digits.startsWith('229') ? digits.replace(/^229/, '') : digits;
+      if (localDigits.length < 8) {
+        setAuthError('Veuillez renseigner un numéro de téléphone valide (au moins 8 chiffres).');
         return;
       }
       if (signupPin.length !== 6) {
@@ -141,7 +145,6 @@ export default function ClientProfileView({
           prenom: backendUser.prenom || signupPrenom.trim(),
           phone: backendUser.telephone || signupPhone.trim(),
           email: backendUser.email || signupEmail.trim(),
-          code_pin: backendUser.code_pin || signupPin,
           photo_profil: backendUser.photo_profil || null,
           avatar: backendUser.photo_profil || null,
           id: backendUser.id || signupPhone.trim(),
@@ -156,38 +159,7 @@ export default function ClientProfileView({
   };
 
   const handleGoogleAuth = async () => {
-    setAuthError('');
-    setIsSubmittingAuth(true);
-    try {
-      const googlePayload = {
-        nom: 'DOSSOU',
-        prenom: 'Koffi',
-        email: 'koffi.dossou@gmail.com',
-        telephone: '+229 01 62 18 02 90',
-        photo_profil: null,
-      };
-
-      const result = await adminService.googleAuth(googlePayload);
-      const backendUser = result.user || {};
-      const fullName = `${backendUser.prenom || ''} ${backendUser.nom || ''}`.trim() || backendUser.nom || 'Koffi DOSSOU';
-      const loggedUser = {
-        ...backendUser,
-        n: fullName,
-        nom: backendUser.nom || 'DOSSOU',
-        prenom: backendUser.prenom || 'Koffi',
-        phone: backendUser.telephone || googlePayload.telephone,
-        email: backendUser.email || googlePayload.email,
-        photo_profil: backendUser.photo_profil || null,
-        avatar: backendUser.photo_profil || null,
-        id: backendUser.id || 'google-user-dossou',
-        authProvider: 'google',
-      };
-      if (onUpdateUser) onUpdateUser(loggedUser, result.message || 'Compte créé avec succès !');
-    } catch (err) {
-      setAuthError(err.message || 'Erreur lors de la connexion Google.');
-    } finally {
-      setIsSubmittingAuth(false);
-    }
+    setAuthError('La connexion directe avec Google sera disponible prochainement. Veuillez vous inscrire ou vous connecter avec votre numéro de téléphone.');
   };
 
   const handleSaveProfile = (e) => {
@@ -388,17 +360,15 @@ export default function ClientProfileView({
                   onChange={(e) => setLoginId(e.target.value)}
                 />
 
-                <label className="fl" htmlFor="profile-login-pin">Code PIN personnel (6 chiffres)</label>
+                <label className="fl" htmlFor="profile-login-pin">Code PIN ou mot de passe</label>
                 <input
                   id="profile-login-pin"
                   type="password"
-                  inputMode="numeric"
-                  maxLength={6}
                   required
                   className="fi"
                   placeholder="••••••"
                   value={loginPin}
-                  onChange={(e) => setLoginPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  onChange={(e) => setLoginPin(e.target.value)}
                 />
               </>
             )}
@@ -1122,13 +1092,29 @@ export default function ClientProfileView({
             </div>
 
             <div style={{ display: 'grid', gap: '12px', maxHeight: '360px', overflowY: 'auto' }}>
-              <div style={{ padding: '12px', background: '#faf6f3', borderRadius: '12px', border: '1px solid #f0e8e0' }}>
-                <b style={{ fontSize: '13.5px', color: '#1b1716', display: 'block' }}>Cagnotte iPhone 16 Pro Max</b>
-                <span style={{ fontSize: '11px', color: '#706966' }}>10 oct 2026 · Acompte 100 000 FCFA</span>
-                <span style={{ display: 'inline-block', fontSize: '11px', color: '#15803d', fontWeight: 700, background: '#dcfce7', padding: '2px 8px', borderRadius: '99px', marginTop: '6px' }}>
-                  En cours (25%)
-                </span>
-              </div>
+              {(() => {
+                let savedCag = null;
+                try {
+                  const raw = localStorage.getItem('takapay-demo-cagnotte');
+                  if (raw) savedCag = JSON.parse(raw);
+                } catch {
+                  // Ignorer l'erreur de lecture
+                }
+                const cagProdName = savedCag?.product?.n || 'en cours';
+                const cagDate = savedCag?.dateCommande || 'Récemment';
+                const cagPaid = savedCag ? `${Number(savedCag.montantVerse).toLocaleString()} FCFA` : '100 000 FCFA';
+                const cagPercent = savedCag?.pourcentage !== undefined ? savedCag.pourcentage : 25;
+                const isFinished = cagPercent >= 100;
+                return (
+                  <div style={{ padding: '12px', background: '#faf6f3', borderRadius: '12px', border: '1px solid #f0e8e0' }}>
+                    <b style={{ fontSize: '13.5px', color: '#1b1716', display: 'block' }}>Cagnotte {cagProdName}</b>
+                    <span style={{ fontSize: '11px', color: '#706966' }}>{cagDate} · Acompte {cagPaid}</span>
+                    <span style={{ display: 'inline-block', fontSize: '11px', color: '#15803d', fontWeight: 700, background: '#dcfce7', padding: '2px 8px', borderRadius: '99px', marginTop: '6px' }}>
+                      {isFinished ? 'Financée (100%)' : `En cours (${cagPercent}%)`}
+                    </span>
+                  </div>
+                );
+              })()}
 
               <div style={{ padding: '12px', background: '#faf6f3', borderRadius: '12px', border: '1px solid #f0e8e0' }}>
                 <b style={{ fontSize: '13.5px', color: '#1b1716', display: 'block' }}>Versement MoMo +50 000 FCFA</b>

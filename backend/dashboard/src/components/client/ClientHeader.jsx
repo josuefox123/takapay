@@ -11,7 +11,7 @@ export default function ClientHeader({
   onSelectCategory,
   onSearch,
   searchQuery = '',
-  cagnotteCount = 2,
+  cagnotteCount = 0,
 }) {
   const [localSearch, setLocalSearch] = useState(searchQuery);
   const [selectedCat, setSelectedCat] = useState('Tous');

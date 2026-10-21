@@ -16,6 +16,9 @@ export default function ClientOrderFlow({
   const [step, setStep] = useState(user ? 'payment' : 'auth');
   const [authMode, setAuthMode] = useState('signup'); // 'signup' ou 'login'
 
+  // Étape effective : si l'utilisateur est déjà connecté, orienter directement sur le paiement
+  const currentStep = user && step === 'auth' ? 'payment' : step;
+
   // Formulaire inscription
   const [nom, setNom] = useState('');
   const [prenom, setPrenom] = useState('');
@@ -36,57 +39,12 @@ export default function ClientOrderFlow({
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [paymentData, setPaymentData] = useState(null);
+  const [orderType, setOrderType] = useState('cagnotte'); // 'cagnotte' ou 'cash'
+  const [successModalData, setSuccessModalData] = useState(null);
 
   // Connexion Google
   const handleGoogleAuth = async () => {
-    setError('');
-    setSubmitting(true);
-    try {
-      const googlePayload = {
-        nom: 'DOSSOU',
-        prenom: 'Koffi',
-        email: 'koffi.dossou@gmail.com',
-        telephone: '+229 01 62 18 02 90',
-        photo_profil: null, // Pas de photo par défaut : prendra l'initiale du nom
-      };
-
-      const result = await adminService.googleAuth(googlePayload);
-      const backendUser = result.user || {};
-      const fullName = `${backendUser.prenom || ''} ${backendUser.nom || ''}`.trim() || backendUser.nom || 'Koffi DOSSOU';
-
-      const loggedUser = {
-        ...backendUser,
-        n: fullName,
-        nom: backendUser.nom || 'DOSSOU',
-        prenom: backendUser.prenom || 'Koffi',
-        phone: backendUser.telephone || googlePayload.telephone,
-        email: backendUser.email || googlePayload.email,
-        photo_profil: backendUser.photo_profil || null,
-        avatar: backendUser.photo_profil || null,
-        id: backendUser.id || 'google-user-dossou',
-        authProvider: 'google',
-      };
-
-      onUserAuthSuccess(loggedUser, result.message || 'Compte créé avec succès !');
-      setStep('payment');
-    } catch (err) {
-      // En cas d'indisponibilité réseau, fallback avec initiales
-      const fallbackUser = {
-        n: 'Koffi DOSSOU',
-        nom: 'DOSSOU',
-        prenom: 'Koffi',
-        email: 'koffi.dossou@gmail.com',
-        phone: '+229 01 62 18 02 90',
-        photo_profil: null,
-        avatar: null,
-        id: 'google-user-dossou',
-        authProvider: 'google',
-      };
-      onUserAuthSuccess(fallbackUser, 'Compte créé avec succès !');
-      setStep('payment');
-    } finally {
-      setSubmitting(false);
-    }
+    setError('La connexion directe avec Google sera disponible prochainement. Veuillez vous inscrire ou vous connecter avec votre numéro de téléphone.');
   };
 
   // Étape 1 : Inscription ou Connexion
@@ -103,8 +61,10 @@ export default function ClientOrderFlow({
         setError('Veuillez renseigner votre prénom.');
         return;
       }
-      if (phone.replace(/\D/g, '').length < 8) {
-        setError('Veuillez renseigner un numéro de téléphone valide.');
+      const digits = phone.replace(/\D/g, '');
+      const localDigits = phone.includes('+229') || digits.startsWith('229') ? digits.replace(/^229/, '') : digits;
+      if (localDigits.length < 8) {
+        setError('Veuillez renseigner un numéro de téléphone valide (au moins 8 chiffres).');
         return;
       }
       if (!terms) {
@@ -117,8 +77,8 @@ export default function ClientOrderFlow({
         setError('Veuillez renseigner votre téléphone ou email.');
         return;
       }
-      if (loginPin.length !== 6) {
-        setError('Le PIN personnel doit comporter 6 chiffres.');
+      if (!loginPin.trim()) {
+        setError('Veuillez renseigner votre code PIN ou mot de passe.');
         return;
       }
 
@@ -189,7 +149,6 @@ export default function ClientOrderFlow({
         prenom: backendUser.prenom || prenom.trim(),
         phone: backendUser.telephone || phone.trim(),
         email: backendUser.email || email.trim(),
-        code_pin: backendUser.code_pin || newPin,
         photo_profil: backendUser.photo_profil || null,
         avatar: backendUser.photo_profil || null,
         id: backendUser.id || phone.trim(),
@@ -203,6 +162,18 @@ export default function ClientOrderFlow({
     }
   };
 
+  const effectivePrice = selectedColor?.price || product?.p || 0;
+  const cashPrice = Number(product?.prix_cash || product?.payment?.prixCash || effectivePrice);
+  const basePrice = product?.p && product.p > 0 ? product.p : effectivePrice;
+  const priceRatio = basePrice > 0 ? effectivePrice / basePrice : 1;
+  const minDeposit = Math.max(
+    100,
+    product?.payment?.minimumStart
+      ? Math.round(product.payment.minimumStart * priceRatio)
+      : Math.round(effectivePrice * 0.1)
+  );
+  const paymentAmount = orderType === 'cash' ? cashPrice : minDeposit;
+
   // Étape 4 : Initiation et Validation Paiement FeexPay
   const handlePaymentSubmit = async (e) => {
     e.preventDefault();
@@ -214,8 +185,9 @@ export default function ClientOrderFlow({
     setSubmitting(true);
     try {
       const initRes = await adminService.initiatePayment({
-        amount: initialAmount,
+        amount: paymentAmount,
         produit_id: product?.id,
+        type_paiement: orderType,
         moyen_paiement: provider,
         user_id: user?.id,
       });
@@ -243,30 +215,38 @@ export default function ClientOrderFlow({
           reference: orderRef,
           status: 'successful',
           transaction_id: response.transaction_id || response.reference || orderRef,
-          amount: response.amount || initialAmount,
+          amount: response.amount || paymentAmount,
           reseau: response.reseau || provider,
           user_id: user?.id,
           client_email: customerEmail,
         });
-      } catch (err) {
-        console.warn('Erreur confirmation backend :', err);
-      }
 
-      onCompleteOrder({
-        product,
-        selectedColor,
-        provider: response.reseau || provider,
-        initialAmount,
-        reference: orderRef,
-        transactionId: response.transaction_id || orderRef,
-        date: new Date().toISOString(),
-      });
+        // Persister l'adresse email réelle sur le profil utilisateur
+        if (customerEmail && user && (!user.email || user.email.endsWith('@client.takapay.bj'))) {
+          const updatedUser = { ...user, email: customerEmail };
+          onUserAuthSuccess(updatedUser, 'Paiement confirmé ! Votre reçu sera envoyé par email.');
+        }
+
+        // Afficher le popup de félicitations avant la redirection vers les cagnottes ou commandes
+        setSuccessModalData({
+          product: { ...product, p: effectivePrice },
+          selectedColor,
+          provider: response.reseau || provider,
+          initialAmount: paymentAmount,
+          totalPrice: orderType === 'cash' ? cashPrice : effectivePrice,
+          reference: orderRef,
+          transactionId: response.transaction_id || orderRef,
+          date: new Date().toISOString(),
+          isCash: orderType === 'cash',
+        });
+      } catch (err) {
+        console.error('Erreur confirmation backend :', err);
+        setError(`Votre paiement a été validé par FeexPay mais la confirmation sur le serveur a échoué (${err.message || 'erreur réseau'}). Veuillez contacter le support avec la référence : ${orderRef}`);
+      }
     } else {
       setError(response?.message || 'Le paiement FeexPay a été annulé ou n’a pas abouti.');
     }
   };
-
-  const initialAmount = product?.payment?.minimumStart || product?.p || 0;
 
   return (
     <div className="flow-shell auth-flow-shell">
@@ -282,7 +262,7 @@ export default function ClientOrderFlow({
 
         <div className="flow-card" style={{ position: 'relative', zIndex: 2 }}>
           {/* Étape 1 : Authentification */}
-          {step === 'auth' && (
+          {currentStep === 'auth' && (
             <div>
               <span className="flow-label">ÉTAPE 1 · COMPTE CLIENT</span>
               <h1>{authMode === 'signup' ? 'Créer votre compte' : 'Connexion sécurisée'}</h1>
@@ -367,17 +347,15 @@ export default function ClientOrderFlow({
                       onChange={(e) => setLoginId(e.target.value)}
                     />
 
-                    <label className="fl" htmlFor="login-pin">Code PIN (6 chiffres)</label>
+                    <label className="fl" htmlFor="login-pin">Code PIN ou mot de passe</label>
                     <input
                       id="login-pin"
                       type="password"
-                      inputMode="numeric"
-                      maxLength={6}
                       required
                       className="fi"
                       placeholder="••••••"
                       value={loginPin}
-                      onChange={(e) => setLoginPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                      onChange={(e) => setLoginPin(e.target.value)}
                     />
                   </>
                 )}
@@ -438,7 +416,7 @@ export default function ClientOrderFlow({
           )}
 
         {/* Étape 2 : Créer le PIN */}
-        {step === 'pin-create' && (
+        {currentStep === 'pin-create' && (
           <div>
             <span className="flow-label">ÉTAPE 2 · CODE PERSONNEL</span>
             <h1>Créez votre code PIN</h1>
@@ -476,6 +454,23 @@ export default function ClientOrderFlow({
               >
                 Continuer
               </button>
+
+              <button
+                type="button"
+                onClick={() => { setError(''); setStep('auth'); }}
+                style={{
+                  marginTop: '12px',
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--mu)',
+                  fontSize: '13px',
+                  cursor: 'pointer',
+                  width: '100%',
+                  textAlign: 'center',
+                }}
+              >
+                ← Modifier mes coordonnées
+              </button>
             </form>
 
             <p className="auth-footnote">
@@ -485,7 +480,7 @@ export default function ClientOrderFlow({
         )}
 
         {/* Étape 3 : Confirmer le PIN */}
-        {step === 'pin-confirm' && (
+        {currentStep === 'pin-confirm' && (
           <div>
             <span className="flow-label">ÉTAPE 3 · CONFIRMATION DU PIN</span>
             <h1>Confirmez votre PIN</h1>
@@ -506,8 +501,33 @@ export default function ClientOrderFlow({
               />
 
               {error && (
-                <div style={{ color: 'var(--r)', textAlign: 'center', fontSize: '13px', margin: '8px 0' }}>
-                  {error}
+                <div style={{ textAlign: 'center', margin: '8px 0' }}>
+                  <div style={{ color: 'var(--r)', fontSize: '13px', fontWeight: 600 }}>
+                    {error}
+                  </div>
+                  {error.toLowerCase().includes('connecter') && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setError('');
+                        setAuthMode('login');
+                        setLoginId(phone.trim());
+                        setStep('auth');
+                      }}
+                      style={{
+                        marginTop: '6px',
+                        background: 'none',
+                        border: 'none',
+                        color: 'var(--p, #c62828)',
+                        fontSize: '12px',
+                        fontWeight: 700,
+                        textDecoration: 'underline',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Se connecter avec ce numéro
+                    </button>
+                  )}
                 </div>
               )}
 
@@ -519,18 +539,86 @@ export default function ClientOrderFlow({
               >
                 {submitting ? 'Création de votre compte en cours...' : 'Confirmer mon compte'}
               </button>
+
+              <button
+                type="button"
+                onClick={() => { setError(''); setStep('pin-create'); }}
+                disabled={submitting}
+                style={{
+                  marginTop: '12px',
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--mu)',
+                  fontSize: '13px',
+                  cursor: 'pointer',
+                  width: '100%',
+                  textAlign: 'center',
+                }}
+              >
+                ← Modifier le code PIN
+              </button>
             </form>
           </div>
         )}
 
         {/* Étape 4 : Choix du Moyen de Paiement */}
-        {step === 'payment' && (
+        {currentStep === 'payment' && (
           <div>
             <span className="flow-label">ÉTAPE 4 · MOYEN DE PAIEMENT</span>
             <h1>Finaliser votre commande</h1>
             <p className="flow-lead">
               Votre compte est prêt. Choisissez votre portefeuille Mobile Money pour lancer votre premier versement.
             </p>
+
+            {/* Choix de la modalité : Comptant (Cash) vs Cagnotte */}
+            <div style={{ marginBottom: '16px' }}>
+              <div style={{ fontSize: '13px', fontWeight: 700, marginBottom: '8px', color: 'var(--tx)' }}>
+                Choisissez votre modalité de règlement :
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <button
+                  type="button"
+                  onClick={() => { setOrderType('cagnotte'); setPaymentData(null); }}
+                  style={{
+                    padding: '12px 10px',
+                    borderRadius: '10px',
+                    border: orderType === 'cagnotte' ? '2px solid var(--p, #c62828)' : '1px solid var(--bd, #e5e7eb)',
+                    background: orderType === 'cagnotte' ? 'rgba(198, 40, 40, 0.06)' : 'var(--bg-card, #fff)',
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                    transition: 'all 0.2s',
+                  }}
+                >
+                  <div style={{ fontSize: '13px', fontWeight: 800, color: orderType === 'cagnotte' ? 'var(--p, #c62828)' : 'inherit' }}>
+                    🎯 Lancer une cagnotte
+                  </div>
+                  <div style={{ fontSize: '11px', color: 'var(--mu)', marginTop: '4px' }}>
+                    1er versement : <b>{formatFCFA(minDeposit)}</b>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => { setOrderType('cash'); setPaymentData(null); }}
+                  style={{
+                    padding: '12px 10px',
+                    borderRadius: '10px',
+                    border: orderType === 'cash' ? '2px solid var(--p, #c62828)' : '1px solid var(--bd, #e5e7eb)',
+                    background: orderType === 'cash' ? 'rgba(198, 40, 40, 0.06)' : 'var(--bg-card, #fff)',
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                    transition: 'all 0.2s',
+                  }}
+                >
+                  <div style={{ fontSize: '13px', fontWeight: 800, color: orderType === 'cash' ? 'var(--p, #c62828)' : 'inherit' }}>
+                    💳 Payer comptant (Cash)
+                  </div>
+                  <div style={{ fontSize: '11px', color: 'var(--mu)', marginTop: '4px' }}>
+                    Total direct : <b>{formatFCFA(cashPrice)}</b>
+                  </div>
+                </button>
+              </div>
+            </div>
 
             {/* Récapitulatif de l'article */}
             <div className="payment-summary">
@@ -542,12 +630,21 @@ export default function ClientOrderFlow({
               )}
 
               <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '10px' }}>
-                <span style={{ color: 'var(--mu)', fontSize: '13px' }}>1er versement à effectuer :</span>
+                <span style={{ color: 'var(--mu)', fontSize: '13px' }}>
+                  {orderType === 'cash' ? 'Prix comptant (Cash) à régler :' : '1er versement à effectuer :'}
+                </span>
                 <strong style={{ fontSize: '16px', color: 'var(--r)' }}>
-                  {formatFCFA(initialAmount)}
+                  {formatFCFA(paymentAmount)}
                 </strong>
               </div>
             </div>
+
+            {/* Affichage des erreurs au niveau global de l'étape de paiement */}
+            {error && (
+              <div style={{ color: 'var(--r)', fontSize: '13px', margin: '12px 0', padding: '10px 12px', background: 'rgba(239, 68, 68, 0.08)', borderRadius: '8px', fontWeight: 600 }}>
+                {error}
+              </div>
+            )}
 
             {/* Choix de l'opérateur Mobile Money et Déclenchement FeexPay */}
             {paymentData ? (
@@ -565,10 +662,12 @@ export default function ClientOrderFlow({
                     mode={paymentData.mode || 'SANDBOX'}
                     currency="XOF"
                     customId={paymentData.reference}
-                    first_name={user?.prenom || user?.nom || prenom || nom || 'Client'}
-                    email={user?.email && !user?.email.endsWith('@client.takapay.bj') ? user.email : (email || undefined)}
+                    callback_info={{
+                      first_name: user?.prenom || user?.nom || prenom || nom || 'Client',
+                      email: (email && email.trim()) || user?.email || '',
+                    }}
                     callback={handleFeexpayCallback}
-                    buttonText={`Payer ${formatFCFA(initialAmount)} avec FeexPay`}
+                    buttonText={`Payer ${formatFCFA(paymentAmount)} avec FeexPay`}
                     buttonClass="client-btn w100"
                   />
 
@@ -649,12 +748,6 @@ export default function ClientOrderFlow({
                   🔒 Transaction sécurisée par notification push Mobile Money sur votre téléphone via FeexPay.
                 </div>
 
-                {error && (
-                  <div style={{ color: 'var(--r)', fontSize: '13px', margin: '8px 0', fontWeight: 600 }}>
-                    {error}
-                  </div>
-                )}
-
                 <button
                   type="submit"
                   className="client-btn w100"
@@ -668,6 +761,110 @@ export default function ClientOrderFlow({
           </div>
         )}
       </div>
+
+      {/* Modal Popup de Félicitations après paiement */}
+      {successModalData && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0, 0, 0, 0.65)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 9999,
+            padding: '20px',
+            backdropFilter: 'blur(4px)',
+          }}
+        >
+          <div
+            style={{
+              background: '#fff',
+              borderRadius: '20px',
+              maxWidth: '440px',
+              width: '100%',
+              padding: '28px 24px',
+              textAlign: 'center',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+            }}
+          >
+            <div
+              style={{
+                width: '64px',
+                height: '64px',
+                borderRadius: '50%',
+                background: 'linear-gradient(135deg, #22c55e, #16a34a)',
+                color: '#fff',
+                fontSize: '32px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                margin: '0 auto 16px',
+                boxShadow: '0 10px 15px -3px rgba(34, 197, 94, 0.3)',
+              }}
+            >
+              🎉
+            </div>
+
+            <h2 style={{ fontSize: '20px', fontWeight: 800, margin: '0 0 8px', color: '#111827' }}>
+              {successModalData.isCash
+                ? 'Paiement confirmé avec succès !'
+                : 'Félicitations ! Votre cagnotte est créée !'}
+            </h2>
+
+            <p style={{ fontSize: '14px', color: '#4b5563', lineHeight: 1.5, margin: '0 0 20px' }}>
+              {successModalData.isCash ? (
+                <>
+                  Votre règlement comptant de <b>{formatFCFA(successModalData.initialAmount)}</b> pour <b>{successModalData.product?.n}</b> a bien été validé. Votre commande est prise en charge !
+                </>
+              ) : (
+                <>
+                  Votre premier versement de <b>{formatFCFA(successModalData.initialAmount)}</b> pour <b>{successModalData.product?.n}</b> a été validé par FeexPay. Votre cagnotte est active !
+                </>
+              )}
+            </p>
+
+            <div
+              style={{
+                background: '#f9fafb',
+                borderRadius: '12px',
+                padding: '14px',
+                marginBottom: '20px',
+                fontSize: '13px',
+                textAlign: 'left',
+                border: '1px solid #e5e7eb',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                <span style={{ color: '#6b7280' }}>Référence :</span>
+                <span style={{ fontWeight: 600, color: '#111827' }}>{successModalData.reference}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                <span style={{ color: '#6b7280' }}>Montant versé :</span>
+                <span style={{ fontWeight: 700, color: '#16a34a' }}>{formatFCFA(successModalData.initialAmount)}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: '#6b7280' }}>Prix total de l’article :</span>
+                <span style={{ fontWeight: 700, color: '#111827' }}>{formatFCFA(successModalData.totalPrice)}</span>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              className="client-btn w100"
+              style={{
+                padding: '14px',
+                fontSize: '15px',
+                fontWeight: 800,
+                borderRadius: '12px',
+              }}
+              onClick={() => onCompleteOrder(successModalData)}
+            >
+              {successModalData.isCash ? 'Voir mes commandes →' : 'Accéder à mes cagnottes →'}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -10,7 +10,7 @@ import ClientProfileView from '../../components/client/ClientProfileView';
 import ClientNotificationsView from '../../components/client/ClientNotificationsView';
 import ClientWelcomeModal from '../../components/client/ClientWelcomeModal';
 import ClientCookieBanner from '../../components/client/ClientCookieBanner';
-import { PRODUCTS, DEFAULT_CLIENT_USER, mapAdminProductToClient, getMergedProducts, refreshProductsFromStore } from '../../data/clientStore';
+import { PRODUCTS, DEFAULT_CLIENT_USER, mapAdminProductToClient, getMergedProducts, refreshProductsFromStore, createCagnotteFromOrder, getStoredCagnottes, mapBackendCagnotteToClient } from '../../data/clientStore';
 import { adminService } from '../../services/adminService';
 import FloatingActionButtons from '../../components/public/FloatingActionButtons';
 import './client.css';
@@ -57,6 +57,9 @@ export default function AppHome({ initialTab = 'home' }) {
       return [];
     }
   });
+
+  const [cagnotteKey, setCagnotteKey] = useState(0);
+  const [currentCagnotte, setCurrentCagnotte] = useState(null);
 
   // Modal de bienvenue
   const [showWelcome, setShowWelcome] = useState(false);
@@ -112,7 +115,21 @@ export default function AppHome({ initialTab = 'home' }) {
       }
     };
 
+    const loadLiveCagnottes = async () => {
+      try {
+        const live = await adminService.getCagnottes();
+        if (isMounted && Array.isArray(live)) {
+          const converted = live.map(mapBackendCagnotteToClient).filter(Boolean);
+          try {
+            localStorage.setItem('takapay_backend_cagnottes', JSON.stringify(converted));
+          } catch { /* ignore */ }
+          setCagnotteKey((k) => k + 1);
+        }
+      } catch { /* ignore */ }
+    };
+
     loadLiveProducts();
+    loadLiveCagnottes();
 
     const handleProductsUpdated = () => {
       refreshProductsFromStore();
@@ -122,10 +139,17 @@ export default function AppHome({ initialTab = 'home' }) {
     window.addEventListener('takapay_products_updated', handleProductsUpdated);
     window.addEventListener('storage', handleProductsUpdated);
 
+    const handleCagnotteUpdated = () => {
+      loadLiveCagnottes();
+      setCagnotteKey((k) => k + 1);
+    };
+    window.addEventListener('takapay_cagnotte_updated', handleCagnotteUpdated);
+
     return () => {
       isMounted = false;
       window.removeEventListener('takapay_products_updated', handleProductsUpdated);
       window.removeEventListener('storage', handleProductsUpdated);
+      window.removeEventListener('takapay_cagnotte_updated', handleCagnotteUpdated);
     };
   }, []);
 
@@ -201,68 +225,45 @@ export default function AppHome({ initialTab = 'home' }) {
     showToast(customMsg || `Bienvenue ${loggedUser.prenom || loggedUser.nom || loggedUser.n || 'chez TakaPay'} !`);
   };
 
-  const handleCompleteOrder = (orderData) => {
-    const updated = [orderData, ...orders];
-    setOrders(updated);
+ const handleCompleteOrder = (orderData) => {
+  const updated = [orderData, ...orders];
+  setOrders(updated);
 
-    const prod = orderData.product || {};
-    const total = Number(prod.p || orderData.initialAmount || 0);
-    const paid = Number(orderData.initialAmount || 0);
-    const remaining = Math.max(0, total - paid);
-    const percent = total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : 100;
-    const now = new Date();
-    const dateFormatted = now.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' });
-    const timeFormatted = now.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+  try {
+    localStorage.setItem('takapay-client-orders', JSON.stringify(updated));
+  } catch {
+    // Ignorer
+  }
 
-    const newCagnotte = {
-      product: {
-        id: prod.id,
-        n: prod.n || 'Article',
-        c: prod.c || 'Catalogue',
-        subcategory: prod.subcategory || '',
-        p: total,
-        im: prod.im || '',
-        variant: orderData.selectedColor?.name || orderData.selectedColor || 'Standard',
-      },
-      dateCommande: dateFormatted,
-      prixTotal: total,
-      montantVerse: paid,
-      resteAPayer: remaining,
-      pourcentage: percent,
-      moyenPaiement: orderData.provider === 'MTN' ? 'MTN Mobile Money' : 'Moov Money',
-      prochainVersement: {
-        montant: Math.round(remaining / 3) || 0,
-        date: 'Le mois prochain',
-      },
-      dateFinEstimee: 'Dans 3 mois',
-      moisRestants: 3,
-      statut: percent >= 100 ? 'completed' : 'active',
-      transactions: [
-        {
-          id: `tx-${Date.now()}`,
-          reference: orderData.reference || orderData.transactionId || `TK-MM-${Math.floor(100000 + Math.random() * 900000)}`,
-          titre: 'Premier versement (FeexPay)',
-          methode: orderData.provider === 'MTN' ? 'MTN Mobile Money' : 'Moov Money',
-          date: `${dateFormatted} ${timeFormatted}`,
-          montant: paid,
-          statut: 'Réussi',
-          type: 'versement',
-          periode: 'aujourdhui',
-          telephone: user?.telephone || user?.phone || '',
-          client: `${user?.prenom || ''} ${user?.nom || ''}`.trim() || 'Client Takapay',
-        },
-      ],
-    };
+  const newCagnotte = createCagnotteFromOrder(orderData, user);
+  setCurrentCagnotte(newCagnotte);
 
-    try {
-      localStorage.setItem('takapay-client-orders', JSON.stringify(updated));
-      localStorage.setItem('takapay-demo-cagnotte', JSON.stringify(newCagnotte));
-    } catch {
-      // Ignorer
-    }
-    showToast(`Votre commande pour ${orderData.product.n} a été initiée avec succès !`);
-    setView('cag');
-  };
+  let allCagnottes = [];
+  try {
+    const raw = localStorage.getItem('takapay_backend_cagnottes');
+    if (raw) allCagnottes = JSON.parse(raw);
+  } catch { /* ignore */ }
+  if (!Array.isArray(allCagnottes)) allCagnottes = [];
+
+  const updatedCagnottes = [newCagnotte, ...allCagnottes.filter((c) => c && c.id !== newCagnotte.id && c.id !== 'cag-1')];
+  try {
+    localStorage.setItem('takapay_backend_cagnottes', JSON.stringify(updatedCagnottes));
+    localStorage.removeItem('takapay-client-cagnottes');
+    localStorage.removeItem('takapay-demo-cagnotte');
+  } catch {
+    // Ignorer
+  }
+
+  try {
+    window.dispatchEvent(new CustomEvent('takapay_cagnotte_updated', { detail: updatedCagnottes }));
+  } catch {
+    // Ignorer
+  }
+
+  setCagnotteKey((k) => k + 1);
+  showToast(`Votre commande pour ${orderData.product.n} a été initiée avec succès !`);
+  setView('cag');
+};
 
   const handleLogout = () => {
     setUser(null);
@@ -303,7 +304,7 @@ export default function AppHome({ initialTab = 'home' }) {
           setView('shop');
         }}
         searchQuery={searchQuery}
-        cagnotteCount={orders.length || 2}
+        cagnotteCount={getStoredCagnottes(user).length}
       />
 
       {/* Contenu principal du portail client */}
@@ -344,6 +345,7 @@ export default function AppHome({ initialTab = 'home' }) {
           {view === 'product' && (
             <ClientProductDetail
               productId={activeProductId}
+              product={productsList.find((p) => p.id === Number(activeProductId)) || PRODUCTS.find((p) => p.id === Number(activeProductId))}
               onBack={() => setView(previousView || 'shop')}
               onStartOrder={handleStartOrder}
               onSelectProduct={handleOpenProduct}
@@ -363,6 +365,7 @@ export default function AppHome({ initialTab = 'home' }) {
 
           {view === 'cag' && (
             <ClientCagnotteView
+              key={cagnotteKey}
               user={user}
               onBack={() => setView(previousView || 'home')}
               onShowToast={showToast}

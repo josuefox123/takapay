@@ -214,11 +214,40 @@ export const adminService = {
     }
   },
 
+  async uploadVideo(file) {
+    const token = this.getToken();
+    try {
+      const formData = new FormData();
+      formData.append('video', file);
+      const res = await fetch(`${API_BASE}/admin/upload-video`, {
+        method: 'POST',
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          Accept: 'application/json',
+        },
+        body: formData,
+      });
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch (e) {
+      console.warn('Erreur téléversement vidéo direct:', e);
+    }
+    return null;
+  },
+
   saveCustomProduct(product) {
     try {
+      const safeProduct = { ...product };
+      // Éviter de saturer les 5Mo de localStorage avec un binaire vidéo base64 volumineux
+      if (safeProduct.video && typeof safeProduct.video === 'object' && safeProduct.video.chemin?.startsWith('data:video/')) {
+        safeProduct.video = { ...safeProduct.video, chemin: '' };
+      } else if (typeof safeProduct.video === 'string' && safeProduct.video.startsWith('data:video/')) {
+        safeProduct.video = null;
+      }
       const existing = this.getCustomProducts();
       const filtered = existing.filter((p) => p.id !== product.id);
-      const updated = [product, ...filtered];
+      const updated = [safeProduct, ...filtered];
       localStorage.setItem('takapay_created_products', JSON.stringify(updated));
       window.dispatchEvent(new CustomEvent('takapay_products_updated', { detail: product }));
       return updated;
@@ -320,7 +349,7 @@ export const adminService = {
         prix_echelonne: parseFloat(payload.prix_echelonne || (payload.prix_total / Math.max(1, payload.duree))),
         prix_cash: parseFloat(payload.prix_cash || payload.prix_total),
         seuil_livraison: parseFloat(payload.seuil_livraison || (payload.prix_total * 0.4)),
-        mode_paiement: payload.mode_paiement || 'libre',
+        mode_paiement: payload.mode_paiement || 'echelonne',
         frequence: payload.frequence || 'mensuelle',
         promotion: payload.promotion_id ? { id: payload.promotion_id, pourcentage_promo: 10 } : null,
       },
@@ -367,7 +396,7 @@ export const adminService = {
       },
       stock: parseInt(payload.stock, 10),
       duree: parseInt(payload.duree, 10),
-      couleur: payload.couleur || 'Standard',
+      couleur: typeof payload.couleur === 'string' ? payload.couleur : JSON.stringify(payload.couleur || 'Standard'),
       description: payload.description || '',
       images: payload.images || [],
       video: payload.video || null,
@@ -378,7 +407,7 @@ export const adminService = {
         prix_echelonne: parseFloat(payload.prix_echelonne || (payload.prix_total / Math.max(1, payload.duree))),
         prix_cash: parseFloat(payload.prix_cash || payload.prix_total),
         seuil_livraison: parseFloat(payload.seuil_livraison || (payload.prix_total * 0.4)),
-        mode_paiement: payload.mode_paiement || 'libre',
+        mode_paiement: payload.mode_paiement || 'echelonne',
         frequence: payload.frequence || 'mensuelle',
         promotion: payload.promotion_id ? { id: payload.promotion_id, pourcentage_promo: 10 } : null,
       },
