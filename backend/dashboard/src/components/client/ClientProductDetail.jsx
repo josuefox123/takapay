@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { formatFCFA, discountPercentage, formatClientDate, PRODUCTS } from '../../data/clientStore';
+import { formatFCFA, discountPercentage, formatClientDate, PRODUCTS, resolveImageUrl } from '../../data/clientStore';
 
 export default function ClientProductDetail({
   productId,
@@ -38,6 +38,7 @@ export default function ClientProductDetail({
   const pay = product.payment || {};
   const isCash = pay.mode === 'cash';
   const isLibre = pay.mode === 'libre';
+  const cashPrice = Number(product.prix_cash || pay.prixCash || 0);
 
   // 1er versement minimum (10% par défaut ou valeur proportionnelle)
   const basePrice = Number(product.p) > 0 ? Number(product.p) : 1;
@@ -105,7 +106,7 @@ export default function ClientProductDetail({
           <div className="gallery-main">
             {selectedGallery === 'video' && product.video ? (
               <video
-                src={typeof product.video === 'string' ? product.video : product.video?.chemin}
+                src={resolveImageUrl(typeof product.video === 'string' ? product.video : product.video?.chemin)}
                 controls
                 style={{ width: '100%', height: '100%', objectFit: 'contain', borderRadius: '16px' }}
                 autoPlay
@@ -279,6 +280,16 @@ export default function ClientProductDetail({
                 <span>Tarif ajusté spécifiquement pour la déclinaison <strong>{chosenColor.name}</strong></span>
               </div>
             )}
+            {cashPrice > 0 && (
+              <div style={{ marginTop: '8px', display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '6px 12px', background: 'rgba(22, 163, 74, 0.08)', borderRadius: '10px', border: '1px solid rgba(22, 163, 74, 0.2)' }}>
+                <span style={{ fontSize: '13px', fontWeight: 600, color: '#15803d' }}>
+                  💵 Option achat comptant (Cash) :
+                </span>
+                <span style={{ fontSize: '15px', fontWeight: 900, color: '#16a34a' }}>
+                  {formatFCFA(cashPrice)}
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Bannière validité de la promo */}
@@ -341,6 +352,12 @@ export default function ClientProductDetail({
                     <small>Prix total ({chosenColor?.name || 'Standard'})</small>
                     <b style={{ color: 'var(--r)' }}>{formatFCFA(currentPrice)}</b>
                   </div>
+                  {cashPrice > 0 && (
+                    <div className="payment-item">
+                      <small>Prix au comptant (Cash)</small>
+                      <b style={{ color: '#16a34a' }}>{formatFCFA(cashPrice)}</b>
+                    </div>
+                  )}
                   <div className="payment-item">
                     <small>1er versement minimum (10%)</small>
                     <b>{formatFCFA(minStart)}</b>

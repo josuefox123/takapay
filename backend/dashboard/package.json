@@ -10,7 +10,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "lucide-react": "^1.56.0",
+    "@feexpay/react-sdk": "^1.5.8",
+    "lucide-react": "^0.417.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-router-dom": "^7.18.4"

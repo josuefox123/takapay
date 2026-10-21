@@ -22,7 +22,7 @@ class DatabaseSeeder extends Seeder
             $this->command->warn("SUPER_ADMIN_PASSWORD non défini — mot de passe généré : {$superAdminPassword}");
         }
 
-        User::firstOrCreate(
+        User::updateOrCreate(
             ['email' => 'admin@takapay.bj'],
             [
                 'nom' => 'Super',
@@ -40,7 +40,7 @@ class DatabaseSeeder extends Seeder
             $this->command->warn("ADMIN_PASSWORD non défini — mot de passe généré : {$adminPassword}");
         }
 
-        User::firstOrCreate(
+        User::updateOrCreate(
             ['email' => 'manager@takapay.bj'],
             [
                 'nom' => 'Manager',

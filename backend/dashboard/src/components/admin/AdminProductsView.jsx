@@ -32,6 +32,7 @@ export default function AdminProductsView({ onShowToast }) {
     duree: 6, // Durée de disponibilité de l'article (mois)
     reference: '',
     prix_total: '',
+    prix_cash: '',
     prix_minimum: '',
     prix_echelonne: '',
     mode_paiement: 'echelonne', // 'echelonne' | 'libre'
@@ -213,7 +214,7 @@ export default function AdminProductsView({ onShowToast }) {
     });
   };
 
-  // Gestion de la vidéo optionnelle
+  // Gestion de la vidéo optionnelle avec téléversement immédiat
   const handleVideoSelect = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -223,16 +224,27 @@ export default function AdminProductsView({ onShowToast }) {
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      setVideo({
-        chemin: event.target.result,
-        nom_fichier: file.name,
-        taille: (file.size / (1024 * 1024)).toFixed(1) + ' Mo',
-      });
-      onShowToast('Vidéo importée avec succès !');
-    };
-    reader.readAsDataURL(file);
+    const previewUrl = URL.createObjectURL(file);
+    setVideo({
+      chemin: previewUrl,
+      nom_fichier: file.name,
+      taille: (file.size / (1024 * 1024)).toFixed(1) + ' Mo',
+      file: file,
+    });
+    onShowToast('Vidéo importée ! Téléversement en cours...');
+
+    adminService.uploadVideo(file).then((res) => {
+      if (res && (res.chemin || res.url)) {
+        setVideo({
+          chemin: res.chemin || res.url,
+          nom_fichier: file.name,
+          taille: (file.size / (1024 * 1024)).toFixed(1) + ' Mo',
+        });
+        onShowToast('Vidéo enregistrée sur le serveur avec succès !');
+      }
+    }).catch((err) => {
+      console.warn('Erreur téléversement vidéo direct:', err);
+    });
     e.target.value = '';
   };
 
@@ -272,6 +284,7 @@ export default function AdminProductsView({ onShowToast }) {
       duree: 6,
       reference: '',
       prix_total: '',
+      prix_cash: '',
       prix_minimum: '',
       prix_echelonne: '',
       mode_paiement: 'echelonne',
@@ -347,6 +360,7 @@ export default function AdminProductsView({ onShowToast }) {
       duree: item.duree !== undefined ? item.duree : 6,
       reference: param.reference || '',
       prix_total: param.prix_total !== undefined ? param.prix_total : '',
+      prix_cash: param.prix_cash !== undefined ? param.prix_cash : '',
       prix_minimum: param.prix_minimum !== undefined ? param.prix_minimum : '',
       prix_echelonne: param.prix_echelonne !== undefined ? param.prix_echelonne : '',
       mode_paiement: activeMode,
@@ -446,11 +460,27 @@ export default function AdminProductsView({ onShowToast }) {
 
     setSubmitting(true);
     try {
+      let finalVideo = video;
+      if (video && video.file && (!video.chemin || video.chemin.startsWith('blob:') || video.chemin.startsWith('data:'))) {
+        try {
+          const uploadRes = await adminService.uploadVideo(video.file);
+          if (uploadRes && (uploadRes.chemin || uploadRes.url)) {
+            finalVideo = {
+              chemin: uploadRes.chemin || uploadRes.url,
+              nom_fichier: video.nom_fichier,
+              taille: video.taille,
+            };
+          }
+        } catch (e) {
+          console.warn('Erreur téléversement vidéo avant soumission:', e);
+        }
+      }
+
       const payload = {
         ...form,
         couleur: JSON.stringify(finalColors),
         images,
-        video,
+        video: finalVideo,
         categorie_id: form.categorie_id || targetCat?.id || '',
         categorie_nom: targetCat?.nom || '',
         sous_categorie_id: form.sous_categorie_id,
@@ -1373,6 +1403,31 @@ export default function AdminProductsView({ onShowToast }) {
 
                   <div className="admin-field" style={{ margin: 0 }}>
                     <label style={{ fontSize: '14px', fontWeight: 700, marginBottom: '6px', display: 'block' }}>
+                      Prix d'Achat Comptant / Cash (FCFA)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      placeholder={`Ex: ${form.prix_total ? Math.round(Number(form.prix_total) * 0.95) : 400000} (Si différent du prix total)`}
+                      value={form.prix_cash}
+                      onChange={(e) => setForm({ ...form, prix_cash: e.target.value })}
+                      style={{
+                        width: '100%',
+                        padding: '13px 16px',
+                        borderRadius: '12px',
+                        border: '1.5px solid var(--line)',
+                        fontSize: '15px',
+                        fontWeight: 700,
+                        color: '#16a34a',
+                      }}
+                    />
+                    <span style={{ fontSize: '12px', color: 'var(--mut)', marginTop: '4px', display: 'block' }}>
+                      Tarif appliqué si le client choisit de payer comptant (Cash direct).
+                    </span>
+                  </div>
+
+                  <div className="admin-field" style={{ margin: 0 }}>
+                    <label style={{ fontSize: '14px', fontWeight: 700, marginBottom: '6px', display: 'block' }}>
                       1er Versement Minimum pour ouvrir la cagnotte (FCFA)
                     </label>
                     <input
@@ -1452,6 +1507,31 @@ export default function AdminProductsView({ onShowToast }) {
                         ⚠ {errors.prix_total}
                       </span>
                     )}
+                  </div>
+
+                  <div className="admin-field" style={{ margin: 0 }}>
+                    <label style={{ fontSize: '14px', fontWeight: 700, marginBottom: '6px', display: 'block' }}>
+                      Prix d'Achat Comptant / Cash (FCFA)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      placeholder={`Ex: ${form.prix_total ? Math.round(Number(form.prix_total) * 0.95) : 400000} (Si différent du prix total)`}
+                      value={form.prix_cash}
+                      onChange={(e) => setForm({ ...form, prix_cash: e.target.value })}
+                      style={{
+                        width: '100%',
+                        padding: '13px 16px',
+                        borderRadius: '12px',
+                        border: '1.5px solid var(--line)',
+                        fontSize: '15px',
+                        fontWeight: 700,
+                        color: '#16a34a',
+                      }}
+                    />
+                    <span style={{ fontSize: '12px', color: 'var(--mut)', marginTop: '4px', display: 'block' }}>
+                      Tarif appliqué si le client choisit de payer comptant (Cash direct).
+                    </span>
                   </div>
 
                   <div className="admin-field" style={{ margin: 0 }}>

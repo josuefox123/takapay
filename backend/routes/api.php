@@ -21,6 +21,7 @@ use App\Http\Controllers\Api\SousCategorieController;
 use App\Http\Controllers\Api\TransactionController;
 use App\Http\Controllers\Api\UserController;
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\PaymentController;
 
 /*
 |--------------------------------------------------------------------------
@@ -45,6 +46,7 @@ Route::get('sous-categories/{sous_category}/produits', [SousCategorieController:
 Route::get('produits', [ProduitController::class, 'index'])->name('produits.index');
 Route::get('produits/{produit}', [ProduitController::class, 'show'])->name('produits.show');
 Route::get('promotions', [PromotionController::class, 'index'])->name('promotions.index');
+Route::get('cagnottes', [CagnotteController::class, 'index'])->name('cagnottes.index');
 
 /*
 |--------------------------------------------------------------------------
@@ -68,6 +70,7 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
         Route::prefix('admin')->group(function () {
             Route::get('/stats', [AdminController::class, 'stats']);
             Route::post('/produits', [AdminController::class, 'storeFullProduit']);
+            Route::post('/upload-video', [AdminController::class, 'uploadVideo']);
             Route::post('/users', [AdminController::class, 'createAdminUser']);
             Route::patch('/users/{user}/status', [AdminController::class, 'updateUserStatus']);
             Route::patch('/documents/{document}/verify', [AdminController::class, 'verifyDocument']);
@@ -88,7 +91,7 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
 
         // Paramètres & cycle financier (écriture et lecture réservées à l'administration)
         Route::apiResource('parametre-produits', ParametreProduitController::class);
-        Route::apiResource('cagnottes', CagnotteController::class);
+        Route::apiResource('cagnottes', CagnotteController::class)->except(['index']);
         Route::apiResource('echeances', EcheanceController::class);
         Route::apiResource('transactions', TransactionController::class);
         Route::apiResource('livraisons', LivraisonController::class);
@@ -106,4 +109,16 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
     Route::apiResource('notifications', NotificationController::class);
     Route::apiResource('commandes', CommandeController::class);
     Route::apiResource('commande-produits', CommandeProduitController::class);
+
+
 });
+
+/*
+|--------------------------------------------------------------------------
+| ROUTES PAIEMENTS FEEXPAY (Initiation, Confirmation & Webhook)
+|--------------------------------------------------------------------------
+*/
+Route::post('/payment/initiate', [PaymentController::class, 'initiatePayment']);
+Route::post('/payment/confirm', [PaymentController::class, 'confirmPayment']);
+Route::post('/payment/webhook', [PaymentController::class, 'handleWebhook']);
+

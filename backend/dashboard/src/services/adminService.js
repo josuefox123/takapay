@@ -21,6 +21,48 @@ export const adminService = {
     return localStorage.getItem('takapay_admin_token');
   },
 
+  getClientToken() {
+    return localStorage.getItem('takapay_client_token');
+  },
+
+  async initiatePayment(payload) {
+    const token = this.getClientToken() || this.getToken();
+    const res = await fetch(`${API_BASE}/payment/initiate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data.message || 'Erreur lors de l’initialisation du paiement FeexPay.');
+    }
+    return data;
+  },
+
+  async confirmPayment(payload) {
+    const token = this.getClientToken() || this.getToken();
+    const res = await fetch(`${API_BASE}/payment/confirm`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data.message || 'Erreur lors de la confirmation du paiement.');
+    }
+    return data;
+  },
+
   getUser() {
     try {
       const u = localStorage.getItem('takapay_admin_user');
@@ -172,11 +214,40 @@ export const adminService = {
     }
   },
 
+  async uploadVideo(file) {
+    const token = this.getToken();
+    try {
+      const formData = new FormData();
+      formData.append('video', file);
+      const res = await fetch(`${API_BASE}/admin/upload-video`, {
+        method: 'POST',
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          Accept: 'application/json',
+        },
+        body: formData,
+      });
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch (e) {
+      console.warn('Erreur téléversement vidéo direct:', e);
+    }
+    return null;
+  },
+
   saveCustomProduct(product) {
     try {
+      const safeProduct = { ...product };
+      // Éviter de saturer les 5Mo de localStorage avec un binaire vidéo base64 volumineux
+      if (safeProduct.video && typeof safeProduct.video === 'object' && safeProduct.video.chemin?.startsWith('data:video/')) {
+        safeProduct.video = { ...safeProduct.video, chemin: '' };
+      } else if (typeof safeProduct.video === 'string' && safeProduct.video.startsWith('data:video/')) {
+        safeProduct.video = null;
+      }
       const existing = this.getCustomProducts();
       const filtered = existing.filter((p) => p.id !== product.id);
-      const updated = [product, ...filtered];
+      const updated = [safeProduct, ...filtered];
       localStorage.setItem('takapay_created_products', JSON.stringify(updated));
       window.dispatchEvent(new CustomEvent('takapay_products_updated', { detail: product }));
       return updated;

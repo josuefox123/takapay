@@ -49,18 +49,22 @@ export const mapAdminProductToClient = (p) => {
   }
 
   const param = p.parametre_produit || {};
-  const price = Number(param.prix_total || param.prix_cash || p.prix || 0);
+  const price = Number(param.prix_total || p.prix_total || p.prix || 0);
+  const cashPrice = param.prix_cash !== undefined && param.prix_cash !== null && param.prix_cash !== '' && Number(param.prix_cash) > 0
+    ? Number(param.prix_cash)
+    : (p.prix_cash && Number(p.prix_cash) > 0 ? Number(p.prix_cash) : price);
   const promo = param.promotion;
   const promoPercent = promo ? Number(promo.pourcentage_promo || 0) : 0;
   const discountedPrice = promoPercent > 0 ? Math.round(price * (1 - promoPercent / 100)) : price;
+  const discountedCashPrice = promoPercent > 0 ? Math.round(cashPrice * (1 - promoPercent / 100)) : cashPrice;
   const oldPrice = promoPercent > 0 ? price : null;
 
   // Récupérer les images réelles du produit depuis image_produits (MySQL) ou images (formulaire admin)
   const rawImages = Array.isArray(p.image_produits) && p.image_produits.length > 0
     ? p.image_produits
     : Array.isArray(p.images) && p.images.length > 0
-    ? p.images
-    : [];
+      ? p.images
+      : [];
 
   let primaryImg = '';
   let imageList = [];
@@ -114,10 +118,11 @@ export const mapAdminProductToClient = (p) => {
     c: categoryName,
     subcategory: subcategoryName,
     p: discountedPrice,
+    prix_cash: discountedCashPrice,
+    prix_total: discountedPrice,
     o: oldPrice,
     im: primaryImg,
-    images: imageList.length > 0 ? imageList : [primaryImg],
-    video: p.video || null,
+    video: p.video ? (typeof p.video === 'string' ? resolveImageUrl(p.video) : (p.video.chemin ? resolveImageUrl(p.video.chemin) : p.video)) : null,
     stockCount: p.stock !== undefined ? Number(p.stock) : 15,
     availabilityDuration: p.duree ? `${p.duree} mois de disponibilité` : 'Disponible',
     duree: Number(p.duree || 6),
@@ -163,6 +168,7 @@ export const mapAdminProductToClient = (p) => {
       frequency: param.mode_paiement === 'libre' ? null : (param.frequence || 'mensuelle'),
       estimatedEnd: param.mode_paiement === 'libre' ? null : `${p.duree || 6} mois`,
       seuilLivraison: seuilLivraisonVal,
+      prixCash: discountedCashPrice,
       demo: true,
     },
     isLiveFromDb: true,
@@ -257,19 +263,18 @@ export const rebuildCategories = (apiCategories = []) => {
       id: c.name,
       name: c.name,
       icon: c.icon || '🛍️',
-      image: c.image || `/assets/category-${
-        c.id.includes('tele')
+      image: c.image || `/assets/category-${c.id.includes('tele')
           ? 'phones'
           : c.id.includes('info')
-          ? 'computers'
-          : c.id.includes('moto')
-          ? 'motorcycles'
-          : c.id.includes('electro')
-          ? 'appliances'
-          : c.id.includes('audio')
-          ? 'media'
-          : 'accessories'
-      }.jpg`,
+            ? 'computers'
+            : c.id.includes('moto')
+              ? 'motorcycles'
+              : c.id.includes('electro')
+                ? 'appliances'
+                : c.id.includes('audio')
+                  ? 'media'
+                  : 'accessories'
+        }.jpg`,
       subcategories: c.subcategories || [],
     })),
   ];
@@ -299,7 +304,7 @@ export const syncCategoriesFromDb = async () => {
         return list;
       }
     }
-  } catch {}
+  } catch { }
   return [];
 };
 
@@ -391,58 +396,8 @@ export const DEFAULT_CLIENT_USER = {
   adresse: 'Fidjrossè plage, maison Dossou',
 };
 
-export const DEFAULT_CAGNOTTE = {
-  id: 'cag-1',
-  product: {
-    id: 1,
-    n: 'iPhone 16 pro max',
-    c: 'Téléphones',
-    subcategory: 'iPhone',
-    p: 450000,
-    im: '/assets/product-iphone-16.jpg',
-    variant: 'noir . 128 Go . 1 unité',
-  },
-  dateCommande: '10 oct 2026',
-  prixTotal: 450000,
-  montantVerse: 100000,
-  resteAPayer: 350000,
-  pourcentage: 25,
-  prochainVersement: {
-    montant: 50000,
-    date: 'Le 10 novembre 2026',
-  },
-  dateFinEstimee: '30 juin 2027',
-  moisRestants: 8,
-  statut: 'active', // 'active' | 'completed'
-  transactions: [
-    {
-      id: 'tx-1',
-      reference: 'TK-MM-948102',
-      titre: 'Versement',
-      methode: 'MTN Mobile Money',
-      date: '10/10/2026 13:45',
-      montant: 100000,
-      statut: 'Réussi',
-      type: 'versement',
-      periode: '30_jours',
-      telephone: '+229 0162180290',
-      client: 'Koffi DOSSOU',
-    },
-    {
-      id: 'tx-2',
-      reference: 'TK-MM-950244',
-      titre: 'Versement',
-      methode: 'MTN Mobile Money',
-      date: '10/11/2026 18:30',
-      montant: 50000,
-      statut: 'Réussi',
-      type: 'versement',
-      periode: '7_jours',
-      telephone: '+229 0162180290',
-      client: 'Koffi DOSSOU',
-    },
-  ],
-};
+export const DEFAULT_CAGNOTTE = null;
+
 
 export const createCagnotteFromOrder = (orderData, user = null) => {
   const prod = orderData?.product || {};
@@ -462,10 +417,16 @@ export const createCagnotteFromOrder = (orderData, user = null) => {
     orderData?.user?.n ||
     'Client TakaPay';
 
-  const clientPhone = user?.phone || user?.telephone || '+229 0162180290';
+  const clientPhone = user?.phone || user?.telephone || orderData?.telephone || '';
+  const clientEmail = user?.email || orderData?.email || '';
+  const clientUserId = user?.id ? String(user.id) : (clientPhone || null);
 
   return {
     id: `cag-${Date.now()}`,
+    userId: clientUserId,
+    userPhone: clientPhone,
+    userEmail: clientEmail,
+    isReal: true,
     product: {
       id: prod.id || Date.now(),
       n: prod.n || prod.nom || 'Article TakaPay',
@@ -507,48 +468,102 @@ export const createCagnotteFromOrder = (orderData, user = null) => {
   };
 };
 
-export const getStoredCagnottes = (user = null) => {
-  let list = [];
-  try {
-    const raw = localStorage.getItem('takapay-client-cagnottes');
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        list = parsed;
-      }
-    }
-  } catch {}
+export const mapBackendCagnotteToClient = (c) => {
+  if (!c) return null;
+  const prod = c.produit || {};
+  const total = Number(c.prix_unitaire || prod.parametre_produit?.prix_total || 0);
+  const paid = Number(c.montant_verse || 0);
+  const remaining = Math.max(0, total - paid);
+  const percent = total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : 0;
 
-  // Si aucune liste takapay-client-cagnottes mais des commandes enregistrées
-  if (list.length === 0) {
-    try {
-      const ordersRaw = localStorage.getItem('takapay-client-orders');
-      if (ordersRaw) {
-        const ordersList = JSON.parse(ordersRaw);
-        if (Array.isArray(ordersList) && ordersList.length > 0) {
-          list = ordersList.map((ord) => createCagnotteFromOrder(ord, user));
-        }
-      }
-    } catch {}
+  const rawImages = Array.isArray(prod.image_produits) && prod.image_produits.length > 0
+    ? prod.image_produits
+    : [];
+  let primaryImg = '';
+  if (rawImages.length > 0) {
+    const sorted = [...rawImages].sort((a, b) => (Number(a.position) || 0) - (Number(b.position) || 0));
+    const principalItem = sorted.find((img) => img.is_principal === true || img.is_principal === 1 || img.is_principal === '1');
+    primaryImg = resolveImageUrl(principalItem ? (principalItem.chemin || principalItem.url) : (sorted[0]?.chemin || sorted[0]?.url));
+  } else if (prod.im) {
+    primaryImg = resolveImageUrl(prod.im);
   }
+  if (!primaryImg) primaryImg = '/assets/category-phones.jpg';
 
-  // Si toujours vide, inclure takapay-demo-cagnotte ou DEFAULT_CAGNOTTE
-  if (list.length === 0) {
-    try {
-      const savedSingle = localStorage.getItem('takapay-demo-cagnotte');
-      if (savedSingle) {
-        const parsed = JSON.parse(savedSingle);
-        if (parsed && parsed.product) list.push(parsed);
+  const txs = Array.isArray(c.transactions) ? c.transactions.map((t) => ({
+    id: `tx-${t.id}`,
+    reference: t.reference_externe || `TK-${t.id}`,
+    titre: 'Versement cagnotte',
+    methode: t.moyen_paiement || c.moyen_paiement || 'MTN Mobile Money',
+    date: t.date ? new Date(t.date).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Récemment',
+    montant: Number(t.montant || 0),
+    statut: t.statut === 'succes' || t.statut === 'reussi' ? 'Réussi' : (t.statut || 'Réussi'),
+    type: 'versement',
+    periode: 'aujourdhui',
+  })) : [];
+
+  return {
+    id: `cag-${c.id}`,
+    backendId: c.id,
+    userId: c.utilisateur_id ? String(c.utilisateur_id) : null,
+    userPhone: c.client_tel || null,
+    product: {
+      id: prod.id || Date.now(),
+      n: prod.nom || 'Article TakaPay',
+      c: prod.sous_categorie?.categorie?.nom || 'Article',
+      subcategory: prod.sous_categorie?.nom || 'Article',
+      p: total,
+      im: primaryImg,
+      variant: prod.couleur ? `${prod.couleur} · 1 unité` : 'Standard · 1 unité',
+    },
+    dateCommande: c.created_at ? new Date(c.created_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Récemment',
+    prixTotal: total,
+    montantVerse: paid,
+    resteAPayer: remaining,
+    pourcentage: percent,
+    prochainVersement: {
+      montant: Math.round(total * 0.1),
+      date: 'Le mois prochain',
+    },
+    dateFinEstimee: '6 mois',
+    moisRestants: 6,
+    statut: c.statut === 'terminee' || percent >= 100 ? 'completed' : 'active',
+    transactions: txs.length > 0 ? txs : [
+      {
+        id: `tx-init-${c.id}`,
+        reference: `TK-INIT-${c.id}`,
+        titre: 'Versement initial',
+        methode: c.moyen_paiement || 'MTN Mobile Money',
+        date: c.created_at ? new Date(c.created_at).toLocaleDateString('fr-FR') : 'Récemment',
+        montant: paid,
+        statut: 'Réussi',
+        type: 'versement',
+        periode: 'aujourdhui',
       }
-    } catch {}
-  }
-
-  if (list.length === 0) {
-    list.push(DEFAULT_CAGNOTTE);
-  }
-
-  return list;
+    ],
+  };
 };
+
+export const getStoredCagnottes = (_user = null) => {
+  // Nettoyage immédiat et strict du localStorage contre toute ancienne cagnotte fictive
+  try {
+    localStorage.removeItem('takapay-demo-cagnotte');
+    localStorage.removeItem('takapay-client-cagnottes');
+  } catch { /* ignore */ }
+
+  // Lire UNIQUEMENT les cagnottes réelles issues du backend / dashboard admin
+  let backendList = [];
+  try {
+    const rawBackend = localStorage.getItem('takapay_backend_cagnottes');
+    if (rawBackend) {
+      const parsed = JSON.parse(rawBackend);
+      if (Array.isArray(parsed)) backendList = parsed;
+    }
+  } catch { /* ignore */ }
+
+  // Filtre strict : Ne conserver que les cagnottes authentiques du dashboard admin
+  return backendList.filter((c) => c && c.backendId && c.id !== 'cag-1');
+};
+
 
 export const DEFAULT_NOTIFICATIONS = [
   {

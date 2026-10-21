@@ -22,6 +22,8 @@ use App\Services\ImageStorageService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\DB;
 
 class AdminController extends Controller
@@ -206,6 +208,7 @@ class AdminController extends Controller
             'stock' => ['required', 'integer', 'min:0'],
             'duree' => ['required', 'integer', 'min:0'],
             'couleur' => ['nullable', 'string'],
+            'video' => ['nullable'],
             'promotion_id' => ['nullable', 'exists:promotions,id'],
             'reference' => ['nullable', 'string', 'max:255'],
             'prix_total' => ['required', 'numeric', 'min:0'],
@@ -224,6 +227,30 @@ class AdminController extends Controller
         ]);
 
         return DB::transaction(function () use ($validated) {
+            $videoPath = null;
+            if (! empty($validated['video'])) {
+                $rawVideo = is_array($validated['video']) ? ($validated['video']['chemin'] ?? null) : $validated['video'];
+                if ($rawVideo && is_string($rawVideo)) {
+                    if (str_starts_with($rawVideo, 'data:video/')) {
+                        $comma = strpos($rawVideo, ',');
+                        $header = substr($rawVideo, 0, $comma);
+                        $binary = base64_decode(substr($rawVideo, $comma + 1), true);
+                        if ($binary !== false) {
+                            $ext = 'mp4';
+                            if (preg_match('#data:video/(webm|ogg|quicktime|mp4)#i', $header, $m)) {
+                                $ext = $m[1] === 'quicktime' ? 'mov' : $m[1];
+                            }
+                            $videoFileName = 'video_'.time().'_'.Str::random(6).'.'.$ext;
+                            Storage::disk('public')->put('produits/'.$videoFileName, $binary);
+                            Storage::disk('public')->put($videoFileName, $binary);
+                            $videoPath = 'produits/'.$videoFileName;
+                        }
+                    } else {
+                        $videoPath = $rawVideo;
+                    }
+                }
+            }
+
             $produit = Produit::create([
                 'nom' => $validated['nom'],
                 'sous_categorie_id' => $validated['sous_categorie_id'],
@@ -231,6 +258,7 @@ class AdminController extends Controller
                 'stock' => $validated['stock'],
                 'duree' => $validated['duree'],
                 'couleur' => $validated['couleur'] ?? null,
+                'video' => $videoPath,
             ]);
 
             $ref = ! empty($validated['reference']) ? $validated['reference'] : ('PRD-'.str_pad($produit->id, 4, '0', STR_PAD_LEFT));
@@ -276,5 +304,55 @@ class AdminController extends Controller
                 ->response()
                 ->setStatusCode(201);
         });
+    }
+
+    /**
+     * Upload direct d'une vidéo produit
+     */
+    public function uploadVideo(Request $request): JsonResponse
+    {
+        $request->validate([
+            'video' => ['required'],
+        ]);
+
+        $file = $request->file('video');
+        if ($file) {
+            $ext = $file->getClientOriginalExtension() ?: 'mp4';
+            $filename = 'video_'.time().'_'.Str::random(6).'.'.$ext;
+            $file->storeAs('produits', $filename, 'public');
+            Storage::disk('public')->putFileAs('', $file, $filename);
+
+            return response()->json([
+                'success' => true,
+                'chemin' => 'produits/'.$filename,
+                'url' => Storage::disk('public')->url('produits/'.$filename),
+                'nom_fichier' => $file->getClientOriginalName(),
+            ]);
+        }
+
+        $raw = $request->input('video');
+        if (is_string($raw) && str_starts_with($raw, 'data:video/')) {
+            $comma = strpos($raw, ',');
+            $header = substr($raw, 0, $comma);
+            $binary = base64_decode(substr($raw, $comma + 1), true);
+            if ($binary !== false) {
+                $ext = 'mp4';
+                if (preg_match('#data:video/(webm|ogg|quicktime|mp4)#i', $header, $m)) {
+                    $ext = $m[1] === 'quicktime' ? 'mov' : $m[1];
+                }
+                $filename = 'video_'.time().'_'.Str::random(6).'.'.$ext;
+                Storage::disk('public')->put('produits/'.$filename, $binary);
+                Storage::disk('public')->put($filename, $binary);
+
+                return response()->json([
+                    'success' => true,
+                    'chemin' => 'produits/'.$filename,
+                    'url' => Storage::disk('public')->url('produits/'.$filename),
+                    'nom_fichier' => $filename,
+                ]);
+            }
+        }
+
+        return response()->json(['error' => 'Format vidéo non supporté'], 422);
     }
 }

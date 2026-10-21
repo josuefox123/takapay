@@ -10,7 +10,7 @@ import ClientProfileView from '../../components/client/ClientProfileView';
 import ClientNotificationsView from '../../components/client/ClientNotificationsView';
 import ClientWelcomeModal from '../../components/client/ClientWelcomeModal';
 import ClientCookieBanner from '../../components/client/ClientCookieBanner';
-import { PRODUCTS, DEFAULT_CLIENT_USER, mapAdminProductToClient, getMergedProducts, refreshProductsFromStore, createCagnotteFromOrder, getStoredCagnottes } from '../../data/clientStore';
+import { PRODUCTS, DEFAULT_CLIENT_USER, mapAdminProductToClient, getMergedProducts, refreshProductsFromStore, createCagnotteFromOrder, getStoredCagnottes, mapBackendCagnotteToClient } from '../../data/clientStore';
 import { adminService } from '../../services/adminService';
 import FloatingActionButtons from '../../components/public/FloatingActionButtons';
 import './client.css';
@@ -115,7 +115,21 @@ export default function AppHome({ initialTab = 'home' }) {
       }
     };
 
+    const loadLiveCagnottes = async () => {
+      try {
+        const live = await adminService.getCagnottes();
+        if (isMounted && Array.isArray(live)) {
+          const converted = live.map(mapBackendCagnotteToClient).filter(Boolean);
+          try {
+            localStorage.setItem('takapay_backend_cagnottes', JSON.stringify(converted));
+          } catch { /* ignore */ }
+          setCagnotteKey((k) => k + 1);
+        }
+      } catch { /* ignore */ }
+    };
+
     loadLiveProducts();
+    loadLiveCagnottes();
 
     const handleProductsUpdated = () => {
       refreshProductsFromStore();
@@ -125,10 +139,17 @@ export default function AppHome({ initialTab = 'home' }) {
     window.addEventListener('takapay_products_updated', handleProductsUpdated);
     window.addEventListener('storage', handleProductsUpdated);
 
+    const handleCagnotteUpdated = () => {
+      loadLiveCagnottes();
+      setCagnotteKey((k) => k + 1);
+    };
+    window.addEventListener('takapay_cagnotte_updated', handleCagnotteUpdated);
+
     return () => {
       isMounted = false;
       window.removeEventListener('takapay_products_updated', handleProductsUpdated);
       window.removeEventListener('storage', handleProductsUpdated);
+      window.removeEventListener('takapay_cagnotte_updated', handleCagnotteUpdated);
     };
   }, []);
 
@@ -204,39 +225,45 @@ export default function AppHome({ initialTab = 'home' }) {
     showToast(customMsg || `Bienvenue ${loggedUser.prenom || loggedUser.nom || loggedUser.n || 'chez TakaPay'} !`);
   };
 
-  const handleCompleteOrder = (orderData) => {
-    const updated = [orderData, ...orders];
-    setOrders(updated);
-    try {
-      localStorage.setItem('takapay-client-orders', JSON.stringify(updated));
-    } catch {
-      // Ignorer
-    }
+ const handleCompleteOrder = (orderData) => {
+  const updated = [orderData, ...orders];
+  setOrders(updated);
 
-    // Création de la cagnotte pour le produit sélectionné
-    const newCagnotte = createCagnotteFromOrder(orderData, user);
-    setCurrentCagnotte(newCagnotte);
+  try {
+    localStorage.setItem('takapay-client-orders', JSON.stringify(updated));
+  } catch {
+    // Ignorer
+  }
 
-    // Mettre à jour la liste complète des cagnottes
-    const currentList = getStoredCagnottes(user);
-    const updatedCagnottes = [newCagnotte, ...currentList.filter((c) => c.id !== newCagnotte.id)];
-    try {
-      localStorage.setItem('takapay-client-cagnottes', JSON.stringify(updatedCagnottes));
-      localStorage.setItem('takapay-demo-cagnotte', JSON.stringify(newCagnotte));
-    } catch {
-      // Ignorer
-    }
+  const newCagnotte = createCagnotteFromOrder(orderData, user);
+  setCurrentCagnotte(newCagnotte);
 
-    try {
-      window.dispatchEvent(new CustomEvent('takapay_cagnotte_updated', { detail: updatedCagnottes }));
-    } catch {
-      // Ignorer
-    }
+  let allCagnottes = [];
+  try {
+    const raw = localStorage.getItem('takapay_backend_cagnottes');
+    if (raw) allCagnottes = JSON.parse(raw);
+  } catch { /* ignore */ }
+  if (!Array.isArray(allCagnottes)) allCagnottes = [];
 
-    setCagnotteKey((k) => k + 1);
-    showToast(`Votre commande pour ${orderData.product.n} a été initiée avec succès !`);
-    setView('cag');
-  };
+  const updatedCagnottes = [newCagnotte, ...allCagnottes.filter((c) => c && c.id !== newCagnotte.id && c.id !== 'cag-1')];
+  try {
+    localStorage.setItem('takapay_backend_cagnottes', JSON.stringify(updatedCagnottes));
+    localStorage.removeItem('takapay-client-cagnottes');
+    localStorage.removeItem('takapay-demo-cagnotte');
+  } catch {
+    // Ignorer
+  }
+
+  try {
+    window.dispatchEvent(new CustomEvent('takapay_cagnotte_updated', { detail: updatedCagnottes }));
+  } catch {
+    // Ignorer
+  }
+
+  setCagnotteKey((k) => k + 1);
+  showToast(`Votre commande pour ${orderData.product.n} a été initiée avec succès !`);
+  setView('cag');
+};
 
   const handleLogout = () => {
     setUser(null);
@@ -277,7 +304,7 @@ export default function AppHome({ initialTab = 'home' }) {
           setView('shop');
         }}
         searchQuery={searchQuery}
-        cagnotteCount={orders.length || 2}
+        cagnotteCount={getStoredCagnottes(user).length}
       />
 
       {/* Contenu principal du portail client */}

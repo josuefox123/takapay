@@ -29,6 +29,7 @@ class UpdateProduitRequest extends FormRequest
             'stock' => ['sometimes', 'required', 'integer', 'min:0'],
             'duree' => ['sometimes', 'nullable', 'integer', 'min:0'],
             'couleur' => ['sometimes', 'nullable', 'string'],
+            'video' => ['sometimes', 'nullable'],
             'reference' => ['sometimes', 'nullable', 'string', 'max:255'],
             'prix_total' => ['sometimes', 'nullable', 'numeric', 'min:0'],
             'prix_minimum' => ['sometimes', 'nullable', 'numeric', 'min:0'],
