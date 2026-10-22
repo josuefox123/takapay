@@ -13,10 +13,7 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-        // 1. Catégories et sous-catégories
-        $this->call(CategorySeeder::class);
-
-        // 2. Compte Super Admin (mot de passe obligatoire en production, aléatoire sinon)
+        // 1. Compte Super Admin (mot de passe obligatoire en production, aléatoire sinon)
         $superAdminPassword = env('SUPER_ADMIN_PASSWORD') ?: Str::random(16);
         if (! env('SUPER_ADMIN_PASSWORD')) {
             $this->command->warn("SUPER_ADMIN_PASSWORD non défini — mot de passe généré : {$superAdminPassword}");

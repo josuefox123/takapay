@@ -15,6 +15,7 @@ class SousCategorie extends Model
 
     protected $fillable = [
         'nom',
+        'image',
         'categorie_id',
     ];
 
