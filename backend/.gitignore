@@ -14,7 +14,7 @@ GIT_WORKFLOW.md
 boost.json
 opencode.json
 .phpunit.result.cache
-dashboard/.agents/
+/dashboard
 /public/storage
 *.sqlite
 *.sqlite-journal
