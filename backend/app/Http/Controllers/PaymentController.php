@@ -7,6 +7,7 @@ use App\Mail\MerchantPaymentNotificationMail;
 use App\Models\Cagnotte;
 use App\Models\Commande;
 use App\Models\CommandeProduit;
+use App\Models\Produit;
 use App\Models\Transaction;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
@@ -19,13 +20,15 @@ class PaymentController extends Controller
 {
     /**
      * Crée une commande et fournit les configurations FeexPay au frontend React.
+     * Sécurise les prix contre les modifications côté navigateur (anti-tampering).
      */
     public function initiatePayment(Request $request): JsonResponse
     {
         $request->validate([
-            'amount' => 'required|numeric|min:1',
+            'amount' => 'nullable|numeric|min:1',
             'produit_id' => 'nullable|integer',
             'cagnotte_id' => 'nullable|integer',
+            'type_paiement' => 'nullable|string|in:cash,cagnotte',
             'quantite' => 'nullable|integer|min:1',
             'moyen_paiement' => 'nullable|string',
             'user_id' => 'nullable',
@@ -39,33 +42,96 @@ class PaymentController extends Controller
             $user = User::where('role', 'client')->first() ?? User::first();
         }
 
+        $typePaiement = $request->input('type_paiement', 'cagnotte');
+        $cagnotteId = $request->input('cagnotte_id');
+        $produitId = $request->input('produit_id');
+        $quantite = (int) $request->input('quantite', 1);
+
+        $requestedAmount = (float) $request->input('amount', 0);
+        $amount = $requestedAmount;
+        $fullProductPrice = $amount;
         $reference = 'CMD_' . time() . '_' . rand(1000, 9999);
-        $amount = (float) $request->amount;
         $commande = null;
 
-        // Si l'utilisateur est présent ou résolu, on persiste la commande
-        if ($user) {
-            $commande = DB::transaction(function () use ($user, $reference, $amount, $request) {
-                $cmd = Commande::create([
-                    'utilisateur_id' => $user->id,
-                    'reference' => $reference,
-                    'statut' => 'en_attente',
-                    'prix_total' => $amount,
-                ]);
+        // Cas 1 : Versement ultérieur sur une cagnotte existante (ClientCagnotteView)
+        if ($cagnotteId) {
+            $cagnotte = Cagnotte::with(['produit.parametreProduit.promotion'])->findOrFail($cagnotteId);
+            $produit = $cagnotte->produit;
+            $param = $produit?->parametreProduit;
+            $mode = $param?->mode_paiement ?? 'libre';
 
-                if ($request->filled('produit_id')) {
-                    $quantite = (int) $request->input('quantite', 1);
+            $prixTotal = (float) $cagnotte->prix_unitaire;
+            $dejaVerse = (float) $cagnotte->montant_verse;
+            $reste = max(0, $prixTotal - $dejaVerse);
+
+            if ($reste <= 0) {
+                return response()->json([
+                    'message' => 'Cette cagnotte est déjà entièrement soldée.',
+                ], 422);
+            }
+
+            // Mode échelonné : chaque versement doit respecter au minimum le prix échelonné
+            if ($mode === 'echelonne') {
+                $prixEchelonne = (float) ($param?->prix_echelonne ?? round($prixTotal / max(1, $produit?->duree ?? 6)));
+                if ($prixEchelonne > 0 && $reste >= $prixEchelonne && $requestedAmount < $prixEchelonne) {
+                    return response()->json([
+                        'message' => 'Pour cette cagnotte échelonnée, chaque versement doit être d’au moins ' . number_format($prixEchelonne, 0, ',', ' ') . ' FCFA.',
+                    ], 422);
+                }
+            }
+
+            $amount = min($requestedAmount, $reste);
+            $reference = 'DEP_CAG_' . $cagnotteId . '_' . time() . '_' . rand(100, 999);
+        }
+        // Cas 2 : Nouvelle commande (Achat au comptant ou Démarrage cagnotte)
+        elseif ($produitId) {
+            $produit = Produit::with(['parametreProduit.promotion'])->findOrFail($produitId);
+            $param = $produit->parametreProduit;
+
+            $promoPct = (float) ($param?->promotion?->pourcentage_promo ?? 0);
+            $rawCash = (float) ($param?->prix_cash ?? $param?->prix_total ?? 0);
+            $rawTotal = (float) ($param?->prix_total ?? $rawCash);
+
+            $prixCash = $promoPct > 0 ? round($rawCash * (1 - $promoPct / 100)) : $rawCash;
+            $prixTotal = $promoPct > 0 ? round($rawTotal * (1 - $promoPct / 100)) : $rawTotal;
+            $fullProductPrice = $prixTotal > 0 ? $prixTotal : $prixCash;
+
+            if ($typePaiement === 'cash') {
+                // Paiement comptant : le montant est STRICTEMENT imposé par le catalogue (sécurité anti-manipulation)
+                $amount = $prixCash > 0 ? $prixCash : $fullProductPrice;
+                $reference = 'CMD_CASH_' . time() . '_' . rand(1000, 9999);
+            } else {
+                // Cagnotte : vérifier le 1er versement plancher
+                $prixMinimum = (float) ($param?->prix_minimum ?? round($fullProductPrice * 0.1));
+                if ($prixMinimum > 0 && $requestedAmount < $prixMinimum) {
+                    return response()->json([
+                        'message' => 'Le premier versement minimum pour démarrer cette cagnotte est de ' . number_format($prixMinimum, 0, ',', ' ') . ' FCFA.',
+                    ], 422);
+                }
+                $amount = min($requestedAmount > 0 ? $requestedAmount : $prixMinimum, $fullProductPrice);
+                $reference = 'CMD_CAG_' . time() . '_' . rand(1000, 9999);
+            }
+
+            if ($user) {
+                $commande = DB::transaction(function () use ($user, $reference, $amount, $fullProductPrice, $produitId, $quantite) {
+                    $cmd = Commande::create([
+                        'utilisateur_id' => $user->id,
+                        'reference' => $reference,
+                        'statut' => 'en_attente',
+                        'prix_total' => $amount,
+                    ]);
+
                     CommandeProduit::create([
                         'commande_id' => $cmd->id,
-                        'produit_id' => $request->produit_id,
+                        'produit_id' => $produitId,
                         'quantite' => $quantite,
-                        'prix_unitaire' => $amount,
-                        'total' => $amount * $quantite,
+                        'prix_unitaire' => $fullProductPrice, // Vrai prix catalogue du produit
+                        'total' => $fullProductPrice * $quantite,
                     ]);
-                }
 
-                return $cmd;
-            });
+                    return $cmd;
+                });
+            }
         }
 
         return response()->json([
@@ -75,7 +141,8 @@ class PaymentController extends Controller
             'amount' => $amount,
             'reference' => $reference,
             'commande_id' => $commande?->id,
-            'cagnotte_id' => $request->cagnotte_id,
+            'cagnotte_id' => $cagnotteId,
+            'type_paiement' => $typePaiement,
         ]);
     }
 
@@ -154,6 +221,43 @@ class PaymentController extends Controller
         $finalAmount = 0.0;
 
         DB::transaction(function () use ($reference, $amount, $transactionId, $network, $userId, &$resolvedCommande, &$resolvedCagnotte, &$resolvedUser, &$finalAmount) {
+            $isCash = str_starts_with($reference, 'CMD_CASH_');
+            $isDeposit = str_starts_with($reference, 'DEP_CAG_');
+
+            // 1. Versement ultérieur sur cagnotte existante
+            if ($isDeposit) {
+                preg_match('/DEP_CAG_(\d+)_/', $reference, $matches);
+                $cagId = !empty($matches[1]) ? (int) $matches[1] : null;
+                $cagnotte = $cagId ? Cagnotte::find($cagId) : null;
+
+                if ($cagnotte) {
+                    $finalAmount = $amount > 0 ? $amount : 0.0;
+                    $cagnotte->increment('montant_verse', $finalAmount);
+                    if ($cagnotte->montant_verse >= $cagnotte->prix_unitaire) {
+                        $cagnotte->update(['statut' => 'terminee']);
+                    }
+
+                    Transaction::firstOrCreate(
+                        ['reference_externe' => $transactionId],
+                        [
+                            'cagnotte_id' => $cagnotte->id,
+                            'date' => now(),
+                            'statut' => 'succes',
+                            'montant' => $finalAmount,
+                            'prestataire' => 'FEEXPAY',
+                            'type' => 'versement',
+                            'moyen_paiement' => $network,
+                            'devise' => 'XOF',
+                        ]
+                    );
+
+                    $resolvedCagnotte = $cagnotte;
+                    $resolvedUser = $userId ? User::find($userId) : null;
+                }
+                return;
+            }
+
+            // 2. Nouvelle commande (Comptant ou Démarrage Cagnotte)
             $commande = Commande::where('reference', $reference)->first();
 
             if (!$commande && $userId) {
@@ -171,22 +275,16 @@ class PaymentController extends Controller
 
                 $cagnotteId = null;
                 $cmdProduit = $commande->commandeProduits()->first();
-                if ($cmdProduit && $cmdProduit->produit_id) {
-                    $cagnotte = Cagnotte::firstOrCreate(
-                        [
-                            'produit_id' => $cmdProduit->produit_id,
-                            'prix_unitaire' => $cmdProduit->prix_unitaire,
-                        ],
-                        [
-                            'montant_verse' => 0,
-                            'moyen_paiement' => $network,
-                            'statut' => 'en_cours',
-                        ]
-                    );
-                    $cagnotte->increment('montant_verse', $finalAmount);
-                    if ($cagnotte->montant_verse >= $cagnotte->prix_unitaire) {
-                        $cagnotte->update(['statut' => 'terminee']);
-                    }
+
+                // Si ce n'est PAS un achat comptant, on crée la cagnotte avec le vrai prix total du produit
+                if (!$isCash && $cmdProduit && $cmdProduit->produit_id) {
+                    $cagnotte = Cagnotte::create([
+                        'produit_id' => $cmdProduit->produit_id,
+                        'prix_unitaire' => $cmdProduit->prix_unitaire, // Prix total réel du produit
+                        'montant_verse' => $finalAmount,
+                        'moyen_paiement' => $network,
+                        'statut' => $finalAmount >= $cmdProduit->prix_unitaire ? 'terminee' : 'en_cours',
+                    ]);
                     $cagnotteId = $cagnotte->id;
                     $resolvedCagnotte = $cagnotte;
                 }
@@ -199,7 +297,7 @@ class PaymentController extends Controller
                         'statut' => 'succes',
                         'montant' => $finalAmount,
                         'prestataire' => 'FEEXPAY',
-                        'type' => 'commande',
+                        'type' => $isCash ? 'commande_cash' : 'commande_cagnotte',
                         'moyen_paiement' => $network,
                         'devise' => 'XOF',
                     ]

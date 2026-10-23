@@ -13,47 +13,51 @@ use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 
 class SousCategorieController extends Controller
 {
-    /**
-     * Display a listing of the resource.
-     */
+    public function __construct(private readonly ImageStorageService $images) {}
+
     public function index(): AnonymousResourceCollection
     {
         return SousCategorieResource::collection(SousCategorie::with('categorie')->orderBy('nom', 'asc')->get());
     }
 
-    //
-
-    /**
-     * Store a newly created resource in storage.
-     */
     public function store(StoreSousCategorieRequest $request)
     {
-        $sous_category = SousCategorie::create($request->validated());
+        $data = $request->validated();
+        if ($request->filled('image') || $request->hasFile('image')) {
+            $preferredName = $request->input('nom_fichier') ?? ($request->file('image')?->getClientOriginalName()) ?? null;
+            $data['image'] = $this->images->process($data['image'] ?? $request->file('image'), 'sous_categories', null, 'image', $preferredName);
+        }
 
-        return new SousCategorieResource($sous_category);
+        $sous_category = SousCategorie::create($data);
+
+        return (new SousCategorieResource($sous_category))
+            ->response()
+            ->setStatusCode(201);
     }
 
-    /**
-     * Display the specified resource.
-     */
     public function show(SousCategorie $sous_category)
     {
         return new SousCategorieResource($sous_category);
     }
 
-    /**
-     * Update the specified resource in storage.
-     */
     public function update(UpdateSousCategorieRequest $request, SousCategorie $sous_category)
     {
-        $sous_category->update($request->validated());
+        $data = $request->validated();
+        if (array_key_exists('image', $data)) {
+            if ($data['image'] === null || $data['image'] === '') {
+                $this->images->delete($sous_category->image);
+                $data['image'] = null;
+            } else {
+                $preferredName = $request->input('nom_fichier') ?? ($request->file('image')?->getClientOriginalName()) ?? null;
+                $data['image'] = $this->images->process($data['image'], 'sous_categories', $sous_category->image, 'image', $preferredName);
+            }
+        }
 
-        return new SousCategorieResource($sous_category);
+        $sous_category->update($data);
+
+        return new SousCategorieResource($sous_category->fresh());
     }
 
-    /**
-     * Supprimer une sous-catégorie (cascade SQL) et les fichiers images associés.
-     */
     public function destroy(SousCategorie $sous_category)
     {
         $fichiers = $sous_category->produits()
@@ -62,11 +66,14 @@ class SousCategorieController extends Controller
             ->flatMap->imageProduits
             ->pluck('chemin');
 
+        if ($sous_category->image) {
+            $this->images->delete($sous_category->image);
+        }
+
         $sous_category->delete();
 
-        $images = app(ImageStorageService::class);
         foreach ($fichiers as $chemin) {
-            $images->delete($chemin);
+            $this->images->delete($chemin);
         }
 
         return response()->json(['message' => 'Sous-catégorie supprimée avec succès.']);

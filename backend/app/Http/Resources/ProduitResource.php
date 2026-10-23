@@ -25,6 +25,7 @@ class ProduitResource extends JsonResource
             'stock' => $this->stock,
             'duree' => $this->duree,
             'couleur' => $this->couleur,
+            'video' => $this->video,
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
         ];

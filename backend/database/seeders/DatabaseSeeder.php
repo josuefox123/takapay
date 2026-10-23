@@ -13,16 +13,13 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-        // 1. Catégories et sous-catégories
-        $this->call(CategorySeeder::class);
-
-        // 2. Compte Super Admin (mot de passe obligatoire en production, aléatoire sinon)
+        // 1. Compte Super Admin (mot de passe obligatoire en production, aléatoire sinon)
         $superAdminPassword = env('SUPER_ADMIN_PASSWORD') ?: Str::random(16);
         if (! env('SUPER_ADMIN_PASSWORD')) {
             $this->command->warn("SUPER_ADMIN_PASSWORD non défini — mot de passe généré : {$superAdminPassword}");
         }
 
-        User::firstOrCreate(
+        User::updateOrCreate(
             ['email' => 'admin@takapay.bj'],
             [
                 'nom' => 'Super',
@@ -40,7 +37,7 @@ class DatabaseSeeder extends Seeder
             $this->command->warn("ADMIN_PASSWORD non défini — mot de passe généré : {$adminPassword}");
         }
 
-        User::firstOrCreate(
+        User::updateOrCreate(
             ['email' => 'manager@takapay.bj'],
             [
                 'nom' => 'Manager',
