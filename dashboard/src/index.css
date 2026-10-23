@@ -1292,21 +1292,21 @@ html.motion-ready .way-card.reveal-on-scroll.is-visible:nth-child(2) {
 
 .security-inner {
   display: grid;
-  grid-template-columns: 90px 1fr .95fr;
-  gap: 35px;
+  grid-template-columns: .8fr 1.2fr;
+  gap: 66px;
   align-items: center;
 }
 
 .security-mark {
-  width: 72px;
-  height: 72px;
-  border: 1px solid #e8d8c6;
+  width: 82px;
+  height: 82px;
+  border: 1.5px solid #e8d8c6;
   background: #fffdf8;
   border-radius: 50%;
   color: var(--red);
   display: grid;
   place-items: center;
-  align-self: start;
+  margin-bottom: 24px;
 }
 
 .security-main h2 {
@@ -1376,12 +1376,11 @@ html.motion-ready .way-card.reveal-on-scroll.is-visible:nth-child(2) {
 
 @media (max-width: 950px) {
   .security-inner {
-    grid-template-columns: 60px 1fr;
-    gap: 20px;
+    grid-template-columns: 1fr;
+    gap: 32px;
   }
 
   .security-points {
-    grid-column: 1 / -1;
     border-left: 0;
     padding-left: 0;
   }
@@ -1394,13 +1393,33 @@ html.motion-ready .way-card.reveal-on-scroll.is-visible:nth-child(2) {
 
   .security-inner {
     grid-template-columns: 1fr;
-    gap: 16px;
+    gap: 20px;
   }
 
   .security-mark {
-    width: 54px;
-    height: 54px;
+    width: 68px;
+    height: 68px;
+    margin-bottom: 16px;
   }
+}
+
+/* FAQ Section */
+.faq-heading {
+  text-align: center;
+  max-width: 720px;
+  margin: 0 auto 48px;
+}
+
+.faq-heading h2,
+.faq-title {
+  font-family: var(--font-heading);
+  font-size: clamp(34px, 3.8vw, 48px);
+  color: #211d1b;
+  font-weight: 800;
+  line-height: normal;
+  letter-spacing: normal;
+  margin: 0 auto;
+  text-align: center;
 }
 
 /* Téléchargement / PWA */

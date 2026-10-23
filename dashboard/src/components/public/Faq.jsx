@@ -5,15 +5,27 @@ export default function Faq() {
   return (
     <Container
       as="section"
-      className="block pt-[90px] md:pt-[100px] pb-[80px] md:pb-[90px] sm:grid sm:grid-cols-[.8fr_1.2fr] sm:items-center sm:gap-[70px]"
+      className="pt-[90px] md:pt-[100px] pb-[80px] md:pb-[90px]"
     >
-      <div className="faq-heading">
-        <h2 className="font-heading text-3xl sm:text-[38px] lg:text-[44px] font-extrabold tracking-[-.04em] text-[#211d1b]">
+      <div className="faq-heading ways-copy">
+        <h2
+          className="faq-title"
+          style={{
+            fontFamily: "var(--font-heading, 'Manrope', 'DM Sans', sans-serif)",
+            fontSize: "clamp(34px, 3.8vw, 48px)",
+            fontWeight: 800,
+            lineHeight: "normal",
+            letterSpacing: "normal",
+            color: "#211d1b",
+            margin: "0 auto",
+            textAlign: "center",
+          }}
+        >
           {faqData.title}
         </h2>
       </div>
 
-      <div className="faq-list mt-6 sm:mt-0">
+      <div className="faq-list max-w-[860px] mx-auto">
         {faqData.items.map((item) => (
           <details
             key={item.question}

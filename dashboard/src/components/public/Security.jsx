@@ -5,10 +5,6 @@ export default function Security() {
   return (
     <section className="security-section" id="securite">
       <div className="security-inner section-wrap">
-        <div className="security-mark">
-          <Icon name="shield" size={35} />
-        </div>
-
         <div className="security-main">
           <h2>{securityData.title}</h2>
           <p>{securityData.description}</p>

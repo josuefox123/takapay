@@ -1,4 +1,3 @@
-import { Link } from 'react-router-dom';
 import Brand from './Brand';
 import { footerData } from '../../data/homeData';
 
@@ -25,9 +24,9 @@ export default function Footer({ isClient = false }) {
             <span>© 2026 Takapay. Tous droits réservés · Montants en FCFA (XOF).</span>
             <div className="client-footer-links">
               <span>Cotonou, Bénin</span>
-              <Link to="/admin/connexion" style={{ color: 'inherit', textDecoration: 'none', opacity: 0.7 }}>
-                Espace Admin
-              </Link>
+              <a href="tel:+2290162180290" style={{ color: 'inherit', textDecoration: 'none', opacity: 0.85 }}>
+                📞 +229 01 62 18 02 90
+              </a>
             </div>
           </div>
         </div>
@@ -56,7 +55,7 @@ export default function Footer({ isClient = false }) {
               {link.label}
             </a>
           ))}
-          <Link to="/admin/connexion">Espace Administration</Link>
+          <a href="tel:+2290162180290">📞 +229 01 62 18 02 90</a>
         </div>
 
         {/* Liens Informations / Légal */}
