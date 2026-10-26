@@ -110,17 +110,55 @@ export default function ClientCatalogView({
       },
     ];
   } else if (selectedCategory === 'Tous') {
-    // Si 'Tous' est sélectionné, afficher les univers créés en base de données
-    subcatCards = categoriesList
+    // Si 'Tous' est sélectionné, lister l'ensemble des sous-catégories de toutes les catégories
+    const allSubs = [];
+    categoriesList
       .filter((c) => c.id !== 'Tous')
-      .map((cat) => ({
-        name: cat.name,
-        category: 'Catégorie',
-        image: cat.image || '/assets/logo-icon.png',
-        count: liveProducts.filter((p) => matchCat(p.c, cat.name)).length,
-        icon: cat.icon || '🛍️',
-        isMacro: true,
-      }));
+      .forEach((cat) => {
+        const subObjs = cat.subcategories || [];
+        const subs = subcategoriesMap[cat.name] || subcategoriesMap[cat.id] || subObjs.map((s) => (typeof s === 'string' ? s : s.name));
+        subs.forEach((subName) => {
+          const matchProducts = liveProducts.filter(
+            (p) => matchCat(p.c, cat.name) && matchCat(p.subcategory, subName)
+          );
+
+          const subObj = subObjs.find((s) => (typeof s === 'string' ? s : s.name) === subName);
+          let subImg = '';
+          if (subObj && subObj.image) {
+            subImg = resolveImageUrl(subObj.image);
+          } else if (matchProducts[0]?.im) {
+            subImg = matchProducts[0].im;
+          } else if (cat.image) {
+            subImg = cat.image;
+          } else {
+            subImg = '/assets/logo-icon.png';
+          }
+
+          allSubs.push({
+            name: subName,
+            category: cat.name,
+            image: subImg,
+            count: matchProducts.length,
+            icon: cat.icon || '🛍️',
+            isMacro: false,
+          });
+        });
+      });
+
+    if (allSubs.length > 0) {
+      subcatCards = allSubs;
+    } else {
+      subcatCards = categoriesList
+        .filter((c) => c.id !== 'Tous')
+        .map((cat) => ({
+          name: cat.name,
+          category: 'Catégorie',
+          image: cat.image || '/assets/logo-icon.png',
+          count: liveProducts.filter((p) => matchCat(p.c, cat.name)).length,
+          icon: cat.icon || '🛍️',
+          isMacro: true,
+        }));
+    }
   } else {
     // Pour une catégorie précise, lister ses sous-catégories réelles avec leurs images
     const currentCatObj = categoriesList.find((c) => c.id === selectedCategory || c.name === selectedCategory);
@@ -182,14 +220,12 @@ export default function ClientCatalogView({
               ? 'Offres du moment'
               : selectedCategory !== 'Tous'
                 ? `Catalogue · ${selectedCategory}`
-                : 'Catalogue des articles'}
+                : 'Catalogue des sous-catégories'}
           </h2>
           <small>
             {searchQuery
               ? `Résultats pour « ${searchQuery} » (${filteredProducts.length} articles trouvés)`
-              : selectedCategory !== 'Tous'
-                ? `${filteredProducts.length} article${filteredProducts.length > 1 ? 's' : ''} disponible${filteredProducts.length > 1 ? 's' : ''} dans cette catégorie`
-                : 'Explorez par catégorie ou découvrez nos articles disponibles'}
+              : 'Cliquez sur une sous-catégorie pour découvrir ses articles'}
           </small>
         </div>
       </div>
@@ -238,16 +274,16 @@ export default function ClientCatalogView({
             Aucune sous-catégorie disponible pour cette catégorie
           </div>
           <div style={{ fontSize: '13px', color: 'var(--mu, #6b7280)' }}>
-            Retrouvez tous les articles de « {selectedCategory} » directement ci-dessous.
+            Veuillez sélectionner une autre catégorie.
           </div>
         </div>
       )}
 
-      {/* Cartes des sous-catégories / univers */}
+      {/* Cartes des sous-catégories */}
       {!searchQuery && subcatCards.length > 0 && (
         <>
           <div style={{ fontSize: '13px', fontWeight: 800, color: 'var(--mu)', margin: '14px 0 8px', letterSpacing: '.4px' }}>
-            {isPromoOnly ? 'Sélection en promotion' : selectedCategory === 'Tous' ? 'Univers disponibles' : 'Sous-catégories'}
+            {isPromoOnly ? 'Sélection en promotion' : 'Sous-catégories disponibles'}
           </div>
 
           <div className="subcategory-grid">
@@ -289,61 +325,47 @@ export default function ClientCatalogView({
         </>
       )}
 
-      {/* Grille des articles correspondants */}
-      <div style={{ marginTop: '28px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-          <h3 style={{ fontSize: '17px', fontWeight: 800, color: 'var(--tx)', margin: 0 }}>
-            {searchQuery
-              ? `Résultats de recherche (${filteredProducts.length})`
-              : selectedCategory !== 'Tous'
-                ? `Articles « ${selectedCategory} » (${filteredProducts.length})`
-                : `Tous les articles disponibles (${filteredProducts.length})`}
-          </h3>
-        </div>
+      {/* Si recherche textuelle active, afficher les résultats correspondants */}
+      {searchQuery && searchQuery.trim() ? (
+        <div style={{ marginTop: '28px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+            <h3 style={{ fontSize: '17px', fontWeight: 800, color: 'var(--tx)', margin: 0 }}>
+              Résultats de recherche ({filteredProducts.length})
+            </h3>
+          </div>
 
-        {filteredProducts.length > 0 ? (
-          <div className="client-grid">
-            {filteredProducts.map((p) => (
-              <ClientProductCard
-                key={p.id}
-                product={p}
-                onSelect={onSelectProduct}
-              />
-            ))}
-          </div>
-        ) : (
-          <div
-            style={{
-              textAlign: 'center',
-              background: 'var(--cd)',
-              border: '1.5px dashed var(--bd)',
-              borderRadius: '20px',
-              padding: '48px 20px',
-              color: 'var(--mu)',
-            }}
-          >
-            <div style={{ fontSize: '40px', marginBottom: '8px' }}>📦</div>
-            <strong style={{ fontSize: '16px', display: 'block', color: 'var(--tx)' }}>
-              {searchQuery
-                ? `Aucun article trouvé pour « ${searchQuery} »`
-                : `Aucun article actuellement disponible dans « ${selectedCategory} »`}
-            </strong>
-            <p style={{ margin: '6px 0 16px', fontSize: '13px' }}>
-              Explorez d’autres catégories ou revenez à l’accueil pour voir l’ensemble des offres.
-            </p>
-            {selectedCategory !== 'Tous' && (
-              <button
-                type="button"
-                className="client-btn-primary"
-                onClick={() => onSelectCategory('Tous')}
-                style={{ display: 'inline-flex', padding: '10px 18px', fontSize: '13px' }}
-              >
-                Voir tous les articles
-              </button>
-            )}
-          </div>
-        )}
-      </div>
+          {filteredProducts.length > 0 ? (
+            <div className="client-grid">
+              {filteredProducts.map((p) => (
+                <ClientProductCard
+                  key={p.id}
+                  product={p}
+                  onSelect={onSelectProduct}
+                />
+              ))}
+            </div>
+          ) : (
+            <div
+              style={{
+                textAlign: 'center',
+                background: 'var(--cd)',
+                border: '1.5px dashed var(--bd)',
+                borderRadius: '20px',
+                padding: '48px 20px',
+                color: 'var(--mu)',
+              }}
+            >
+              <div style={{ fontSize: '40px', marginBottom: '8px' }}>📦</div>
+              <strong style={{ fontSize: '16px', display: 'block', color: 'var(--tx)' }}>
+                Aucun article trouvé pour « {searchQuery} »
+              </strong>
+              <p style={{ margin: '6px 0 16px', fontSize: '13px' }}>
+                Essayez d’autres termes de recherche ou parcourez nos sous-catégories ci-dessus.
+              </p>
+            </div>
+          )}
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -289,7 +289,10 @@ export const adminService = {
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      throw new Error(err.message || 'Erreur lors de la suppression du produit.');
+      const error = new Error(err.message || 'Erreur lors de la suppression du produit.');
+      error.data = err;
+      error.status = res.status;
+      throw error;
     }
     window.dispatchEvent(new CustomEvent('takapay_products_updated'));
     return true;
@@ -630,5 +633,89 @@ export const adminService = {
       }
     } catch (_error) { void _error; }
     return [];
+  },
+
+  // 7. SUPPORT CLIENTÈLE & CHAT EN DIRECT
+  async getSupportUnreadCount() {
+    const token = this.getToken();
+    try {
+      const res = await fetch(`${API_BASE}/admin/support/unread-count`, {
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          Accept: 'application/json',
+        },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        return data.unread_count || 0;
+      }
+    } catch { /* ignore */ }
+    return 0;
+  },
+
+  async getSupportConversations(page = 1) {
+    const token = this.getToken();
+    try {
+      const res = await fetch(`${API_BASE}/admin/support/conversations?page=${page}`, {
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          Accept: 'application/json',
+        },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        return data.data || { data: [] };
+      }
+    } catch { /* ignore */ }
+    return { data: [] };
+  },
+
+  async getSupportConversation(id) {
+    const token = this.getToken();
+    try {
+      const res = await fetch(`${API_BASE}/admin/support/conversations/${id}`, {
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          Accept: 'application/json',
+        },
+      });
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch { /* ignore */ }
+    return null;
+  },
+
+  async replySupportConversation(id, message) {
+    const token = this.getToken();
+    const res = await fetch(`${API_BASE}/admin/support/conversations/${id}/reply`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ message }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.message || 'Erreur lors de l’envoi de la réponse.');
+    }
+    return await res.json();
+  },
+
+  async closeSupportConversation(id) {
+    const token = this.getToken();
+    const res = await fetch(`${API_BASE}/admin/support/conversations/${id}/close`, {
+      method: 'PATCH',
+      headers: {
+        Accept: 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    });
+    if (!res.ok) {
+      throw new Error('Erreur lors de la clôture de la conversation.');
+    }
+    return await res.json();
   },
 };

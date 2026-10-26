@@ -4,6 +4,7 @@ import { PRODUCTS } from '../../data/clientStore';
 export default function ClientSubcategoryView({
   category,
   subcategory,
+  products = [],
   isPromoOnly,
   onBack,
   onSelectProduct,
@@ -36,7 +37,8 @@ export default function ClientSubcategoryView({
     return false;
   };
 
-  const list = PRODUCTS.filter((p) => {
+  const sourceProducts = Array.isArray(products) && products.length > 0 ? products : PRODUCTS;
+  const list = sourceProducts.filter((p) => {
     if (isPromoOnly) return Boolean(p.o);
     const catOk = !category || category === 'Tous' || matchCategory(p.c, category);
     const subOk = !subcategory || matchSubcategory(p.subcategory, subcategory);

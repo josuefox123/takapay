@@ -23,7 +23,12 @@ class ProduitController extends Controller
     public function index(): AnonymousResourceCollection
     {
         return ProduitResource::collection(
-            Produit::with(['sousCategorie.categorie', 'parametreProduit.promotion', 'imageProduits'])->latest()->paginate(25)
+            Produit::with(['sousCategorie.categorie', 'parametreProduit.promotion', 'imageProduits'])
+                ->withCount(['cagnottes as cagnottes_actives_count' => function ($query) {
+                    $query->whereIn('statut', ['en_cours', 'active']);
+                }])
+                ->latest()
+                ->paginate(25)
         );
     }
 
@@ -127,6 +132,18 @@ $produitFields = ['nom', 'sous_categorie_id', 'description', 'stock', 'duree', '
      */
     public function destroy(Produit $produit): JsonResponse
     {
+        $activeCagnottesCount = $produit->cagnottes()
+            ->whereIn('statut', ['en_cours', 'active'])
+            ->count();
+
+        if ($activeCagnottesCount > 0) {
+            return response()->json([
+                'message' => 'Impossible de supprimer ce produit car une ou plusieurs cagnottes sont actuellement en cours chez un utilisateur.',
+                'has_active_cagnotte' => true,
+                'cagnottes_actives_count' => $activeCagnottesCount,
+            ], 422);
+        }
+
         $chemins = $produit->imageProduits()->pluck('chemin');
 
         DB::transaction(function () use ($produit) {

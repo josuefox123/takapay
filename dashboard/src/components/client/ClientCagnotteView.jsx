@@ -174,6 +174,10 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
   const p = cagnotte.product || {};
   const pct = cagnotte.pourcentage || 0;
   const isFinished = pct >= 100;
+  const isLibre =
+    cagnotte.mode === 'libre' ||
+    cagnotte.product?.payment?.mode === 'libre' ||
+    cagnotte.product?.mode_paiement === 'libre';
 
   const targetRemaining = Number(targetCagnotte.resteAPayer) || 0;
   const targetName = targetCagnotte.product?.n || 'votre article';
@@ -630,7 +634,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                       fontWeight: 800,
                     }}
                   >
-                    {isFinished ? '🎉 Financement complété' : `● Échéance en cours (${pct}%)`}
+                    {isFinished ? '🎉 Financement complété' : isLibre ? `● Cotisation libre (${pct}%)` : `● Échéance en cours (${pct}%)`}
                   </span>
                 </div>
                 <p style={{ margin: '4px 0 0', color: '#706966', fontSize: '13.5px' }}>
@@ -811,8 +815,8 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                 </div>
               </div>
 
-              {/* Échéances (masquées une fois la cagnotte financée) */}
-              {!isFinished && (
+              {/* Échéances (masquées en mode libre OU une fois la cagnotte financée) */}
+              {!isFinished && !isLibre && (
                 <div className="cagnotte-detail-schedule-grid">
                   <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
                     <span style={{ fontSize: '22px', marginTop: '1px' }}>📅</span>
@@ -835,7 +839,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                         {cagnotte.dateFinEstimee}
                       </b>
                       <span style={{ fontSize: '11px', color: '#8c8580' }}>
-                        ({cagnotte.moisRestants ?? 0} mois restants)
+                        ({cagnotte.moisRestants ?? 0} {cagnotte.moisRestants > 1 ? 'mois restants' : 'mois restant'})
                       </span>
                     </div>
                   </div>

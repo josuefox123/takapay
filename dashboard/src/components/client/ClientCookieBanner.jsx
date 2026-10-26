@@ -7,8 +7,8 @@ export default function ClientCookieBanner({ onShowToast }) {
     try {
       const choice = localStorage.getItem('takapay-cookie-consent');
       if (!choice) {
-        // Afficher la bannière discrètement après 1.5s
-        const timer = setTimeout(() => setVisible(true), 1500);
+        // Afficher la bannière promptement dès le chargement
+        const timer = setTimeout(() => setVisible(true), 400);
         return () => clearTimeout(timer);
       }
     } catch {
@@ -53,21 +53,40 @@ export default function ClientCookieBanner({ onShowToast }) {
 
   return (
     <div className="cookie-banner" role="region" aria-label="Consentement Cookies & Notifications">
-      <div className="cookie-copy">
-        <strong>Gestion de la confidentialité & Notifications</strong>
-        <p>
-          TakaPay utilise des cookies essentiels pour assurer le bon fonctionnement de votre panier et vos cagnottes.
-          Activez les notifications pour recevoir des rappels d'échéances et vos alertes de livraison.
-        </p>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flex: '1 1 360px' }}>
+        <div
+          style={{
+            width: '46px',
+            height: '46px',
+            borderRadius: '14px',
+            background: 'rgba(220, 38, 38, 0.18)',
+            border: '1.5px solid rgba(220, 38, 38, 0.35)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '24px',
+            flexShrink: 0,
+          }}
+        >
+          🍪
+        </div>
+        <div className="cookie-copy">
+          <strong>Gestion des cookies & Confidentialité</strong>
+          <p>
+            TakaPay utilise des cookies essentiels pour sécuriser votre compte, vos commandes et vos cagnottes.
+            Activez les alertes pour ne rater aucune échéance de livraison.
+          </p>
+        </div>
       </div>
 
       <div className="cookie-actions">
         <button
           type="button"
           className="client-btn"
+          style={{ fontWeight: 800 }}
           onClick={() => handleSave('all')}
         >
-          Tout accepter
+          ✓ Tout accepter
         </button>
 
         <button

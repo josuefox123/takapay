@@ -22,6 +22,11 @@ export default function AdminProductsView({ onShowToast }) {
   const [catErrors, setCatErrors] = useState({});
   const [subCatErrors, setSubCatErrors] = useState({});
 
+  // Modals pour la suppression de produit
+  const [productToDelete, setProductToDelete] = useState(null);
+  const [blockedProduct, setBlockedProduct] = useState(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
   // Formulaire Produit
   const [form, setForm] = useState({
     nom: '',
@@ -255,15 +260,34 @@ export default function AdminProductsView({ onShowToast }) {
     onShowToast('Vidéo retirée.');
   };
 
-  // Suppression d'un produit (garantie locale + distante)
-  const handleDeleteProduct = async (id, nom) => {
-    if (!window.confirm(`Confirmer la suppression définitive du produit "${nom}" ?`)) return;
+  // Déclenchement de la suppression avec vérification préalable
+  const handleInitiateDelete = (product) => {
+    if (product.has_active_cagnotte || (product.cagnottes_actives_count && product.cagnottes_actives_count > 0)) {
+      setBlockedProduct(product);
+    } else {
+      setProductToDelete(product);
+    }
+  };
+
+  // Confirmation et exécution de la suppression
+  const handleConfirmDelete = async () => {
+    if (!productToDelete) return;
+    setIsDeleting(true);
     try {
-      await adminService.deleteProduit(id);
-      setProduits((prev) => prev.filter((p) => p.id !== id));
-      onShowToast(`Produit "${nom}" supprimé avec succès.`);
-    } catch {
-      alert('Erreur lors de la suppression.');
+      await adminService.deleteProduit(productToDelete.id);
+      setProduits((prev) => prev.filter((p) => p.id !== productToDelete.id));
+      onShowToast(`Produit "${productToDelete.nom}" supprimé avec succès.`);
+      setProductToDelete(null);
+    } catch (err) {
+      if (err?.data?.has_active_cagnotte || err?.status === 422) {
+        const prod = productToDelete;
+        setProductToDelete(null);
+        setBlockedProduct(prod);
+      } else {
+        alert(err.message || 'Erreur lors de la suppression.');
+      }
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -2100,7 +2124,7 @@ export default function AdminProductsView({ onShowToast }) {
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
-                              handleDeleteProduct(item.id, item.nom);
+                              handleInitiateDelete(item);
                             }}
                             style={{
                               background: '#fee2e2',
@@ -2130,6 +2154,216 @@ export default function AdminProductsView({ onShowToast }) {
           </div>
         )}
       </div>
+
+      {/* Modal 1 : Signalement que le produit ne peut pas être supprimé car une cagnotte est en cours */}
+      {blockedProduct && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(15, 23, 42, 0.65)',
+            zIndex: 9999,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '20px',
+            backdropFilter: 'blur(4px)',
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setBlockedProduct(null);
+          }}
+        >
+          <div
+            style={{
+              background: 'var(--card, #ffffff)',
+              borderRadius: '20px',
+              maxWidth: '480px',
+              width: '100%',
+              padding: '28px',
+              border: '1px solid var(--line, #e2e8f0)',
+              boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+            }}
+          >
+            <div
+              style={{
+                width: '52px',
+                height: '52px',
+                borderRadius: '14px',
+                background: '#fef3c7',
+                color: '#d97706',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginBottom: '16px',
+              }}
+            >
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10" />
+                <line x1="12" y1="8" x2="12" y2="12" />
+                <line x1="12" y1="16" x2="12.01" y2="16" />
+              </svg>
+            </div>
+
+            <h3 style={{ fontSize: '18px', fontWeight: 800, marginBottom: '8px', color: 'var(--ink, #0f172a)' }}>
+              Suppression impossible
+            </h3>
+
+            <p style={{ color: 'var(--ink, #334155)', fontSize: '14px', lineHeight: 1.5, marginBottom: '14px' }}>
+              Le produit <strong>« {blockedProduct.nom} »</strong> ne peut pas être supprimé car <strong>une cagnotte est actuellement en cours</strong> chez un utilisateur.
+            </p>
+
+            <div
+              style={{
+                background: '#fffbeb',
+                border: '1px solid #fef3c7',
+                borderRadius: '12px',
+                padding: '12px 14px',
+                marginBottom: '20px',
+                fontSize: '13px',
+                color: '#92400e',
+                lineHeight: 1.5,
+              }}
+            >
+              Pour garantir la sécurité des paiements déjà engagés, un produit associé à une cagnotte active ne peut pas être retiré de la base de données.
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                onClick={() => setBlockedProduct(null)}
+                style={{
+                  padding: '10px 20px',
+                  borderRadius: '10px',
+                  background: 'var(--ink, #0f172a)',
+                  color: '#fff',
+                  border: 'none',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                J'ai compris
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal 2 : Confirmation de suppression si le produit est réellement supprimable */}
+      {productToDelete && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(15, 23, 42, 0.65)',
+            zIndex: 9999,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '20px',
+            backdropFilter: 'blur(4px)',
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !isDeleting) setProductToDelete(null);
+          }}
+        >
+          <div
+            style={{
+              background: 'var(--card, #ffffff)',
+              borderRadius: '20px',
+              maxWidth: '480px',
+              width: '100%',
+              padding: '28px',
+              border: '1px solid var(--line, #e2e8f0)',
+              boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+            }}
+          >
+            <div
+              style={{
+                width: '52px',
+                height: '52px',
+                borderRadius: '14px',
+                background: '#fee2e2',
+                color: '#dc2626',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginBottom: '16px',
+              }}
+            >
+              <AdminIcon name="trash" size={26} />
+            </div>
+
+            <h3 style={{ fontSize: '18px', fontWeight: 800, marginBottom: '8px', color: 'var(--ink, #0f172a)' }}>
+              Confirmer la suppression
+            </h3>
+
+            <p style={{ color: 'var(--ink, #334155)', fontSize: '14px', lineHeight: 1.5, marginBottom: '14px' }}>
+              Êtes-vous sûr de vouloir supprimer définitivement le produit <strong>« {productToDelete.nom} »</strong> ?
+            </p>
+
+            <div
+              style={{
+                background: '#fef2f2',
+                border: '1px solid #fee2e2',
+                borderRadius: '12px',
+                padding: '12px 14px',
+                marginBottom: '20px',
+                fontSize: '13px',
+                color: '#991b1b',
+                lineHeight: 1.5,
+              }}
+            >
+              Cette action est irréversible. Les images et paramètres tarifaires rattachés à ce produit seront définitivement supprimés.
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={() => setProductToDelete(null)}
+                style={{
+                  padding: '10px 18px',
+                  borderRadius: '10px',
+                  background: 'var(--soft, #f1f5f9)',
+                  color: 'var(--ink, #0f172a)',
+                  border: '1px solid var(--line, #e2e8f0)',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  cursor: isDeleting ? 'not-allowed' : 'pointer',
+                }}
+              >
+                Annuler
+              </button>
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={handleConfirmDelete}
+                style={{
+                  padding: '10px 18px',
+                  borderRadius: '10px',
+                  background: '#dc2626',
+                  color: '#ffffff',
+                  border: 'none',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  cursor: isDeleting ? 'not-allowed' : 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  opacity: isDeleting ? 0.7 : 1,
+                }}
+              >
+                {isDeleting ? 'Suppression...' : 'Supprimer définitivement'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

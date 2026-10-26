@@ -20,6 +20,7 @@ use App\Http\Controllers\Api\PromotionController;
 use App\Http\Controllers\Api\SousCategorieController;
 use App\Http\Controllers\Api\TransactionController;
 use App\Http\Controllers\Api\UserController;
+use App\Http\Controllers\Api\SupportChatController;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\PaymentController;
 
@@ -50,6 +51,16 @@ Route::get('cagnottes', [CagnotteController::class, 'index'])->name('cagnottes.i
 
 /*
 |--------------------------------------------------------------------------
+| SUPPORT CLIENTÈLE & CHAT EN DIRECT (PUBLIC / CLIENT)
+|--------------------------------------------------------------------------
+*/
+Route::prefix('support')->group(function () {
+    Route::get('/messages', [SupportChatController::class, 'getClientMessages']);
+    Route::post('/send', [SupportChatController::class, 'sendClientMessage'])->middleware('throttle:10,1');
+});
+
+/*
+|--------------------------------------------------------------------------
 | ROUTES PROTÉGÉES PAR SANCTUM (+ compte actif)
 |--------------------------------------------------------------------------
 */
@@ -75,6 +86,13 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
             Route::patch('/users/{user}/status', [AdminController::class, 'updateUserStatus']);
             Route::patch('/documents/{document}/verify', [AdminController::class, 'verifyDocument']);
             Route::patch('/livreurs/{livreur}/status', [AdminController::class, 'updateLivreurStatus']);
+
+            // Support Clientèle & Messagerie
+            Route::get('/support/unread-count', [SupportChatController::class, 'adminUnreadCount']);
+            Route::get('/support/conversations', [SupportChatController::class, 'adminListConversations']);
+            Route::get('/support/conversations/{id}', [SupportChatController::class, 'adminGetConversation']);
+            Route::post('/support/conversations/{id}/reply', [SupportChatController::class, 'adminReply']);
+            Route::patch('/support/conversations/{id}/close', [SupportChatController::class, 'adminCloseConversation']);
         });
 
         // Gestion des comptes, du KYC, des audits et des livreurs

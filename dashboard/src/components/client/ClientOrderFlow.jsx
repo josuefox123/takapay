@@ -7,6 +7,8 @@ import { adminService } from '../../services/adminService';
 export default function ClientOrderFlow({
   product,
   selectedColor,
+  initialOrderType = 'cagnotte',
+  initialQuantity = 1,
   user,
   onUserAuthSuccess,
   onCompleteOrder,
@@ -39,7 +41,8 @@ export default function ClientOrderFlow({
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [paymentData, setPaymentData] = useState(null);
-  const [orderType, setOrderType] = useState('cagnotte'); // 'cagnotte' ou 'cash'
+  const [orderType, setOrderType] = useState(initialOrderType || 'cagnotte'); // 'cagnotte' ou 'cash'
+  const [quantity, setQuantity] = useState(initialQuantity || 1);
   const [successModalData, setSuccessModalData] = useState(null);
 
   // Connexion Google
@@ -172,7 +175,8 @@ export default function ClientOrderFlow({
       ? Math.round(product.payment.minimumStart * priceRatio)
       : Math.round(effectivePrice * 0.1)
   );
-  const paymentAmount = orderType === 'cash' ? cashPrice : minDeposit;
+  const effectiveQuantity = orderType === 'cash' ? Math.max(1, quantity) : 1;
+  const paymentAmount = orderType === 'cash' ? (cashPrice * effectiveQuantity) : minDeposit;
 
   // Étape 4 : Initiation et Validation Paiement FeexPay
   const handlePaymentSubmit = async (e) => {
@@ -188,6 +192,7 @@ export default function ClientOrderFlow({
         amount: paymentAmount,
         produit_id: product?.id,
         type_paiement: orderType,
+        quantite: effectiveQuantity,
         moyen_paiement: provider,
         user_id: user?.id,
       });
@@ -233,11 +238,12 @@ export default function ClientOrderFlow({
           selectedColor,
           provider: response.reseau || provider,
           initialAmount: paymentAmount,
-          totalPrice: orderType === 'cash' ? cashPrice : effectivePrice,
+          totalPrice: orderType === 'cash' ? (cashPrice * effectiveQuantity) : effectivePrice,
           reference: orderRef,
           transactionId: response.transaction_id || orderRef,
           date: new Date().toISOString(),
           isCash: orderType === 'cash',
+          quantity: effectiveQuantity,
         });
       } catch (err) {
         console.error('Erreur confirmation backend :', err);
@@ -570,54 +576,60 @@ export default function ClientOrderFlow({
               Votre compte est prêt. Choisissez votre portefeuille Mobile Money pour lancer votre premier versement.
             </p>
 
-            {/* Choix de la modalité : Comptant (Cash) vs Cagnotte */}
+            {/* Affichage exclusif de la modalité de règlement sélectionnée */}
             <div style={{ marginBottom: '16px' }}>
               <div style={{ fontSize: '13px', fontWeight: 700, marginBottom: '8px', color: 'var(--tx)' }}>
-                Choisissez votre modalité de règlement :
+                Modalité de règlement :
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                <button
-                  type="button"
-                  onClick={() => { setOrderType('cagnotte'); setPaymentData(null); }}
+              {orderType === 'cash' ? (
+                <div
                   style={{
-                    padding: '12px 10px',
-                    borderRadius: '10px',
-                    border: orderType === 'cagnotte' ? '2px solid var(--p, #c62828)' : '1px solid var(--bd, #e5e7eb)',
-                    background: orderType === 'cagnotte' ? 'rgba(198, 40, 40, 0.06)' : 'var(--bg-card, #fff)',
-                    cursor: 'pointer',
-                    textAlign: 'left',
-                    transition: 'all 0.2s',
+                    padding: '12px 14px',
+                    borderRadius: '12px',
+                    border: '1.5px solid #1e293b',
+                    background: 'rgba(30, 41, 59, 0.06)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
                   }}
                 >
-                  <div style={{ fontSize: '13px', fontWeight: 800, color: orderType === 'cagnotte' ? 'var(--p, #c62828)' : 'inherit' }}>
-                    🎯 Lancer une cagnotte
+                  <div>
+                    <div style={{ fontSize: '13px', fontWeight: 800, color: '#1e293b' }}>
+                      💵 Paiement comptant
+                    </div>
+                    <div style={{ fontSize: '11px', color: 'var(--mu)', marginTop: '3px' }}>
+                      Règlement direct intégral
+                    </div>
                   </div>
-                  <div style={{ fontSize: '11px', color: 'var(--mu)', marginTop: '4px' }}>
-                    1er versement : <b>{formatFCFA(minDeposit)}</b>
-                  </div>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => { setOrderType('cash'); setPaymentData(null); }}
+                  <span style={{ fontSize: '12px', fontWeight: 700, color: '#1e293b', background: 'rgba(30, 41, 59, 0.1)', padding: '4px 10px', borderRadius: '6px' }}>
+                    {formatFCFA(cashPrice)} / article
+                  </span>
+                </div>
+              ) : (
+                <div
                   style={{
-                    padding: '12px 10px',
-                    borderRadius: '10px',
-                    border: orderType === 'cash' ? '2px solid var(--p, #c62828)' : '1px solid var(--bd, #e5e7eb)',
-                    background: orderType === 'cash' ? 'rgba(198, 40, 40, 0.06)' : 'var(--bg-card, #fff)',
-                    cursor: 'pointer',
-                    textAlign: 'left',
-                    transition: 'all 0.2s',
+                    padding: '12px 14px',
+                    borderRadius: '12px',
+                    border: '1.5px solid var(--r)',
+                    background: 'rgba(220, 38, 38, 0.06)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
                   }}
                 >
-                  <div style={{ fontSize: '13px', fontWeight: 800, color: orderType === 'cash' ? 'var(--p, #c62828)' : 'inherit' }}>
-                    💳 Payer comptant (Cash)
+                  <div>
+                    <div style={{ fontSize: '13px', fontWeight: 800, color: 'var(--r)' }}>
+                      🎯 Mode Cagnotte Takapay
+                    </div>
+                    <div style={{ fontSize: '11px', color: 'var(--mu)', marginTop: '3px' }}>
+                      Cotisations échelonnées sécurisées
+                    </div>
                   </div>
-                  <div style={{ fontSize: '11px', color: 'var(--mu)', marginTop: '4px' }}>
-                    Total direct : <b>{formatFCFA(cashPrice)}</b>
-                  </div>
-                </button>
-              </div>
+                  <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--r)', background: 'rgba(220, 38, 38, 0.1)', padding: '4px 10px', borderRadius: '6px' }}>
+                    1er versement : {formatFCFA(minDeposit)}
+                  </span>
+                </div>
+              )}
             </div>
 
             {/* Récapitulatif de l'article */}
@@ -629,9 +641,37 @@ export default function ClientOrderFlow({
                 </div>
               )}
 
+              {orderType === 'cash' ? (
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '10px' }}>
+                  <span style={{ color: 'var(--mu)', fontSize: '13px' }}>Quantité commandée :</span>
+                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                    <button
+                      type="button"
+                      disabled={quantity <= 1}
+                      onClick={() => { setQuantity((q) => Math.max(1, q - 1)); setPaymentData(null); }}
+                      style={{ width: '28px', height: '28px', borderRadius: '6px', border: '1px solid var(--bd)', cursor: quantity <= 1 ? 'not-allowed' : 'pointer', fontWeight: 800 }}
+                    >
+                      −
+                    </button>
+                    <b style={{ fontSize: '14px', minWidth: '24px', textAlign: 'center' }}>{quantity}</b>
+                    <button
+                      type="button"
+                      onClick={() => { setQuantity((q) => q + 1); setPaymentData(null); }}
+                      style={{ width: '28px', height: '28px', borderRadius: '6px', border: '1px solid var(--bd)', cursor: 'pointer', fontWeight: 800 }}
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ color: 'var(--mu)', fontSize: '12px', marginTop: '6px' }}>
+                  Quantité : <b>1 article</b>
+                </div>
+              )}
+
               <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '10px' }}>
                 <span style={{ color: 'var(--mu)', fontSize: '13px' }}>
-                  {orderType === 'cash' ? 'Prix comptant (Cash) à régler :' : '1er versement à effectuer :'}
+                  {orderType === 'cash' ? `Total comptant (${effectiveQuantity} × ${formatFCFA(cashPrice)}) :` : '1er versement à effectuer :'}
                 </span>
                 <strong style={{ fontSize: '16px', color: 'var(--r)' }}>
                   {formatFCFA(paymentAmount)}

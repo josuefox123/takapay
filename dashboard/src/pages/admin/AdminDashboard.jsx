@@ -15,6 +15,7 @@ import AdminDocumentsView from '../../components/admin/AdminDocumentsView';
 import AdminUsersView from '../../components/admin/AdminUsersView';
 import AdminTransactionsView from '../../components/admin/AdminTransactionsView';
 import AdminLivraisonsView from '../../components/admin/AdminLivraisonsView';
+import AdminSupportView from '../../components/admin/AdminSupportView';
 
 import { adminService } from '../../services/adminService';
 import './admin.css';
@@ -22,7 +23,7 @@ import './admin.css';
 export default function AdminDashboard() {
   const navigate = useNavigate();
   const { tab } = useParams();
-  const validTabs = ['dashboard', 'produits', 'promotions', 'cagnottes', 'documents', 'utilisateurs', 'transactions', 'livraisons'];
+  const validTabs = ['dashboard', 'support', 'produits', 'promotions', 'cagnottes', 'documents', 'utilisateurs', 'transactions', 'livraisons'];
   const initialActive = tab && validTabs.includes(tab) ? tab : 'dashboard';
   const [activeTab, setActiveTab] = useState(initialActive);
 
@@ -48,6 +49,23 @@ export default function AdminDashboard() {
   // Gestion du Toast flottant
   const [toastMessage, setToastMessage] = useState('');
   const [toastVisible, setToastVisible] = useState(false);
+  const [unreadSupportCount, setUnreadSupportCount] = useState(0);
+
+  const refreshUnreadSupport = () => {
+    adminService.getSupportUnreadCount().then((count) => {
+      setUnreadSupportCount(count || 0);
+    });
+  };
+
+  useEffect(() => {
+    refreshUnreadSupport();
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        refreshUnreadSupport();
+      }
+    }, 20000);
+    return () => clearInterval(interval);
+  }, []);
 
   const showToast = (message) => {
     setToastMessage(message);
@@ -104,6 +122,7 @@ export default function AdminDashboard() {
           activeTab={activeTab}
           onSelectTab={handleSelectTab}
           onLogout={handleLogout}
+          unreadSupportCount={unreadSupportCount}
         />
 
         {/* Contenu Principal dynamique selon l'onglet actif */}
@@ -136,6 +155,13 @@ export default function AdminDashboard() {
                 <AdminWatchlist items={stats?.a_surveiller || []} />
               </div>
             </>
+          )}
+
+          {activeTab === 'support' && (
+            <AdminSupportView
+              onShowToast={showToast}
+              onUnreadCountChange={(c) => setUnreadSupportCount(c)}
+            />
           )}
 
           {activeTab === 'produits' && (

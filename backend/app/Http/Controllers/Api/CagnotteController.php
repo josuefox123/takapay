@@ -18,7 +18,7 @@ class CagnotteController extends Controller
     public function index(): AnonymousResourceCollection
     {
         return CagnotteResource::collection(
-            Cagnotte::with(['produit.imageProduits', 'produit.parametreProduit', 'transactions'])->latest()->get()
+            Cagnotte::with(['produit.imageProduits', 'produit.parametreProduit', 'produit.sousCategorie.categorie', 'transactions'])->latest()->get()
         );
     }
 
