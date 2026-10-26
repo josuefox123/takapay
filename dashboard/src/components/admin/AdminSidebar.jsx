@@ -1,9 +1,10 @@
 import AdminIcon from './AdminIcon';
 import logoImg from '../../assets/logo.png';
 
-export default function AdminSidebar({ activeTab = 'dashboard', onSelectTab, onLogout }) {
+export default function AdminSidebar({ activeTab = 'dashboard', onSelectTab, onLogout, unreadSupportCount = 0 }) {
   const navItems = [
     { id: 'dashboard', label: 'Tableau de bord', icon: 'grid' },
+    { id: 'support', label: 'Support & Chat', icon: 'message', badge: unreadSupportCount },
     { id: 'produits', label: 'Produits', icon: 'box' },
     { id: 'promotions', label: 'Promotions', icon: 'tag' },
     { id: 'cagnottes', label: 'Cagnottes', icon: 'wallet' },
@@ -34,9 +35,25 @@ export default function AdminSidebar({ activeTab = 'dashboard', onSelectTab, onL
                 onClick={() => onSelectTab && onSelectTab(item.id)}
                 className={`admin-nav-item ${isActive ? 'active' : ''}`}
                 aria-current={isActive ? 'page' : undefined}
+                style={{ display: 'flex', alignItems: 'center', width: '100%', gap: '10px' }}
               >
                 <AdminIcon name={item.icon} size={18} />
-                <span>{item.label}</span>
+                <span style={{ flex: 1, textAlign: 'left' }}>{item.label}</span>
+                {Boolean(item.badge && item.badge > 0) && (
+                  <span
+                    style={{
+                      background: '#dc2626',
+                      color: '#ffffff',
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      padding: '2px 7px',
+                      borderRadius: '12px',
+                      marginLeft: 'auto',
+                    }}
+                  >
+                    {item.badge}
+                  </span>
+                )}
               </button>
             );
           })}

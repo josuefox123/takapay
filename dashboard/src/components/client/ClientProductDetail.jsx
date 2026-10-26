@@ -39,6 +39,12 @@ export default function ClientProductDetail({
   const isCash = pay.mode === 'cash';
   const isLibre = pay.mode === 'libre';
   const cashPrice = Number(product.prix_cash || pay.prixCash || 0);
+  const effectiveCashPrice = cashPrice > 0 ? cashPrice : currentPrice;
+
+  // Choix du mode de commande : 'cagnotte' ou 'cash'
+  const [orderMode, setOrderMode] = useState(isCash ? 'cash' : 'cagnotte');
+  // Quantité en option cash (libre et ajustable, min 1) ; les autres modes restent à 1
+  const [cashQuantity, setCashQuantity] = useState(1);
 
   // 1er versement minimum (10% par défaut ou valeur proportionnelle)
   const basePrice = Number(product.p) > 0 ? Number(product.p) : 1;
@@ -257,20 +263,25 @@ export default function ClientProductDetail({
             </div>
           )}
 
-          {/* 5. PRIX DYNAMIQUE DU PRODUIT (SYNCHRONISÉ AVEC LA COULEUR) */}
+          {/* 5. PRIX DYNAMIQUE DU PRODUIT (SYNCHRONISÉ AVEC LA COULEUR ET LE MODE) */}
           <div style={{ marginBottom: '18px' }}>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px', flexWrap: 'wrap' }}>
-              <span style={{ fontSize: '32px', fontWeight: 900, color: 'var(--r)', letterSpacing: '-0.5px' }}>
-                {formatFCFA(currentPrice)}
+              <span style={{ fontSize: '32px', fontWeight: 900, color: orderMode === 'cash' ? '#1e293b' : 'var(--r)', letterSpacing: '-0.5px' }}>
+                {formatFCFA(orderMode === 'cash' ? (effectiveCashPrice * cashQuantity) : currentPrice)}
               </span>
               {currentOldPrice && (
                 <s style={{ fontSize: '18px', color: 'var(--mu)', fontWeight: 500 }}>
-                  {formatFCFA(currentOldPrice)}
+                  {formatFCFA(orderMode === 'cash' ? (currentOldPrice * cashQuantity) : currentOldPrice)}
                 </s>
               )}
               {discount > 0 && (
                 <span style={{ fontSize: '12px', fontWeight: 800, padding: '4px 10px', borderRadius: '99px', background: 'rgba(220, 38, 38, 0.12)', color: 'var(--r)' }}>
                   −{discount}%
+                </span>
+              )}
+              {orderMode === 'cash' && cashQuantity > 1 && (
+                <span style={{ fontSize: '13px', color: 'var(--mu)', fontWeight: 600 }}>
+                  ({cashQuantity} × {formatFCFA(effectiveCashPrice)})
                 </span>
               )}
             </div>
@@ -280,16 +291,175 @@ export default function ClientProductDetail({
                 <span>Tarif ajusté spécifiquement pour la déclinaison <strong>{chosenColor.name}</strong></span>
               </div>
             )}
-            {cashPrice > 0 && (
-              <div style={{ marginTop: '8px', display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '6px 12px', background: 'rgba(22, 163, 74, 0.08)', borderRadius: '10px', border: '1px solid rgba(22, 163, 74, 0.2)' }}>
-                <span style={{ fontSize: '13px', fontWeight: 600, color: '#15803d' }}>
-                  💵 Option achat comptant (Cash) :
+
+            {/* SÉLECTEUR DE MODE DE RÈGLEMENT (CASH VS CAGNOTTE) & QUANTITÉ */}
+            <div style={{ marginTop: '16px', padding: '16px', borderRadius: '16px', background: 'var(--sf)', border: '1.5px solid var(--bd)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                <span style={{ fontSize: '13px', fontWeight: 800, color: 'var(--tx)' }}>
+                  Mode de règlement souhaité :
                 </span>
-                <span style={{ fontSize: '15px', fontWeight: 900, color: '#16a34a' }}>
-                  {formatFCFA(cashPrice)}
+                <span style={{ fontSize: '11px', fontWeight: 700, padding: '2px 8px', borderRadius: '6px', background: orderMode === 'cash' ? 'rgba(30, 41, 59, 0.08)' : 'rgba(220, 38, 38, 0.1)', color: orderMode === 'cash' ? '#1e293b' : 'var(--r)' }}>
+                  {orderMode === 'cash' ? 'COMPTANT' : 'ÉCHELONNÉ'}
                 </span>
               </div>
-            )}
+
+              <div style={{ display: 'grid', gridTemplateColumns: !isCash ? '1fr 1fr' : '1fr', gap: '10px' }}>
+                {!isCash && (
+                  <button
+                    type="button"
+                    onClick={() => setOrderMode('cagnotte')}
+                    style={{
+                      padding: '12px 14px',
+                      borderRadius: '12px',
+                      border: orderMode === 'cagnotte' ? '2px solid var(--r)' : '1.5px solid var(--bd)',
+                      background: orderMode === 'cagnotte' ? 'rgba(220, 38, 38, 0.06)' : 'var(--cd)',
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                      transition: 'all 0.18s ease',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span style={{ fontSize: '13px', fontWeight: 800, color: orderMode === 'cagnotte' ? 'var(--r)' : 'var(--tx)' }}>
+                        🎯 Mode Cagnotte
+                      </span>
+                      {orderMode === 'cagnotte' && <span style={{ color: 'var(--r)', fontWeight: 800 }}>✓</span>}
+                    </div>
+                    <div style={{ fontSize: '11px', color: 'var(--mu)', marginTop: '4px' }}>
+                      1er versement : <b>{formatFCFA(minStart)}</b>
+                    </div>
+                    <div style={{ fontSize: '11px', color: 'var(--tx)', marginTop: '2px', fontWeight: 600 }}>
+                      Quantité : 1 article
+                    </div>
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => setOrderMode('cash')}
+                  style={{
+                    padding: '12px 14px',
+                    borderRadius: '12px',
+                    border: orderMode === 'cash' ? '2px solid #1e293b' : '1.5px solid var(--bd)',
+                    background: orderMode === 'cash' ? 'rgba(30, 41, 59, 0.06)' : 'var(--cd)',
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                    transition: 'all 0.18s ease',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span style={{ fontSize: '13px', fontWeight: 800, color: orderMode === 'cash' ? '#1e293b' : 'var(--tx)' }}>
+                      💵 Option Cash (Comptant)
+                    </span>
+                    {orderMode === 'cash' && <span style={{ color: '#1e293b', fontWeight: 800 }}>✓</span>}
+                  </div>
+                  <div style={{ fontSize: '11px', color: 'var(--mu)', marginTop: '4px' }}>
+                    Prix unitaire : <b>{formatFCFA(effectiveCashPrice)}</b>
+                  </div>
+                  <div style={{ fontSize: '11px', color: orderMode === 'cash' ? '#1e293b' : 'var(--mu)', marginTop: '2px', fontWeight: 700 }}>
+                    Quantité ajustable
+                  </div>
+                </button>
+              </div>
+
+              {/* Sélecteur de quantité interactif affiché uniquement en option Cash */}
+              {orderMode === 'cash' ? (
+                <div
+                  style={{
+                    marginTop: '14px',
+                    padding: '12px 14px',
+                    background: 'rgba(30, 41, 59, 0.05)',
+                    borderRadius: '12px',
+                    border: '1px solid rgba(30, 41, 59, 0.2)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    flexWrap: 'wrap',
+                    gap: '10px',
+                  }}
+                >
+                  <div>
+                    <div style={{ fontSize: '13px', fontWeight: 800, color: '#1e293b' }}>
+                      Quantité souhaitée (Paiement Cash) :
+                    </div>
+                    <div style={{ fontSize: '12px', color: 'var(--tx)', marginTop: '2px' }}>
+                      {cashQuantity} × {formatFCFA(effectiveCashPrice)} = <strong style={{ color: '#1e293b', fontSize: '13px' }}>{formatFCFA(effectiveCashPrice * cashQuantity)}</strong>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'var(--bg)', padding: '4px', borderRadius: '10px', border: '1px solid var(--bd)' }}>
+                    <button
+                      type="button"
+                      disabled={cashQuantity <= 1}
+                      onClick={() => setCashQuantity((q) => Math.max(1, q - 1))}
+                      style={{
+                        width: '32px',
+                        height: '32px',
+                        borderRadius: '8px',
+                        border: '1px solid var(--bd)',
+                        background: 'var(--cd)',
+                        color: 'var(--tx)',
+                        fontWeight: 800,
+                        cursor: cashQuantity <= 1 ? 'not-allowed' : 'pointer',
+                        opacity: cashQuantity <= 1 ? 0.4 : 1,
+                      }}
+                    >
+                      −
+                    </button>
+
+                    <input
+                      type="number"
+                      min={1}
+                      max={product.stockCount && product.stockCount > 0 ? product.stockCount : 99}
+                      value={cashQuantity}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value, 10);
+                        if (isNaN(val) || val < 1) setCashQuantity(1);
+                        else {
+                          const maxStock = product.stockCount && product.stockCount > 0 ? product.stockCount : 99;
+                          setCashQuantity(Math.min(val, maxStock));
+                        }
+                      }}
+                      style={{
+                        width: '50px',
+                        textAlign: 'center',
+                        border: 'none',
+                        background: 'transparent',
+                        fontSize: '15px',
+                        fontWeight: 800,
+                        color: 'var(--tx)',
+                      }}
+                    />
+
+                    <button
+                      type="button"
+                      disabled={Boolean(product.stockCount && cashQuantity >= product.stockCount)}
+                      onClick={() => {
+                        const maxStock = product.stockCount && product.stockCount > 0 ? product.stockCount : 99;
+                        setCashQuantity((q) => Math.min(maxStock, q + 1));
+                      }}
+                      style={{
+                        width: '32px',
+                        height: '32px',
+                        borderRadius: '8px',
+                        border: '1px solid var(--bd)',
+                        background: 'var(--cd)',
+                        color: 'var(--tx)',
+                        fontWeight: 800,
+                        cursor: (product.stockCount && cashQuantity >= product.stockCount) ? 'not-allowed' : 'pointer',
+                        opacity: (product.stockCount && cashQuantity >= product.stockCount) ? 0.4 : 1,
+                      }}
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ marginTop: '10px', fontSize: '12px', color: 'var(--mu)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span>ℹ️</span>
+                  <span>En mode cagnotte, la commande porte sur <strong>1 article</strong> pour assurer votre suivi de cotisation individuel.</span>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Bannière validité de la promo */}
@@ -305,30 +475,42 @@ export default function ClientProductDetail({
           <div className="payment-box" style={{ margin: '0 0 20px', padding: '18px 20px', borderRadius: '16px', border: '1.5px solid var(--bd)', background: 'var(--sf)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '8px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: isLibre ? '#2563eb' : 'var(--r)' }} />
+                <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: orderMode === 'cash' ? '#1e293b' : isLibre ? '#2563eb' : 'var(--r)' }} />
                 <b style={{ fontSize: '14px', color: 'var(--tx)', letterSpacing: '-0.2px' }}>
-                  Modalités financières · {isCash ? 'Paiement comptant' : isLibre ? 'Cotisation libre' : 'Paiement échelonné'}
+                  Modalités financières · {orderMode === 'cash' ? `Paiement comptant (${cashQuantity} ${cashQuantity > 1 ? 'articles' : 'article'})` : isLibre ? 'Cotisation libre' : 'Paiement échelonné'}
                 </b>
               </div>
-              <span style={{ fontSize: '11px', fontWeight: 800, padding: '3px 10px', borderRadius: '99px', background: 'rgba(22, 163, 74, 0.12)', color: '#16a34a' }}>
-                PARAMÈTRES DÉDIÉS
+              <span style={{ fontSize: '11px', fontWeight: 800, padding: '3px 10px', borderRadius: '99px', background: orderMode === 'cash' ? 'rgba(30, 41, 59, 0.08)' : 'rgba(220, 38, 38, 0.1)', color: orderMode === 'cash' ? '#1e293b' : 'var(--r)' }}>
+                {orderMode === 'cash' ? 'ACHAT COMPTANT' : 'CAGNOTTE TAKAPAY'}
               </span>
             </div>
 
             <div className="payment-grid" style={{ gap: '12px' }}>
-              {isCash ? (
+              {orderMode === 'cash' ? (
                 <>
                   <div className="payment-item">
-                    <small>Montant total à régler</small>
-                    <b>{formatFCFA(currentPrice)}</b>
+                    <small>Quantité commandée</small>
+                    <b style={{ color: '#1e293b' }}>{cashQuantity} {cashQuantity > 1 ? 'articles' : 'article'}</b>
+                  </div>
+                  <div className="payment-item">
+                    <small>Prix unitaire comptant</small>
+                    <b>{formatFCFA(effectiveCashPrice)}</b>
+                  </div>
+                  <div className="payment-item">
+                    <small>Montant total à régler ({cashQuantity} × {formatFCFA(effectiveCashPrice)})</small>
+                    <b style={{ color: '#1e293b', fontSize: '15px' }}>{formatFCFA(effectiveCashPrice * cashQuantity)}</b>
                   </div>
                   <div className="payment-item">
                     <small>Fréquence</small>
-                    <b>En un seul règlement</b>
+                    <b>En un seul règlement intégral</b>
                   </div>
                 </>
               ) : isLibre ? (
                 <>
+                  <div className="payment-item">
+                    <small>Quantité souscrite</small>
+                    <b>1 article</b>
+                  </div>
                   <div className="payment-item">
                     <small>1 er versement minimum</small>
                     <b>{formatFCFA(minStart)}</b>
@@ -338,10 +520,6 @@ export default function ClientProductDetail({
                     <b>Libres (selon votre convenance)</b>
                   </div>
                   <div className="payment-item">
-                    <small>Seuil de récupération</small>
-                    <b style={{ color: '#16a34a' }}>Aucun seuil à atteindre</b>
-                  </div>
-                  <div className="payment-item">
                     <small>Fin estimée</small>
                     <b>Selon vos versements</b>
                   </div>
@@ -349,15 +527,13 @@ export default function ClientProductDetail({
               ) : (
                 <>
                   <div className="payment-item">
+                    <small>Quantité souscrite</small>
+                    <b>1 article</b>
+                  </div>
+                  <div className="payment-item">
                     <small>Prix total ({chosenColor?.name || 'Prix de base'})</small>
                     <b style={{ color: 'var(--r)' }}>{formatFCFA(currentPrice)}</b>
                   </div>
-                  {cashPrice > 0 && (
-                    <div className="payment-item">
-                      <small>Prix au comptant (Cash)</small>
-                      <b style={{ color: '#16a34a' }}>{formatFCFA(cashPrice)}</b>
-                    </div>
-                  )}
                   <div className="payment-item">
                     <small>1 er versement minimum</small>
                     <b>{formatFCFA(minStart)}</b>
@@ -375,7 +551,7 @@ export default function ClientProductDetail({
             </div>
 
             {/* Seuil de livraison anticipée en mode échelonné */}
-            {!isCash && !isLibre && (
+            {orderMode !== 'cash' && !isLibre && (
               <div style={{ marginTop: '12px', padding: '10px 14px', borderRadius: '10px', background: 'var(--cd)', display: 'flex', alignItems: 'center', gap: '8px', border: '1px solid var(--bd)' }}>
                 <strong style={{ fontSize: '13px', color: 'var(--tx)' }}>
                   Recevez l'article dès {formatFCFA(deliveryThreshold)} cotisés
@@ -384,10 +560,10 @@ export default function ClientProductDetail({
             )}
 
             <small className="payment-hint" style={{ marginTop: '12px', display: 'block', fontSize: '11px', color: 'var(--mu)', lineHeight: 1.5 }}>
-              {isLibre
-                ? 'Vous démarrez avec le premier versement minimum, puis vous cotisez à votre convenance en toute liberté.'
-                : isCash
-                  ? 'Règlement direct sécurisé et expédition prioritaire garantie.'
+              {orderMode === 'cash'
+                ? 'Règlement direct sécurisé pour la quantité choisie et expédition prioritaire garantie.'
+                : isLibre
+                  ? 'Vous démarrez avec le premier versement minimum pour 1 article, puis vous cotisez à votre rythme en toute liberté.'
                   : 'Échéancier transparent et sécurisé. Chaque versement est comptabilisé en direct dans votre espace cagnotte.'}
             </small>
           </div>
@@ -397,10 +573,23 @@ export default function ClientProductDetail({
             <button
               type="button"
               className="client-btn w100"
-              style={{ fontSize: '16px', padding: '16px', borderRadius: '14px', fontWeight: 800 }}
-              onClick={() => onStartOrder(product, chosenColor)}
+              style={{
+                fontSize: '16px',
+                padding: '16px',
+                borderRadius: '14px',
+                fontWeight: 800,
+                background: orderMode === 'cash' ? '#1e293b' : undefined,
+              }}
+              onClick={() =>
+                onStartOrder(product, chosenColor, {
+                  mode: orderMode,
+                  quantity: orderMode === 'cash' ? cashQuantity : 1,
+                })
+              }
             >
-              Passer une commande
+              {orderMode === 'cash'
+                ? 'Commander au comptant'
+                : 'Passer une commande'}
             </button>
             <p className="auth-footnote" style={{ marginTop: '10px', textAlign: 'center', fontSize: '12px', color: 'var(--mu)' }}>
               🔒 Paiement 100% sécurisé via MTN Mobile Money ou Moov Money avec confirmation instantanée.
