@@ -97,10 +97,13 @@ class PaymentController extends Controller
             $fullProductPrice = $prixTotal > 0 ? $prixTotal : $prixCash;
 
             if ($typePaiement === 'cash') {
-                // Paiement comptant : le montant est STRICTEMENT imposé par le catalogue (sécurité anti-manipulation)
-                $amount = $prixCash > 0 ? $prixCash : $fullProductPrice;
+                // Paiement comptant : le montant est STRICTEMENT imposé par le catalogue et multiplié par la quantité
+                $unitCash = $prixCash > 0 ? $prixCash : $fullProductPrice;
+                $amount = $unitCash * max(1, $quantite);
+                $fullProductPrice = $unitCash;
                 $reference = 'CMD_CASH_' . time() . '_' . rand(1000, 9999);
             } else {
+                $quantite = 1;
                 // Cagnotte : vérifier le 1er versement plancher
                 $prixMinimum = (float) ($param?->prix_minimum ?? round($fullProductPrice * 0.1));
                 if ($prixMinimum > 0 && $requestedAmount < $prixMinimum) {

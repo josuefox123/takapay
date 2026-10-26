@@ -34,6 +34,7 @@ class SousCategorieResource extends JsonResource
             'image' => $url,
             'nom_fichier' => $rawImage ? basename($rawImage) : null,
             'categorie_id' => $this->categorie_id,
+            'categorie' => new CategorieResource($this->whenLoaded('categorie')),
         ];
     }
 }

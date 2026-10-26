@@ -101,12 +101,28 @@ export const mapAdminProductToClient = (p) => {
       ? p.sous_categorie
       : p.sous_categorie?.nom || p.subcategory || 'Articles');
 
-  const categoryName =
+  let categoryName =
     p.categorie_nom ||
     p.sous_categorie?.categorie?.nom ||
     p.categorie?.nom ||
-    (typeof p.c === 'string' ? p.c : null) ||
-    subcategoryName;
+    null;
+
+  // Si non fourni directement, retrouver la catégorie parente dans TAKAPAY_CATEGORIES
+  if (!categoryName) {
+    const subId = p.sous_categorie_id || p.sous_categorie?.id;
+    const foundCat = TAKAPAY_CATEGORIES.find((cat) =>
+      (cat.subcategories || []).some(
+        (s) =>
+          (subId && Number(s.id) === Number(subId)) ||
+          (s.name && s.name.trim().toLowerCase() === subcategoryName.trim().toLowerCase())
+      )
+    );
+    if (foundCat) categoryName = foundCat.name;
+  }
+
+  if (!categoryName) {
+    categoryName = (typeof p.c === 'string' ? p.c : null) || subcategoryName;
+  }
 
   const seuilLivraisonVal = Number(
     param.seuil_livraison || p.seuil_livraison || Math.round(discountedPrice * 0.4)
@@ -364,7 +380,11 @@ export const formatFCFA = (val) => {
   return Number.isFinite(num) ? `${Math.round(num).toLocaleString('fr-FR')} FCFA` : 'À confirmer';
 };
 
-export const discountPercentage = (p) => {
+export const discountPercentage = (p, optNewPrice) => {
+  if (typeof p === 'number' && typeof optNewPrice === 'number') {
+    if (p <= optNewPrice || p <= 0) return 0;
+    return Math.round((1 - optNewPrice / p) * 100);
+  }
   if (!p || !p.o || p.o <= p.p) return 0;
   return Math.round((1 - p.p / p.o) * 100);
 };
@@ -403,11 +423,49 @@ export const createCagnotteFromOrder = (orderData, user = null) => {
   const clientEmail = user?.email || orderData?.email || '';
   const clientUserId = user?.id ? String(user.id) : (clientPhone || null);
 
+  const isLibre =
+    orderData?.mode_paiement === 'libre' ||
+    prod.payment?.mode === 'libre' ||
+    prod.mode_paiement === 'libre';
+  const mode = isLibre ? 'libre' : 'echelonne';
+
+  // Montant régulier prévu de chaque échéance (en mode échelonné)
+  const installmentAmount = !isLibre
+    ? Number(prod.payment?.installmentAmount || prod.prix_echelonne || (prod.duree > 0 ? Math.round(totalOrderPrice / prod.duree) : Math.round(totalOrderPrice * 0.1)))
+    : null;
+
+  // Calcul mathématique des mois restants basé sur le reste à payer
+  const moisRestants = !isLibre && installmentAmount > 0 && remaining > 0
+    ? Math.ceil(remaining / installmentAmount)
+    : 0;
+
+  // Prochaine échéance selon le calendrier (même jour de démarrage le mois suivant)
+  const nextDueDate = new Date(now);
+  nextDueDate.setMonth(nextDueDate.getMonth() + 1);
+  const nextDueDateFormatted = nextDueDate.toLocaleDateString('fr-FR', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+
+  // Date de fin estimée calculée mathématiquement selon le calendrier
+  let estimatedEndFormatted = 'Terminée';
+  if (moisRestants > 0) {
+    const estimatedEndDate = new Date(now);
+    estimatedEndDate.setMonth(estimatedEndDate.getMonth() + moisRestants);
+    estimatedEndFormatted = estimatedEndDate.toLocaleDateString('fr-FR', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    });
+  }
+
   return {
     id: `cag-${Date.now()}`,
     userId: clientUserId,
     userPhone: clientPhone,
     userEmail: clientEmail,
+    mode: mode,
     isReal: true,
     product: {
       id: prod.id || Date.now(),
@@ -419,18 +477,24 @@ export const createCagnotteFromOrder = (orderData, user = null) => {
       variant: orderData?.selectedColor?.name
         ? `${orderData.selectedColor.name} · 1 unité`
         : 'Standard · 1 unité',
+      payment: {
+        ...(prod.payment || {}),
+        mode: mode,
+        installmentAmount: installmentAmount,
+      },
     },
     dateCommande: now.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' }),
+    created_at: now.toISOString(),
     prixTotal: totalOrderPrice,
     montantVerse: initialPaid,
     resteAPayer: remaining,
     pourcentage: percent,
-    prochainVersement: {
-      montant: prod.payment?.installmentAmount || Math.round(totalOrderPrice * 0.1),
-      date: 'Le mois prochain',
+    prochainVersement: isLibre ? null : {
+      montant: remaining > 0 ? Math.min(installmentAmount || remaining, remaining) : 0,
+      date: nextDueDateFormatted,
     },
-    dateFinEstimee: `${prod.duree || 6} mois`,
-    moisRestants: prod.duree || 6,
+    dateFinEstimee: isLibre ? null : estimatedEndFormatted,
+    moisRestants: isLibre ? null : moisRestants,
     statut: remaining === 0 ? 'completed' : 'active',
     transactions: [
       {
@@ -453,14 +517,17 @@ export const createCagnotteFromOrder = (orderData, user = null) => {
 export const mapBackendCagnotteToClient = (c) => {
   if (!c) return null;
   const prod = c.produit || {};
-  const total = Number(c.prix_unitaire || prod.parametre_produit?.prix_total || 0);
+  const param = prod.parametre_produit || prod.parametreProduit || {};
+  const total = Number(c.prix_unitaire || param.prix_total || 0);
   const paid = Number(c.montant_verse || 0);
   const remaining = Math.max(0, total - paid);
   const percent = total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : 0;
 
   const rawImages = Array.isArray(prod.image_produits) && prod.image_produits.length > 0
     ? prod.image_produits
-    : [];
+    : Array.isArray(prod.images) && prod.images.length > 0
+      ? prod.images
+      : [];
   let primaryImg = '';
   if (rawImages.length > 0) {
     const sorted = [...rawImages].sort((a, b) => (Number(a.position) || 0) - (Number(b.position) || 0));
@@ -483,16 +550,82 @@ export const mapBackendCagnotteToClient = (c) => {
     periode: 'aujourdhui',
   })) : [];
 
+  const subcategoryName =
+    prod.sous_categorie?.nom ||
+    prod.sous_categorie_nom ||
+    prod.subcategory ||
+    'Article';
+
+  let categoryName =
+    prod.categorie_nom ||
+    prod.sous_categorie?.categorie?.nom ||
+    prod.categorie?.nom ||
+    null;
+
+  if (!categoryName) {
+    const subId = prod.sous_categorie_id || prod.sous_categorie?.id;
+    const foundCat = TAKAPAY_CATEGORIES.find((cat) =>
+      (cat.subcategories || []).some(
+        (s) =>
+          (subId && Number(s.id) === Number(subId)) ||
+          (s.name && s.name.trim().toLowerCase() === subcategoryName.trim().toLowerCase())
+      )
+    );
+    if (foundCat) categoryName = foundCat.name;
+  }
+  if (!categoryName) categoryName = 'Catalogue';
+
+  const isLibre = param.mode_paiement === 'libre';
+  const mode = isLibre ? 'libre' : 'echelonne';
+
+  // Montant régulier prévu de chaque échéance (en mode échelonné)
+  const installmentAmount = !isLibre
+    ? Number(param.prix_echelonne || (prod.duree > 0 ? Math.round(total / prod.duree) : Math.round(total * 0.1)))
+    : null;
+
+  // Calcul mathématique des mois restants basé sur le reste à payer
+  const moisRestants = !isLibre && installmentAmount > 0 && remaining > 0
+    ? Math.ceil(remaining / installmentAmount)
+    : 0;
+
+  // Date de démarrage de la cagnotte
+  const startDate = c.created_at ? new Date(c.created_at) : new Date();
+  const startDay = !isNaN(startDate.getTime()) ? startDate.getDate() : new Date().getDate();
+
+  // Prochaine échéance selon le calendrier (jour du démarrage lors du prochain mois à venir)
+  const now = new Date();
+  let nextDueDate = new Date(now.getFullYear(), now.getMonth(), startDay);
+  if (nextDueDate <= now) {
+    nextDueDate.setMonth(nextDueDate.getMonth() + 1);
+  }
+  const nextDueDateFormatted = nextDueDate.toLocaleDateString('fr-FR', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+
+  // Date de fin estimée calculée mathématiquement selon le calendrier
+  let estimatedEndFormatted = 'Terminée';
+  if (moisRestants > 0) {
+    const estimatedEndDate = new Date(now.getFullYear(), now.getMonth() + moisRestants, startDay);
+    estimatedEndFormatted = estimatedEndDate.toLocaleDateString('fr-FR', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    });
+  }
+
   return {
     id: `cag-${c.id}`,
     backendId: c.id,
     userId: c.utilisateur_id ? String(c.utilisateur_id) : null,
     userPhone: c.client_tel || null,
+    mode: mode,
     product: {
       id: prod.id || Date.now(),
       n: prod.nom || 'Article TakaPay',
-      c: prod.sous_categorie?.categorie?.nom || 'Article',
-      subcategory: prod.sous_categorie?.nom || 'Article',
+      c: categoryName,
+      subcategory: subcategoryName,
       p: total,
       im: primaryImg,
       variant: (() => {
@@ -515,16 +648,17 @@ export const mapBackendCagnotteToClient = (c) => {
     })(),
     },
     dateCommande: c.created_at ? new Date(c.created_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Récemment',
+    created_at: c.created_at || null,
     prixTotal: total,
     montantVerse: paid,
     resteAPayer: remaining,
     pourcentage: percent,
-    prochainVersement: {
-      montant: Math.round(total * 0.1),
-      date: 'Le mois prochain',
+    prochainVersement: isLibre ? null : {
+      montant: remaining > 0 ? Math.min(installmentAmount || remaining, remaining) : 0,
+      date: nextDueDateFormatted,
     },
-    dateFinEstimee: '6 mois',
-    moisRestants: 6,
+    dateFinEstimee: isLibre ? null : estimatedEndFormatted,
+    moisRestants: isLibre ? null : moisRestants,
     statut: c.statut === 'terminee' || percent >= 100 ? 'completed' : 'active',
     transactions: txs.length > 0 ? txs : [
       {

@@ -42,6 +42,7 @@ export default function AppHome({ initialTab = 'home' }) {
   // Produit actif pour la vue détaillée
   const [activeProductId, setActiveProductId] = useState(1);
   const [selectedColorForOrder, setSelectedColorForOrder] = useState(null);
+  const [orderOptions, setOrderOptions] = useState({ mode: 'cagnotte', quantity: 1 });
 
   // Utilisateur connecté & Cagnottes (sauvegarde en localStorage)
   const [cagnotteCount, setCagnotteCount] = useState(() => {
@@ -255,8 +256,12 @@ export default function AppHome({ initialTab = 'home' }) {
     setView('subcat');
   };
 
-  const handleStartOrder = (product, color) => {
+  const handleStartOrder = (product, color, options = {}) => {
     setSelectedColorForOrder(color);
+    setOrderOptions({
+      mode: options.mode || 'cagnotte',
+      quantity: options.quantity || 1,
+    });
     setView('order');
   };
 
@@ -358,6 +363,7 @@ export default function AppHome({ initialTab = 'home' }) {
         <div className="client-w">
           {view === 'home' && (
             <ClientHomeView
+              products={productsList}
               onSelectProduct={handleOpenProduct}
               onSelectCategory={handleSelectCategory}
               onSelectPromo={handleSelectPromo}
@@ -383,6 +389,7 @@ export default function AppHome({ initialTab = 'home' }) {
             <ClientSubcategoryView
               category={selectedCat}
               subcategory={selectedSubCat}
+              products={productsList}
               isPromoOnly={isPromoOnly}
               onBack={() => setView('shop')}
               onSelectProduct={handleOpenProduct}
@@ -403,6 +410,8 @@ export default function AppHome({ initialTab = 'home' }) {
             <ClientOrderFlow
               product={productsList.find((p) => p.id === Number(activeProductId)) || PRODUCTS.find((p) => p.id === Number(activeProductId)) || PRODUCTS[0]}
               selectedColor={selectedColorForOrder}
+              initialOrderType={orderOptions.mode}
+              initialQuantity={orderOptions.quantity}
               user={user}
               onUserAuthSuccess={handleUserAuthSuccess}
               onCompleteOrder={handleCompleteOrder}
