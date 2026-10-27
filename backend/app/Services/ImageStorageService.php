@@ -56,8 +56,8 @@ class ImageStorageService
             throw $this->invalid($attribute, 'Le format de l\'image est invalide.');
         }
 
-        // Data-URI base64 : conservation du format d'origine (PNG, JPEG, GIF, etc.)
-        if (str_starts_with($input, 'data:image/')) {
+        // Data-URI base64 : conservation du format d'origine (PNG, JPEG, GIF, AVIF, HEIC, etc.)
+        if (str_starts_with($input, 'data:image/') || str_starts_with($input, 'data:application/octet-stream')) {
             $comma = strpos($input, ',');
             $header = substr($input, 0, $comma);
             $binary = base64_decode(substr($input, $comma + 1), true);
@@ -145,16 +145,20 @@ class ImageStorageService
      */
     private function guessExtensionFromHeader(string $header, string $binary): string
     {
-        if (preg_match('#^data:image/(jpeg|jpg|png|webp|gif|svg\+xml|bmp)#i', $header, $m)) {
-            $type = strtolower($m[1]);
-            if ($type === 'jpeg' || $type === 'jpg') {
+        if (preg_match('#^data:(?:image/([a-zA-Z0-9.+-]+)|application/octet-stream)#i', $header, $m)) {
+            $type = strtolower($m[1] ?? '');
+            if ($type === 'jpeg' || $type === 'jpg' || $type === 'jfif' || $type === 'pjpeg') {
                 return 'jpeg';
             }
             if ($type === 'svg+xml') {
                 return 'svg';
             }
-
-            return $type;
+            if ($type === 'x-png') {
+                return 'png';
+            }
+            if (in_array($type, ['png', 'webp', 'gif', 'bmp', 'avif', 'heic', 'heif'])) {
+                return $type;
+            }
         }
 
         $info = @getimagesizefromstring($binary);
@@ -165,7 +169,10 @@ class ImageStorageService
             'image/gif' => 'gif',
             'image/webp' => 'webp',
             'image/bmp' => 'bmp',
-            default => 'png',
+            'image/avif' => 'avif',
+            'image/heic' => 'heic',
+            'image/heif' => 'heif',
+            default => 'jpg',
         };
     }
 

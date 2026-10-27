@@ -201,30 +201,38 @@ class AdminController extends Controller
      */
     public function storeFullProduit(Request $request): JsonResponse
     {
-        $validated = $request->validate([
-            'nom' => ['required', 'string', 'max:255'],
-            'sous_categorie_id' => ['required', 'exists:sous_categories,id'],
-            'description' => ['nullable', 'string'],
-            'stock' => ['required', 'integer', 'min:0'],
-            'duree' => ['required', 'integer', 'min:0'],
-            'couleur' => ['nullable', 'string'],
-            'video' => ['nullable'],
-            'promotion_id' => ['nullable', 'exists:promotions,id'],
-            'reference' => ['nullable', 'string', 'max:255'],
-            'prix_total' => ['required', 'numeric', 'min:0'],
-            'prix_minimum' => ['nullable', 'numeric', 'min:0'],
-            'prix_echelonne' => ['nullable', 'numeric', 'min:0'],
-            'prix_cash' => ['nullable', 'numeric', 'min:0'],
-            'mode_paiement' => ['nullable', 'string', 'max:100'],
-            'frequence' => ['nullable', 'string', 'max:100'],
-            'seuil_livraison' => ['nullable', 'numeric', 'min:0'],
-            'images' => ['nullable', 'array'],
-            'images.*.chemin' => ['required', new ImageContent],
-            'images.*.nom_fichier' => ['nullable', 'string', 'max:255'],
-            'images.*.nom' => ['nullable', 'string', 'max:255'],
-            'images.*.position' => ['nullable', 'integer'],
-            'images.*.is_principal' => ['nullable', 'boolean'],
-        ]);
+        try {
+            $validated = $request->validate([
+                'nom' => ['required', 'string', 'max:255'],
+                'sous_categorie_id' => ['required', 'exists:sous_categories,id'],
+                'description' => ['nullable', 'string'],
+                'stock' => ['required', 'integer', 'min:0'],
+                'duree' => ['required', 'integer', 'min:0'],
+                'couleur' => ['nullable', 'string'],
+                'video' => ['nullable'],
+                'promotion_id' => ['nullable', 'exists:promotions,id'],
+                'reference' => ['nullable', 'string', 'max:255'],
+                'prix_total' => ['required', 'numeric', 'min:0'],
+                'prix_minimum' => ['nullable', 'numeric', 'min:0'],
+                'prix_echelonne' => ['nullable', 'numeric', 'min:0'],
+                'prix_cash' => ['nullable', 'numeric', 'min:0'],
+                'mode_paiement' => ['nullable', 'string', 'max:100'],
+                'frequence' => ['nullable', 'string', 'max:100'],
+                'seuil_livraison' => ['nullable', 'numeric', 'min:0'],
+                'images' => ['nullable', 'array'],
+                'images.*.chemin' => ['required', new ImageContent],
+                'images.*.nom_fichier' => ['nullable', 'string', 'max:255'],
+                'images.*.nom' => ['nullable', 'string', 'max:255'],
+                'images.*.position' => ['nullable', 'integer'],
+                'images.*.is_principal' => ['nullable', 'boolean'],
+            ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            \Illuminate\Support\Facades\Log::warning('Échec validation storeFullProduit:', [
+                'errors' => $e->errors(),
+                'input' => $request->except(['images']),
+            ]);
+            throw $e;
+        }
 
         return DB::transaction(function () use ($validated) {
             $videoPath = null;

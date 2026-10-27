@@ -4,7 +4,8 @@ export default function Brand({ light = false, className = '', onClick }) {
   return (
     <a
       href="#accueil"
-      className={`brand ${light ? 'brand-light' : ''} ${className}`}
+      className={`brand notranslate ${light ? 'brand-light' : ''} ${className}`}
+      translate="no"
       aria-label="Takapay, accueil"
       onClick={(e) => {
         if (onClick) {

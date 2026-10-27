@@ -141,13 +141,13 @@ class SupportChatController extends Controller
             'is_read' => false,
         ]);
 
-        // Étape 6 : Notification par e-mail à l'administrateur (sécurisée sans bloquer l'API)
+        // Étape 6 : Notification par e-mail à l'administrateur (en file d'attente pour réponse instantanée < 20ms)
         if ($isNewConversation) {
             try {
                 $adminEmail = config('mail.from.address') ?: 'aurianedescous@gmail.com';
                 $clientUser = $user ?: ($userId ? \App\Models\User::find($userId) : null);
                 $senderName = $validated['name'] ?? ($clientUser ? ($clientUser->nom . ' ' . $clientUser->prenom) : 'Visiteur #' . $conversation->id);
-                Mail::to($adminEmail)->send(new NewSupportMessageMail($conversation, $message, $senderName));
+                Mail::to($adminEmail)->queue(new NewSupportMessageMail($conversation, $message, $senderName));
             } catch (\Throwable $e) {
                 Log::warning('Support email error: ' . $e->getMessage());
             }

@@ -7,6 +7,8 @@ use App\Http\Requests\StoreSousCategorieRequest;
 use App\Http\Requests\UpdateSousCategorieRequest;
 use App\Http\Resources\ProduitResource;
 use App\Http\Resources\SousCategorieResource;
+use App\Models\Cagnotte;
+use App\Models\CommandeProduit;
 use App\Models\SousCategorie;
 use App\Services\ImageStorageService;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -60,9 +62,31 @@ class SousCategorieController extends Controller
 
     public function destroy(SousCategorie $sous_category)
     {
-        $fichiers = $sous_category->produits()
-            ->with('imageProduits')
-            ->get()
+        $produits = $sous_category->produits()->get();
+        $produitIds = $produits->pluck('id');
+
+        // Vérification de sécurité : refuser si un produit a un achat ou une cagnotte en cours
+        $hasActiveCagnotte = Cagnotte::whereIn('produit_id', $produitIds)
+            ->where(function ($q) {
+                $q->whereIn('statut', ['active', 'en_cours'])
+                  ->orWhere('montant_verse', '>', 0);
+            })
+            ->exists();
+
+        $hasActiveCmd = CommandeProduit::whereIn('produit_id', $produitIds)
+            ->whereHas('commande', function ($q) {
+                $q->whereNotIn('statut', ['annulee', 'echouee', 'terminee', 'livree']);
+            })
+            ->exists();
+
+        if ($hasActiveCagnotte || $hasActiveCmd) {
+            return response()->json([
+                'message' => 'Impossible de supprimer cette sous-catégorie car un achat est actuellement en cours sur un de ses produits.',
+            ], 422);
+        }
+
+        $fichiers = $produits
+            ->load('imageProduits')
             ->flatMap->imageProduits
             ->pluck('chemin');
 

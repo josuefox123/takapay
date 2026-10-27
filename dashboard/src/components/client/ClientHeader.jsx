@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import Brand from '../public/Brand';
-import { TAKAPAY_CATEGORIES } from '../../data/takapayCategories';
 
 export default function ClientHeader({
   activeTab = 'home',
@@ -14,8 +13,43 @@ export default function ClientHeader({
   cagnotteCount = 0,
 }) {
   const [localSearch, setLocalSearch] = useState(searchQuery);
-  const [selectedCat, setSelectedCat] = useState('Tous');
-  const [lang, setLang] = useState('FR');
+  const [lang, setLang] = useState(() => {
+    if (typeof document !== 'undefined') {
+      const match = document.cookie.match(/(?:^|;\s*)googtrans=([^;]+)/);
+      if (match && match[1]) {
+        const val = decodeURIComponent(match[1]);
+        if (val.toLowerCase().endsWith('/en')) {
+          return 'EN';
+        }
+      }
+    }
+    return 'FR';
+  });
+
+  const handleLanguageChange = (newLang) => {
+    setLang(newLang);
+    const target = newLang === 'EN' ? '/fr/en' : '/fr/fr';
+    const expires = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toUTCString();
+    const host = window.location.hostname;
+
+    document.cookie = `googtrans=${target}; expires=${expires}; path=/`;
+
+    if (host && host.includes('.') && !host.match(/^(\d{1,3}\.){3}\d{1,3}$/)) {
+      document.cookie = `googtrans=${target}; expires=${expires}; path=/; domain=.${host}`;
+      document.cookie = `googtrans=${target}; expires=${expires}; path=/; domain=${host}`;
+    }
+
+    if (newLang === 'FR') {
+      document.cookie = `googtrans=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/`;
+      if (host && host.includes('.')) {
+        document.cookie = `googtrans=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/; domain=.${host}`;
+        document.cookie = `googtrans=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/; domain=${host}`;
+      }
+      document.cookie = `googtrans=/fr/fr; expires=${expires}; path=/`;
+    }
+
+    window.location.reload();
+  };
   const [favoriteToast, setFavoriteToast] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [, setCatTick] = useState(0);
@@ -33,15 +67,7 @@ export default function ClientHeader({
   const handleSearchSubmit = (e) => {
     e.preventDefault();
     if (onSearch) {
-      onSearch(localSearch.trim(), selectedCat);
-    }
-  };
-
-  const handleCategoryChange = (e) => {
-    const catName = e.target.value;
-    setSelectedCat(catName);
-    if (onSelectCategory && catName !== 'Tous') {
-      onSelectCategory(catName);
+      onSearch(localSearch.trim());
     }
   };
 
@@ -75,32 +101,34 @@ export default function ClientHeader({
 
           <div className="sec1-right-group">
             <form className="sec1-search-combo" onSubmit={handleSearchSubmit}>
-              <select
-                className="sec1-category-select"
-                value={selectedCat}
-                onChange={handleCategoryChange}
-                aria-label="Filtrer par catégorie"
-                title="Sélectionnez une catégorie"
-              >
-                <option value="Tous">Toutes catégories</option>
-                {TAKAPAY_CATEGORIES.map((cat) => (
-                  <option key={cat.id} value={cat.name}>
-                    {cat.name}
-                  </option>
-                ))}
-              </select>
-
               <input
                 type="text"
                 className="sec1-search-input"
                 value={localSearch}
                 onChange={(e) => setLocalSearch(e.target.value)}
-                placeholder="Rechercher un produit, sous-catégorie..."
-                aria-label="Rechercher un produit ou sous-catégorie"
+                placeholder="Rechercher un produit, une catégorie..."
+                aria-label="Rechercher un produit ou une catégorie"
               />
 
+              {localSearch && (
+                <button
+                  type="button"
+                  className="sec1-search-clear-btn"
+                  onClick={() => {
+                    setLocalSearch('');
+                    if (onSearch) onSearch('');
+                  }}
+                  title="Effacer la recherche"
+                  aria-label="Effacer la recherche"
+                >
+                  <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '16px' }}>
+                    close
+                  </span>
+                </button>
+              )}
+
               <button type="submit" className="sec1-search-btn" title="Lancer la recherche" aria-label="Rechercher">
-                <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>
+                <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '18px' }}>
                   search
                 </span>
               </button>
@@ -121,7 +149,7 @@ export default function ClientHeader({
                 <select
                   className="sec1-lang-select"
                   value={lang}
-                  onChange={(e) => setLang(e.target.value)}
+                  onChange={(e) => handleLanguageChange(e.target.value)}
                   aria-label="Choix de la langue"
                 >
                   <option value="FR">FR</option>
@@ -330,31 +358,34 @@ export default function ClientHeader({
         {/* Ligne de recherche mobile fluide occupant 100% sans déborder */}
         <div className="client-mobile-search-row">
           <form className="sec1-search-combo mobile-combo" onSubmit={handleSearchSubmit}>
-            <select
-              className="sec1-category-select"
-              value={selectedCat}
-              onChange={handleCategoryChange}
-              aria-label="Catégorie"
-            >
-              <option value="Tous">Toutes catégories</option>
-              {TAKAPAY_CATEGORIES.map((cat) => (
-                <option key={cat.id} value={cat.name}>
-                  {cat.name}
-                </option>
-              ))}
-            </select>
-
             <input
               type="text"
               className="sec1-search-input"
               value={localSearch}
               onChange={(e) => setLocalSearch(e.target.value)}
-              placeholder="Rechercher un produit..."
+              placeholder="Rechercher un produit, catégorie..."
               aria-label="Rechercher"
             />
 
+            {localSearch && (
+              <button
+                type="button"
+                className="sec1-search-clear-btn"
+                onClick={() => {
+                  setLocalSearch('');
+                  if (onSearch) onSearch('');
+                }}
+                title="Effacer"
+                aria-label="Effacer"
+              >
+                <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '16px' }}>
+                  close
+                </span>
+              </button>
+            )}
+
             <button type="submit" className="sec1-search-btn" aria-label="Rechercher">
-              <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>
+              <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '18px' }}>
                 search
               </span>
             </button>
@@ -485,7 +516,7 @@ export default function ClientHeader({
                 <span>Langue :</span>
                 <select
                   value={lang}
-                  onChange={(e) => setLang(e.target.value)}
+                  onChange={(e) => handleLanguageChange(e.target.value)}
                   className="drawer-lang-select"
                 >
                   <option value="FR">Français (FR)</option>

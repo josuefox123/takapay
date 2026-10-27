@@ -311,7 +311,18 @@ export const adminService = {
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      throw new Error(err.message || "Erreur lors de l'enregistrement du produit en base de données.");
+      console.error('[adminService.createProduit Error]', err);
+      let errMsg = err.message || "Erreur lors de l'enregistrement du produit en base de données.";
+      if (err.errors) {
+        const errorList = Object.entries(err.errors)
+          .map(([field, msgs]) => `${field}: ${Array.isArray(msgs) ? msgs.join(', ') : msgs}`)
+          .join('\n');
+        errMsg = `${errMsg}\n\n${errorList}`;
+      }
+      const customErr = new Error(errMsg);
+      customErr.status = res.status;
+      customErr.errors = err.errors;
+      throw customErr;
     }
     const data = await res.json();
     const created = data.data || data;
@@ -423,6 +434,46 @@ export const adminService = {
     const created = json.data || json;
     window.dispatchEvent(new CustomEvent('takapay_categories_updated', { detail: created }));
     return { success: true, data: created };
+  },
+
+  async deleteCategorie(id) {
+    const token = this.getToken();
+    const res = await fetch(`${API_BASE}/categories/${id}`, {
+      method: 'DELETE',
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        Accept: 'application/json',
+      },
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || 'Erreur lors de la suppression de la catégorie.');
+    }
+
+    const json = await res.json().catch(() => ({}));
+    window.dispatchEvent(new CustomEvent('takapay_categories_updated', { detail: { id, deleted: true } }));
+    return { success: true, ...json };
+  },
+
+  async deleteSousCategorie(id) {
+    const token = this.getToken();
+    const res = await fetch(`${API_BASE}/sous-categories/${id}`, {
+      method: 'DELETE',
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        Accept: 'application/json',
+      },
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || 'Erreur lors de la suppression de la sous-catégorie.');
+    }
+
+    const json = await res.json().catch(() => ({}));
+    window.dispatchEvent(new CustomEvent('takapay_categories_updated', { detail: { id, deleted: true } }));
+    return { success: true, ...json };
   },
 
   async getPromotions() {

@@ -525,15 +525,28 @@ export default function AdminProductsView({ onShowToast }) {
         }
       }
 
+      const cleanNum = (val) => {
+        if (val === '' || val === null || val === undefined) return null;
+        const cleaned = String(val).replace(/\s+/g, '').replace(',', '.').replace(/[^0-9.]/g, '');
+        return cleaned === '' ? null : Number(cleaned);
+      };
+
       const payload = {
         ...form,
-        seuil_livraison: form.mode_paiement === 'libre' ? null : form.seuil_livraison,
+        prix_total: cleanNum(form.prix_total),
+        prix_minimum: cleanNum(form.prix_minimum),
+        prix_echelonne: cleanNum(form.prix_echelonne),
+        prix_cash: cleanNum(form.prix_cash),
+        stock: cleanNum(form.stock) ?? 0,
+        duree: cleanNum(form.duree) ?? 6,
+        seuil_livraison: form.mode_paiement === 'libre' ? null : cleanNum(form.seuil_livraison),
+        promotion_id: form.promotion_id ? Number(form.promotion_id) : null,
         couleur: finalColorsStr,
         images,
         video: finalVideo,
         categorie_id: form.categorie_id || targetCat?.id || '',
         categorie_nom: targetCat?.nom || '',
-        sous_categorie_id: form.sous_categorie_id,
+        sous_categorie_id: form.sous_categorie_id ? Number(form.sous_categorie_id) : '',
         sous_categorie_nom: targetSub?.nom || '',
       };
 
@@ -554,8 +567,16 @@ export default function AdminProductsView({ onShowToast }) {
           onShowToast('Produit créé avec succès avec sa catégorie et sous-catégorie');
         }
       }
-    } catch {
-      alert("Erreur lors de l'enregistrement du produit.");
+    } catch (err) {
+      console.error('Erreur enregistrement produit:', err);
+      if (err?.errors) {
+        const fieldErrors = {};
+        Object.entries(err.errors).forEach(([k, v]) => {
+          fieldErrors[k] = Array.isArray(v) ? v[0] : v;
+        });
+        setErrors((prev) => ({ ...prev, ...fieldErrors }));
+      }
+      alert(err?.message || "Erreur lors de l'enregistrement du produit.");
     } finally {
       setSubmitting(false);
     }
@@ -654,6 +675,74 @@ export default function AdminProductsView({ onShowToast }) {
       alert('Erreur lors de la création de la sous-catégorie.');
     } finally {
       setCatSubmitting(false);
+    }
+  };
+
+  // Suppression d'une catégorie avec vérification préalable
+  const handleDeleteCategory = async (cat) => {
+    const subIds = sousCategories
+      .filter((s) => String(s.categorie_id) === String(cat.id) || String(s.categorie?.id) === String(cat.id))
+      .map((s) => String(s.id));
+
+    // Vérification préalable : un seul message d'alerte direct sans demander confirmation inutilement
+    const hasActive = produits.some(
+      (p) =>
+        (String(p.categorie_id) === String(cat.id) || subIds.includes(String(p.sous_categorie_id)) || subIds.includes(String(p.sous_categorie?.id))) &&
+        (p.has_active_cagnotte || (p.cagnottes_actives_count && p.cagnottes_actives_count > 0))
+    );
+
+    if (hasActive) {
+      alert('Impossible de supprimer cette catégorie car un achat est actuellement en cours sur un de ses produits.');
+      return;
+    }
+
+    const subs = sousCategories.filter(
+      (s) => String(s.categorie_id) === String(cat.id) || String(s.categorie?.id) === String(cat.id)
+    );
+    const msg = subs.length > 0
+      ? `Êtes-vous sûr de vouloir supprimer la catégorie "${cat.nom}" ?\n\nAttention : cela supprimera également ses ${subs.length} sous-catégorie(s) et les produits associés.`
+      : `Êtes-vous sûr de vouloir supprimer la catégorie "${cat.nom}" ?`;
+
+    if (!window.confirm(msg)) return;
+
+    try {
+      await adminService.deleteCategorie(cat.id);
+      setCategories((prev) => prev.filter((c) => String(c.id) !== String(cat.id)));
+      setSousCategories((prev) =>
+        prev.filter((s) => String(s.categorie_id) !== String(cat.id) && String(s.categorie?.id) !== String(cat.id))
+      );
+      if (onShowToast) {
+        onShowToast(`Catégorie "${cat.nom}" supprimée avec succès.`);
+      }
+    } catch (err) {
+      alert(err.message || 'Erreur lors de la suppression de la catégorie.');
+    }
+  };
+
+  // Suppression d'une sous-catégorie avec vérification préalable
+  const handleDeleteSousCategory = async (sub) => {
+    // Vérification préalable : un seul message d'alerte direct sans demander confirmation inutilement
+    const hasActive = produits.some(
+      (p) =>
+        (String(p.sous_categorie_id) === String(sub.id) || String(p.sous_categorie?.id) === String(sub.id)) &&
+        (p.has_active_cagnotte || (p.cagnottes_actives_count && p.cagnottes_actives_count > 0))
+    );
+
+    if (hasActive) {
+      alert('Impossible de supprimer cette sous-catégorie car un achat est actuellement en cours sur un de ses produits.');
+      return;
+    }
+
+    if (!window.confirm(`Supprimer la sous-catégorie "${sub.nom}" ?\n\nAttention : les produits associés à cette sous-catégorie seront également supprimés.`)) return;
+
+    try {
+      await adminService.deleteSousCategorie(sub.id);
+      setSousCategories((prev) => prev.filter((s) => String(s.id) !== String(sub.id)));
+      if (onShowToast) {
+        onShowToast(`Sous-catégorie "${sub.nom}" supprimée.`);
+      }
+    } catch (err) {
+      alert(err.message || 'Erreur lors de la suppression de la sous-catégorie.');
     }
   };
 
@@ -896,18 +985,53 @@ export default function AdminProductsView({ onShowToast }) {
                     padding: '18px',
                   }}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
-                    {cat.image ? (
-                      <img src={cat.image} alt={cat.nom} style={{ width: '42px', height: '42px', borderRadius: '10px', objectFit: 'cover' }} />
-                    ) : (
-                      <div style={{ width: '42px', height: '42px', borderRadius: '10px', background: 'var(--soft)', display: 'grid', placeItems: 'center', fontSize: '20px' }}>
-                        📦
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', marginBottom: '12px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
+                      {cat.image ? (
+                        <img src={cat.image} alt={cat.nom} style={{ width: '42px', height: '42px', borderRadius: '10px', objectFit: 'cover', flexShrink: 0 }} />
+                      ) : (
+                        <div style={{ width: '42px', height: '42px', borderRadius: '10px', background: 'var(--soft)', display: 'grid', placeItems: 'center', fontSize: '20px', flexShrink: 0 }}>
+                          📦
+                        </div>
+                      )}
+                      <div style={{ minWidth: 0 }}>
+                        <strong style={{ fontSize: '16px', display: 'block', color: 'var(--ink)' }}>{cat.nom}</strong>
+                        <span style={{ fontSize: '12px', color: 'var(--mut)' }}>{subs.length} sous-catégorie(s)</span>
                       </div>
-                    )}
-                    <div>
-                      <strong style={{ fontSize: '16px', display: 'block', color: 'var(--ink)' }}>{cat.nom}</strong>
-                      <span style={{ fontSize: '12px', color: 'var(--mut)' }}>{subs.length} sous-catégorie(s)</span>
                     </div>
+
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteCategory(cat)}
+                      title={`Supprimer la catégorie "${cat.nom}"`}
+                      aria-label={`Supprimer ${cat.nom}`}
+                      style={{
+                        background: '#fee2e2',
+                        color: '#dc2626',
+                        border: 'none',
+                        width: '32px',
+                        height: '32px',
+                        borderRadius: '8px',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexShrink: 0,
+                        transition: 'all 0.15s ease',
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = '#fecaca';
+                        e.currentTarget.style.transform = 'scale(1.08)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = '#fee2e2';
+                        e.currentTarget.style.transform = 'scale(1)';
+                      }}
+                    >
+                      <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '18px' }}>
+                        delete
+                      </span>
+                    </button>
                   </div>
 
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
@@ -917,7 +1041,7 @@ export default function AdminProductsView({ onShowToast }) {
                         style={{
                           background: 'var(--card)',
                           border: '1px solid var(--line)',
-                          padding: '4px 10px',
+                          padding: '4px 8px 4px 10px',
                           borderRadius: '8px',
                           fontSize: '13px',
                           color: 'var(--ink)',
@@ -935,6 +1059,30 @@ export default function AdminProductsView({ onShowToast }) {
                           />
                         )}
                         <span>{s.nom}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteSousCategory(s)}
+                          title={`Supprimer la sous-catégorie "${s.nom}"`}
+                          aria-label={`Supprimer ${s.nom}`}
+                          style={{
+                            background: 'transparent',
+                            border: 'none',
+                            color: '#9ca3af',
+                            cursor: 'pointer',
+                            padding: '2px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            borderRadius: '50%',
+                            transition: 'color 0.15s',
+                          }}
+                          onMouseEnter={(e) => (e.currentTarget.style.color = '#dc2626')}
+                          onMouseLeave={(e) => (e.currentTarget.style.color = '#9ca3af')}
+                        >
+                          <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '14px' }}>
+                            close
+                          </span>
+                        </button>
                       </span>
                     ))}
                     {subs.length === 0 && (
@@ -2022,6 +2170,16 @@ export default function AdminProductsView({ onShowToast }) {
                   const seuil = param.seuil_livraison || 0;
                   const promo = param.promotion;
 
+                  const rawImgs = Array.isArray(item.image_produits) && item.image_produits.length > 0
+                    ? item.image_produits
+                    : Array.isArray(item.images) && item.images.length > 0
+                    ? item.images
+                    : [];
+                  const principalImg = rawImgs.find((img) => img.is_principal) || rawImgs[0];
+                  const imgSrc = principalImg
+                    ? (principalImg.url || resolveImageUrl(principalImg.chemin || (typeof principalImg === 'string' ? principalImg : '')))
+                    : (item.image ? resolveImageUrl(item.image) : null);
+
                   return (
                     <tr
                       key={item.id}
@@ -2030,11 +2188,50 @@ export default function AdminProductsView({ onShowToast }) {
                       title="Cliquer pour modifier ce produit"
                     >
                       <td>
-                        <strong style={{ fontSize: '15px' }}>{item.nom}</strong>
-                        <span className="admin-sub-text">
-                          Réf: {param.reference || `PRD-${item.id}`}
-                          {item.video && ' · 🎥 Vidéo'}
-                        </span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                          {imgSrc ? (
+                            <img
+                              src={imgSrc}
+                              alt={item.nom}
+                              style={{
+                                width: '42px',
+                                height: '42px',
+                                borderRadius: '8px',
+                                objectFit: 'cover',
+                                flexShrink: 0,
+                                background: 'var(--soft)',
+                                border: '1px solid var(--line)',
+                              }}
+                              onError={(e) => {
+                                e.currentTarget.style.display = 'none';
+                              }}
+                            />
+                          ) : (
+                            <div
+                              style={{
+                                width: '42px',
+                                height: '42px',
+                                borderRadius: '8px',
+                                background: 'var(--soft)',
+                                border: '1px solid var(--line)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                color: 'var(--mut)',
+                                flexShrink: 0,
+                              }}
+                            >
+                              <AdminIcon name="box" size={20} />
+                            </div>
+                          )}
+                          <div>
+                            <strong style={{ fontSize: '15px', display: 'block' }}>{item.nom}</strong>
+                            <span className="admin-sub-text">
+                              Réf: {param.reference || `PRD-${item.id}`}
+                              {item.video && ' · 🎥 Vidéo'}
+                            </span>
+                          </div>
+                        </div>
                       </td>
                       <td>
                         <span style={{ fontSize: '14px', color: 'var(--ink)', fontWeight: 500 }}>
@@ -2094,57 +2291,29 @@ export default function AdminProductsView({ onShowToast }) {
                         )}
                       </td>
                       <td style={{ textAlign: 'right' }}>
-                        <div style={{ display: 'inline-flex', gap: '8px', alignItems: 'center' }}>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleEditProduct(item);
-                            }}
-                            style={{
-                              background: 'var(--soft)',
-                              color: 'var(--ink)',
-                              border: '1px solid var(--line)',
-                              borderRadius: '8px',
-                              padding: '7px 12px',
-                              fontSize: '13px',
-                              fontWeight: 600,
-                              cursor: 'pointer',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '4px',
-                            }}
-                            title="Modifier le produit"
-                          >
-                            <AdminIcon name="edit" size={14} />
-                            <span>Modifier</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleInitiateDelete(item);
-                            }}
-                            style={{
-                              background: '#fee2e2',
-                              color: '#dc2626',
-                              border: 'none',
-                              borderRadius: '8px',
-                              padding: '7px 12px',
-                              fontSize: '13px',
-                              fontWeight: 600,
-                              cursor: 'pointer',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '4px',
-                            }}
-                            title="Supprimer le produit"
-                          >
-                            <AdminIcon name="trash" size={14} />
-                            <span>Supprimer</span>
-                          </button>
-                        </div>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleInitiateDelete(item);
+                          }}
+                          style={{
+                            background: '#fee2e2',
+                            color: '#dc2626',
+                            border: 'none',
+                            borderRadius: '8px',
+                            width: '34px',
+                            height: '34px',
+                            padding: 0,
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                          }}
+                          title="Supprimer le produit"
+                        >
+                          <AdminIcon name="trash" size={15} />
+                        </button>
                       </td>
                     </tr>
                   );
@@ -2234,14 +2403,15 @@ export default function AdminProductsView({ onShowToast }) {
                 type="button"
                 onClick={() => setBlockedProduct(null)}
                 style={{
-                  padding: '10px 20px',
+                  padding: '10px 22px',
                   borderRadius: '10px',
-                  background: 'var(--ink, #0f172a)',
-                  color: '#fff',
-                  border: 'none',
+                  background: '#ffffff',
+                  color: '#0f172a',
+                  border: '1px solid #cbd5e1',
                   fontSize: '14px',
-                  fontWeight: 600,
+                  fontWeight: 700,
                   cursor: 'pointer',
+                  boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
                 }}
               >
                 J'ai compris

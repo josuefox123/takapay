@@ -7,7 +7,9 @@ use App\Http\Requests\StoreCategorieRequest;
 use App\Http\Requests\UpdateCategorieRequest;
 use App\Http\Resources\CategorieResource;
 use App\Http\Resources\SousCategorieResource;
+use App\Models\Cagnotte;
 use App\Models\Categorie;
+use App\Models\CommandeProduit;
 use App\Models\ImageProduit;
 use App\Models\Produit;
 use App\Services\ImageStorageService;
@@ -94,12 +96,31 @@ class CategorieController extends Controller
      */
     public function destroy(Categorie $category): JsonResponse
     {
+        $produits = Produit::whereHas('sousCategorie', fn ($q) => $q->where('categorie_id', $category->id))->get();
+        $produitIds = $produits->pluck('id');
+
+        // Vérification de sécurité : refuser si un produit a un achat ou une cagnotte en cours
+        $hasActiveCagnotte = Cagnotte::whereIn('produit_id', $produitIds)
+            ->where(function ($q) {
+                $q->whereIn('statut', ['active', 'en_cours'])
+                  ->orWhere('montant_verse', '>', 0);
+            })
+            ->exists();
+
+        $hasActiveCmd = CommandeProduit::whereIn('produit_id', $produitIds)
+            ->whereHas('commande', function ($q) {
+                $q->whereNotIn('statut', ['annulee', 'echouee', 'terminee', 'livree']);
+            })
+            ->exists();
+
+        if ($hasActiveCagnotte || $hasActiveCmd) {
+            return response()->json([
+                'message' => 'Impossible de supprimer cette catégorie car un achat est actuellement en cours sur un de ses produits.',
+            ], 422);
+        }
+
         // Collecte des fichiers avant la cascade SQL
         $filesToDelete = collect($category->image ? [$category->image] : []);
-
-        $produitIds = Produit::whereHas('sousCategorie', fn ($q) => $q->where('categorie_id', $category->id))
-            ->pluck('id');
-
         $filesToDelete = $filesToDelete->merge(
             ImageProduit::whereIn('produit_id', $produitIds)->pluck('chemin')
         );

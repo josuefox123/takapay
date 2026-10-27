@@ -16,8 +16,116 @@
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=Manrope:wght@400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
     <title>Takapay — Votre grand achat, à votre rythme</title>
+
+    <!-- Protection anti-crash pour React lors des mutations du DOM par Google Translate -->
+    <script>
+      if (typeof Node === 'function' && Node.prototype) {
+        const originalRemoveChild = Node.prototype.removeChild;
+        Node.prototype.removeChild = function (child) {
+          if (child.parentNode !== this) {
+            return child;
+          }
+          return originalRemoveChild.apply(this, arguments);
+        };
+
+        const originalInsertBefore = Node.prototype.insertBefore;
+        Node.prototype.insertBefore = function (newNode, referenceNode) {
+          if (referenceNode && referenceNode.parentNode !== this) {
+            return newNode;
+          }
+          return originalInsertBefore.apply(this, arguments);
+        };
+      }
+
+      // Empêcher Google Translate d'altérer les ligatures des icônes (ex: "chat" traduit en "CAT")
+      (function() {
+        function protectIcons(root) {
+          if (!root) return;
+          if (root.nodeType === 1) {
+            if (root.classList && (root.classList.contains('material-symbols-outlined') || root.classList.contains('material-icons'))) {
+              root.classList.add('notranslate');
+              root.setAttribute('translate', 'no');
+            }
+            if (root.querySelectorAll) {
+              const icons = root.querySelectorAll('.material-symbols-outlined, .material-icons, [class*="material-symbols"]');
+              for (let i = 0; i < icons.length; i++) {
+                icons[i].classList.add('notranslate');
+                icons[i].setAttribute('translate', 'no');
+              }
+              const fcfaNodes = root.querySelectorAll('b, strong, span, small, p');
+              for (let i = 0; i < fcfaNodes.length; i++) {
+                if (fcfaNodes[i].textContent && fcfaNodes[i].textContent.includes('FCFA')) {
+                  fcfaNodes[i].classList.add('notranslate');
+                  fcfaNodes[i].setAttribute('translate', 'no');
+                }
+              }
+            }
+          }
+        }
+
+        const observer = new MutationObserver(function(mutations) {
+          for (let i = 0; i < mutations.length; i++) {
+            const added = mutations[i].addedNodes;
+            for (let j = 0; j < added.length; j++) {
+              protectIcons(added[j]);
+            }
+          }
+        });
+
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', function() {
+            protectIcons(document.body);
+            observer.observe(document.body, { childList: true, subtree: true });
+          });
+        } else {
+          protectIcons(document.body);
+          observer.observe(document.body, { childList: true, subtree: true });
+        }
+      })();
+    </script>
+
+    <style>
+      /* Masquage discret des éléments bruts de Google Translate */
+      .goog-te-banner-frame,
+      .goog-te-banner-frame.skiptranslate,
+      iframe.goog-te-banner-frame,
+      #goog-gt-tt,
+      .goog-te-balloon-frame,
+      #google_translate_element {
+        display: none !important;
+      }
+      body {
+        top: 0px !important;
+        position: static !important;
+      }
+      body > .skiptranslate {
+        display: none !important;
+      }
+      .goog-tooltip,
+      .goog-tooltip:hover {
+        display: none !important;
+      }
+      .goog-text-highlight {
+        background-color: transparent !important;
+        box-shadow: none !important;
+      }
+    </style>
   </head>
   <body class="bg-[#fffdf8] text-[#211d1b] font-sans antialiased selection:bg-[#ffc928] selection:text-[#211d1b]">
+    <div id="google_translate_element" style="display:none"></div>
+    <script type="text/javascript">
+      function googleTranslateElementInit() {
+        if (window.google && window.google.translate) {
+          new window.google.translate.TranslateElement({
+            pageLanguage: 'fr',
+            includedLanguages: 'fr,en',
+            autoDisplay: false
+          }, 'google_translate_element');
+        }
+      }
+    </script>
+    <script type="text/javascript" src="https://translate.google.com/translate_a/element.js?cb=googleTranslateElementInit"></script>
+
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>

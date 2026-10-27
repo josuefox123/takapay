@@ -22,12 +22,18 @@ class ImageContent implements ValidationRule
 
     private const ALLOWED_MIME = [
         'image/jpeg',
+        'image/pjpeg',
         'image/png',
+        'image/x-png',
         'image/webp',
+        'image/avif',
+        'image/heic',
+        'image/heif',
         'image/gif',
         'image/svg+xml',
         'image/bmp',
         'image/x-ms-bmp',
+        'image/jfif',
     ];
 
     public function validate(string $attribute, mixed $value, Closure $fail): void
@@ -54,8 +60,8 @@ class ImageContent implements ValidationRule
             return;
         }
 
-        // Data-URI base64
-        if (preg_match('#^data:image/(jpeg|jpg|png|webp|gif|svg\+xml|bmp);base64,#i', $value)) {
+        // Data-URI base64 (supporte tous les formats d'image : webp, avif, heic, png, jpeg, etc.)
+        if (preg_match('#^data:(image/[a-zA-Z0-9.+-]+|application/octet-stream)(;[a-zA-Z0-9.+-]+=[^;]+)*;base64,#i', $value)) {
             $comma = strpos($value, ',');
             $binary = base64_decode(substr($value, $comma + 1), true);
 
@@ -83,8 +89,9 @@ class ImageContent implements ValidationRule
             return;
         }
 
-        // Nom de fichier direct (ex: telephone.jpeg, mon_produit.png) ou chemin relatif (produits/..., assets/...)
-        if (preg_match('#^([A-Za-z0-9._-]+/)*[A-Za-z0-9._ -]+\.(png|jpe?g|webp|gif|svg|bmp)$#i', $value)) {
+        // Nom de fichier direct ou chemin relatif / stockage
+        $cleaned = ltrim($value, '/');
+        if (preg_match('#\.(png|jpe?g|webp|gif|svg|bmp|avif|heic|heif|jfif)$#i', $cleaned)) {
             return;
         }
 

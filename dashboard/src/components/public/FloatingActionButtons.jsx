@@ -17,6 +17,7 @@ export default function FloatingActionButtons() {
   const [isSending, setIsSending] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [sendError, setSendError] = useState(null);
 
   const chatEndRef = useRef(null);
   const messagesRef = useRef(messages);
@@ -198,6 +199,12 @@ export default function FloatingActionButtons() {
     const text = inputMessage.trim();
     if (!text || isSending) return;
 
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      setSendError('Aucune connexion Internet détectée. Vérifiez votre réseau.');
+      return;
+    }
+
+    setSendError(null);
     setIsSending(true);
     const token = getStoredToken();
     const authToken = getClientAuthToken();
@@ -230,9 +237,16 @@ export default function FloatingActionButtons() {
           updateMessages([data.message]);
         }
         setInputMessage('');
+      } else {
+        if (res.status === 429) {
+          setSendError('Trop de messages envoyés. Veuillez patienter une minute.');
+        } else {
+          setSendError('Impossible d’envoyer le message. Veuillez réessayer.');
+        }
       }
     } catch (err) {
       console.error('Erreur lors de l’envoi du message:', err);
+      setSendError('Erreur de connexion. Vérifiez votre accès réseau.');
     } finally {
       setIsSending(false);
     }
@@ -287,7 +301,7 @@ export default function FloatingActionButtons() {
           onMouseEnter={(e) => (e.currentTarget.style.transform = 'scale(1.08)')}
           onMouseLeave={(e) => (e.currentTarget.style.transform = 'scale(1)')}
         >
-          <span className="material-symbols-outlined" style={{ fontSize: '26px' }}>
+          <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '26px' }}>
             chat
           </span>
 
@@ -347,7 +361,7 @@ export default function FloatingActionButtons() {
               e.currentTarget.style.background = '#ffffff';
             }}
           >
-            <span className="material-symbols-outlined" style={{ fontSize: '24px', fontWeight: 700 }}>
+            <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '24px', fontWeight: 700 }}>
               arrow_upward
             </span>
           </button>
@@ -413,7 +427,7 @@ export default function FloatingActionButtons() {
                     justifyContent: 'center',
                   }}
                 >
-                  <span className="material-symbols-outlined" style={{ fontSize: '22px' }}>
+                  <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '22px' }}>
                     support_agent
                   </span>
                 </div>
@@ -453,7 +467,7 @@ export default function FloatingActionButtons() {
                 }}
                 title="Fermer la discussion"
               >
-                <span className="material-symbols-outlined" style={{ fontSize: '20px' }}>
+                <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '20px' }}>
                   close
                 </span>
               </button>
@@ -572,7 +586,10 @@ export default function FloatingActionButtons() {
                 type="text"
                 placeholder="Écrivez votre message..."
                 value={inputMessage}
-                onChange={(e) => setInputMessage(e.target.value)}
+                onChange={(e) => {
+                  setInputMessage(e.target.value);
+                  if (sendError) setSendError(null);
+                }}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
@@ -613,11 +630,29 @@ export default function FloatingActionButtons() {
                 }}
                 title="Envoyer"
               >
-                <span className="material-symbols-outlined" style={{ fontSize: '20px' }}>
+                <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '20px' }}>
                   send
                 </span>
               </button>
             </form>
+
+            {sendError && (
+              <div
+                style={{
+                  fontSize: '11.5px',
+                  color: '#dc2626',
+                  marginTop: '6px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                }}
+              >
+                <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '15px' }}>
+                  error
+                </span>
+                <span>{sendError}</span>
+              </div>
+            )}
           </div>
         </div>
       )}
