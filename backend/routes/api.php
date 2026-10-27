@@ -21,8 +21,9 @@ use App\Http\Controllers\Api\SousCategorieController;
 use App\Http\Controllers\Api\TransactionController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\SupportChatController;
-use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\Api\AdminStatsController;
 use App\Http\Controllers\PaymentController;
+use Illuminate\Support\Facades\Route;
 
 /*
 |--------------------------------------------------------------------------
@@ -35,7 +36,7 @@ Route::post('/auth/google', [AuthController::class, 'googleAuth'])->middleware('
 
 /*
 |--------------------------------------------------------------------------
-| CATALOGUE PUBLIQUE (Consultation & synchronisation client/dashboard)
+| CATALOGUE PUBLIC (Consultation & synchronisation client/dashboard)
 |--------------------------------------------------------------------------
 */
 Route::get('categories', [CategorieController::class, 'index'])->name('categories.index');
@@ -83,12 +84,24 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
 
         // Back-office
         Route::prefix('admin')->group(function () {
-            Route::get('/stats', [AdminController::class, 'stats']);
+            // Statistiques du tableau de bord
+            Route::get('/stats', [AdminStatsController::class, 'stats']);
+
+            // Commandes (vue admin avec relations)
+            Route::get('/commandes', [CommandeController::class, 'adminIndex']);
+
+            // Produits & médias
             Route::post('/produits', [AdminController::class, 'storeFullProduit']);
             Route::post('/upload-video', [AdminController::class, 'uploadVideo']);
+
+            // Utilisateurs
             Route::post('/users', [AdminController::class, 'createAdminUser']);
             Route::patch('/users/{user}/status', [AdminController::class, 'updateUserStatus']);
+
+            // Documents KYC
             Route::patch('/documents/{document}/verify', [AdminController::class, 'verifyDocument']);
+
+            // Livreurs
             Route::patch('/livreurs/{livreur}/status', [AdminController::class, 'updateLivreurStatus']);
 
             // Support Clientèle & Messagerie
@@ -131,8 +144,6 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
     Route::apiResource('notifications', NotificationController::class)->except(['index']);
     Route::apiResource('commandes', CommandeController::class);
     Route::apiResource('commande-produits', CommandeProduitController::class);
-
-
 });
 
 /*
@@ -143,4 +154,3 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
 Route::post('/payment/initiate', [PaymentController::class, 'initiatePayment']);
 Route::post('/payment/confirm', [PaymentController::class, 'confirmPayment']);
 Route::post('/payment/webhook', [PaymentController::class, 'handleWebhook']);
-

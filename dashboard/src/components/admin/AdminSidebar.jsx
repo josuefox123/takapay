@@ -1,13 +1,19 @@
 import AdminIcon from './AdminIcon';
 import logoImg from '../../assets/logo.png';
 
-export default function AdminSidebar({ activeTab = 'dashboard', onSelectTab, onLogout, unreadSupportCount = 0 }) {
+export default function AdminSidebar({
+  activeTab = 'dashboard',
+  onSelectTab,
+  onLogout,
+  unreadSupportCount = 0,
+}) {
   const navItems = [
     { id: 'dashboard', label: 'Tableau de bord', icon: 'grid' },
     { id: 'support', label: 'Support & Chat', icon: 'message', badge: unreadSupportCount },
     { id: 'produits', label: 'Produits', icon: 'box' },
     { id: 'promotions', label: 'Promotions', icon: 'tag' },
     { id: 'cagnottes', label: 'Cagnottes', icon: 'wallet' },
+    { id: 'commandes', label: 'Commandes', icon: 'cart' },
     { id: 'documents', label: 'Documents', icon: 'file' },
     { id: 'utilisateurs', label: 'Utilisateurs', icon: 'users' },
     { id: 'transactions', label: 'Transactions', icon: 'swap' },
@@ -21,7 +27,12 @@ export default function AdminSidebar({ activeTab = 'dashboard', onSelectTab, onL
           <img
             src={logoImg}
             alt="Takapay"
-            style={{ height: '38px', width: 'auto', objectFit: 'contain', display: 'block' }}
+            style={{
+              height: '38px',
+              width: 'auto',
+              objectFit: 'contain',
+              display: 'block',
+            }}
           />
         </div>
 
@@ -35,7 +46,12 @@ export default function AdminSidebar({ activeTab = 'dashboard', onSelectTab, onL
                 onClick={() => onSelectTab && onSelectTab(item.id)}
                 className={`admin-nav-item ${isActive ? 'active' : ''}`}
                 aria-current={isActive ? 'page' : undefined}
-                style={{ display: 'flex', alignItems: 'center', width: '100%', gap: '10px' }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  width: '100%',
+                  gap: '10px',
+                }}
               >
                 <AdminIcon name={item.icon} size={18} />
                 <span style={{ flex: 1, textAlign: 'left' }}>{item.label}</span>

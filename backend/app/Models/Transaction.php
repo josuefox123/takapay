@@ -14,6 +14,7 @@ class Transaction extends Model
 
     protected $fillable = [
         'cagnotte_id',
+        'commande_id',
         'echeance_id',
         'reference_externe',
         'date',
@@ -38,8 +39,18 @@ class Transaction extends Model
         return $this->belongsTo(Cagnotte::class, 'cagnotte_id');
     }
 
+    public function commande(): BelongsTo
+    {
+        return $this->belongsTo(Commande::class, 'commande_id');
+    }
+
     public function echeance(): BelongsTo
     {
         return $this->belongsTo(Echeance::class, 'echeance_id');
+    }
+
+    public function isSuccessful(): bool
+    {
+        return in_array($this->statut, ['succes', 'reussi'], true);
     }
 }

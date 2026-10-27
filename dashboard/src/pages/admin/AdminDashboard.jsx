@@ -11,6 +11,7 @@ import AdminToast from '../../components/admin/AdminToast';
 import AdminProductsView from '../../components/admin/AdminProductsView';
 import AdminPromotionsView from '../../components/admin/AdminPromotionsView';
 import AdminCagnottesView from '../../components/admin/AdminCagnottesView';
+import AdminCommandesView from '../../components/admin/AdminCommandesView';
 import AdminDocumentsView from '../../components/admin/AdminDocumentsView';
 import AdminUsersView from '../../components/admin/AdminUsersView';
 import AdminTransactionsView from '../../components/admin/AdminTransactionsView';
@@ -23,7 +24,20 @@ import './admin.css';
 export default function AdminDashboard() {
   const navigate = useNavigate();
   const { tab } = useParams();
-  const validTabs = ['dashboard', 'support', 'produits', 'promotions', 'cagnottes', 'documents', 'utilisateurs', 'transactions', 'livraisons'];
+
+  const validTabs = [
+    'dashboard',
+    'support',
+    'produits',
+    'promotions',
+    'cagnottes',
+    'commandes',
+    'documents',
+    'utilisateurs',
+    'transactions',
+    'livraisons',
+  ];
+
   const initialActive = tab && validTabs.includes(tab) ? tab : 'dashboard';
   const [activeTab, setActiveTab] = useState(initialActive);
 
@@ -37,6 +51,7 @@ export default function AdminDashboard() {
     setActiveTab(newTab);
     navigate(`/admin/${newTab}`);
   };
+
   const [adminUser] = useState(() => adminService.getUser());
   const [stats, setStats] = useState(null);
   const [kpis, setKpis] = useState({
@@ -46,15 +61,16 @@ export default function AdminDashboard() {
     nouveaux_utilisateurs: 0,
   });
 
-  // Gestion du Toast flottant
+  // Toast flottant
   const [toastMessage, setToastMessage] = useState('');
   const [toastVisible, setToastVisible] = useState(false);
   const [unreadSupportCount, setUnreadSupportCount] = useState(0);
 
   const refreshUnreadSupport = () => {
-    adminService.getSupportUnreadCount().then((count) => {
-      setUnreadSupportCount(count || 0);
-    });
+    adminService
+      .getSupportUnreadCount()
+      .then((count) => setUnreadSupportCount(count || 0))
+      .catch(() => {});
   };
 
   useEffect(() => {
@@ -70,23 +86,23 @@ export default function AdminDashboard() {
   const showToast = (message) => {
     setToastMessage(message);
     setToastVisible(true);
-    setTimeout(() => {
-      setToastVisible(false);
-    }, 2400);
+    setTimeout(() => setToastVisible(false), 2400);
   };
 
   useEffect(() => {
     let isMounted = true;
 
-    // Chargement des données du tableau de bord
-    adminService.getDashboardStats().then((data) => {
-      if (isMounted) {
-        setStats(data);
-        if (data?.kpis) {
-          setKpis(data.kpis);
+    adminService
+      .getDashboardStats()
+      .then((data) => {
+        if (isMounted) {
+          setStats(data);
+          if (data?.kpis) setKpis(data.kpis);
         }
-      }
-    });
+      })
+      .catch(() => {
+        if (isMounted) showToast('Impossible de charger les statistiques');
+      });
 
     return () => {
       isMounted = false;
@@ -99,16 +115,12 @@ export default function AdminDashboard() {
   };
 
   const handleDocumentAction = (doc, isApproved) => {
-    // Décrémenter le compteur de documents à valider
     setKpis((prev) => ({
       ...prev,
       documents_a_valider: Math.max(0, prev.documents_a_valider - 1),
     }));
 
-    // Appel API backend asynchrone
     adminService.verifyDocument(doc.id, isApproved);
-
-    // Notification toast
     showToast(isApproved ? 'Document validé' : 'Document rejeté');
   };
 
@@ -117,7 +129,6 @@ export default function AdminDashboard() {
   return (
     <div className="admin-scope">
       <div className="admin-dashboard-layout">
-        {/* Volet latéral Navigation avec logo Takapay */}
         <AdminSidebar
           activeTab={activeTab}
           onSelectTab={handleSelectTab}
@@ -125,20 +136,16 @@ export default function AdminDashboard() {
           unreadSupportCount={unreadSupportCount}
         />
 
-        {/* Contenu Principal dynamique selon l'onglet actif */}
         <main className="admin-main">
           {activeTab === 'dashboard' && (
             <>
-              {/* En-tête */}
               <h1 className="admin-header-title">Bonjour, {prenom}</h1>
               <p className="admin-header-sub">
                 Voici l'état de la plateforme aujourd'hui
               </p>
 
-              {/* 4 Cartes KPI avec animation de comptage progressif */}
               <AdminKpiCards kpis={kpis} />
 
-              {/* Rangée 1 : Graphique Recouvrement (2fr) + Documents à valider (1fr) */}
               <div className="admin-row">
                 <AdminRecoveryChart recouvrement={stats?.recouvrement} />
                 <AdminPendingDocuments
@@ -147,7 +154,6 @@ export default function AdminDashboard() {
                 />
               </div>
 
-              {/* Rangée 2 : Tableau Derniers Versements (2fr) + À surveiller (1fr) */}
               <div className="admin-row">
                 <AdminRecentTransactions
                   transactions={stats?.derniers_versements || []}
@@ -172,8 +178,10 @@ export default function AdminDashboard() {
             <AdminPromotionsView onShowToast={showToast} />
           )}
 
-          {activeTab === 'cagnottes' && (
-            <AdminCagnottesView />
+          {activeTab === 'cagnottes' && <AdminCagnottesView />}
+
+          {activeTab === 'commandes' && (
+            <AdminCommandesView onShowToast={showToast} />
           )}
 
           {activeTab === 'documents' && (
@@ -184,9 +192,7 @@ export default function AdminDashboard() {
             <AdminUsersView onShowToast={showToast} />
           )}
 
-          {activeTab === 'transactions' && (
-            <AdminTransactionsView />
-          )}
+          {activeTab === 'transactions' && <AdminTransactionsView />}
 
           {activeTab === 'livraisons' && (
             <AdminLivraisonsView onShowToast={showToast} />
@@ -194,7 +200,6 @@ export default function AdminDashboard() {
         </main>
       </div>
 
-      {/* Toast Flottant */}
       <AdminToast message={toastMessage} isVisible={toastVisible} />
     </div>
   );

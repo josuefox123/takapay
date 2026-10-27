@@ -18,6 +18,7 @@ class Cagnotte extends Model
         'produit_id',
         'prix_unitaire',
         'montant_verse',
+        'montant_objectif',
         'moyen_paiement',
         'statut',
         'adresse_livraison',
@@ -29,8 +30,9 @@ class Cagnotte extends Model
     protected function casts(): array
     {
         return [
-            'prix_unitaire' => 'decimal:2',
-            'montant_verse' => 'decimal:2',
+            'prix_unitaire'    => 'decimal:2',
+            'montant_verse'    => 'decimal:2',
+            'montant_objectif' => 'decimal:2',
         ];
     }
 
@@ -62,5 +64,35 @@ class Cagnotte extends Model
     public function notifications(): HasMany
     {
         return $this->hasMany(Notification::class, 'cagnotte_id');
+    }
+
+    /**
+     * Objectif effectif de la cagnotte.
+     * Priorité : montant_objectif explicite → prix_unitaire → prix total produit.
+     */
+    public function getObjectifEffectifAttribute(): float
+    {
+        if ($this->montant_objectif !== null && (float) $this->montant_objectif > 0) {
+            return (float) $this->montant_objectif;
+        }
+
+        if ($this->prix_unitaire !== null && (float) $this->prix_unitaire > 0) {
+            return (float) $this->prix_unitaire;
+        }
+
+        return (float) ($this->produit?->parametreProduit?->prix_total ?? 0);
+    }
+
+    /**
+     * Progression en pourcentage (0 à 100).
+     */
+    public function getProgressionAttribute(): int
+    {
+        $objectif = $this->objectif_effectif;
+        if ($objectif <= 0) {
+            return 0;
+        }
+
+        return (int) min(100, round((((float) $this->montant_verse) / $objectif) * 100));
     }
 }

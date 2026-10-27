@@ -39,7 +39,7 @@ export const adminService = {
 
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      throw new Error(data.message || 'Erreur lors de l’initialisation du paiement FeexPay.');
+      throw new Error(data.message || "Erreur lors de l'initialisation du paiement FeexPay.");
     }
     return data;
   },
@@ -191,7 +191,10 @@ export const adminService = {
 
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      const msg = data.message || Object.values(data.errors || {})?.[0]?.[0] || 'Erreur lors de la création du compte.';
+      const msg =
+        data.message ||
+        Object.values(data.errors || {})?.[0]?.[0] ||
+        'Erreur lors de la création du compte.';
       throw new Error(msg);
     }
 
@@ -213,7 +216,10 @@ export const adminService = {
 
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      const msg = data.message || Object.values(data.errors || {})?.[0]?.[0] || 'Identifiant ou code PIN incorrect.';
+      const msg =
+        data.message ||
+        Object.values(data.errors || {})?.[0]?.[0] ||
+        'Identifiant ou code PIN incorrect.';
       throw new Error(msg);
     }
 
@@ -255,7 +261,7 @@ export const adminService = {
             Authorization: `Bearer ${token}`,
             Accept: 'application/json',
           },
-        }).catch(() => { });
+        }).catch(() => {});
       }
     } finally {
       localStorage.removeItem('takapay_admin_token');
@@ -322,17 +328,25 @@ export const adminService = {
   saveCustomProduct(product) {
     try {
       const safeProduct = { ...product };
-      // Éviter de saturer les 5Mo de localStorage avec un binaire vidéo base64 volumineux
-      if (safeProduct.video && typeof safeProduct.video === 'object' && safeProduct.video.chemin?.startsWith('data:video/')) {
+      if (
+        safeProduct.video &&
+        typeof safeProduct.video === 'object' &&
+        safeProduct.video.chemin?.startsWith('data:video/')
+      ) {
         safeProduct.video = { ...safeProduct.video, chemin: '' };
-      } else if (typeof safeProduct.video === 'string' && safeProduct.video.startsWith('data:video/')) {
+      } else if (
+        typeof safeProduct.video === 'string' &&
+        safeProduct.video.startsWith('data:video/')
+      ) {
         safeProduct.video = null;
       }
       const existing = this.getCustomProducts();
       const filtered = existing.filter((p) => p.id !== product.id);
       const updated = [safeProduct, ...filtered];
       localStorage.setItem('takapay_created_products', JSON.stringify(updated));
-      window.dispatchEvent(new CustomEvent('takapay_products_updated', { detail: product }));
+      window.dispatchEvent(
+        new CustomEvent('takapay_products_updated', { detail: product })
+      );
       return updated;
     } catch {
       return [];
@@ -372,7 +386,9 @@ export const adminService = {
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      const error = new Error(err.message || 'Erreur lors de la suppression du produit.');
+      const error = new Error(
+        err.message || 'Erreur lors de la suppression du produit.'
+      );
       error.data = err;
       error.status = res.status;
       throw error;
@@ -412,7 +428,9 @@ export const adminService = {
     if (payload.video) {
       created.video = payload.video;
     }
-    window.dispatchEvent(new CustomEvent('takapay_products_updated', { detail: created }));
+    window.dispatchEvent(
+      new CustomEvent('takapay_products_updated', { detail: created })
+    );
     return { success: true, data: created };
   },
 
@@ -436,7 +454,9 @@ export const adminService = {
     if (payload.video) {
       updated.video = payload.video;
     }
-    window.dispatchEvent(new CustomEvent('takapay_products_updated', { detail: updated }));
+    window.dispatchEvent(
+      new CustomEvent('takapay_products_updated', { detail: updated })
+    );
     return { success: true, data: updated };
   },
 
@@ -452,7 +472,9 @@ export const adminService = {
           return apiList;
         }
       }
-    } catch (_error) { void _error; }
+    } catch (_error) {
+      void _error;
+    }
 
     return [];
   },
@@ -476,7 +498,9 @@ export const adminService = {
 
     const json = await res.json();
     const created = json.data || json;
-    window.dispatchEvent(new CustomEvent('takapay_categories_updated', { detail: created }));
+    window.dispatchEvent(
+      new CustomEvent('takapay_categories_updated', { detail: created })
+    );
     return { success: true, data: created };
   },
 
@@ -492,7 +516,9 @@ export const adminService = {
           return list;
         }
       }
-    } catch (_error) { void _error; }
+    } catch (_error) {
+      void _error;
+    }
     return [];
   },
 
@@ -510,12 +536,16 @@ export const adminService = {
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      throw new Error(err.message || 'Erreur lors de la création de la sous-catégorie.');
+      throw new Error(
+        err.message || 'Erreur lors de la création de la sous-catégorie.'
+      );
     }
 
     const json = await res.json();
     const created = json.data || json;
-    window.dispatchEvent(new CustomEvent('takapay_categories_updated', { detail: created }));
+    window.dispatchEvent(
+      new CustomEvent('takapay_categories_updated', { detail: created })
+    );
     return { success: true, data: created };
   },
 
@@ -569,7 +599,9 @@ export const adminService = {
           return list;
         }
       }
-    } catch (_error) { void _error; }
+    } catch (_error) {
+      void _error;
+    }
     return [];
   },
 
@@ -589,7 +621,9 @@ export const adminService = {
         const data = await res.json();
         return { success: true, data: data.data || data };
       }
-    } catch (_error) { void _error; }
+    } catch (_error) {
+      void _error;
+    }
     return {
       success: true,
       data: {
@@ -613,7 +647,9 @@ export const adminService = {
           Accept: 'application/json',
         },
       });
-    } catch (_error) { void _error; }
+    } catch (_error) {
+      void _error;
+    }
     return true;
   },
 
@@ -635,7 +671,9 @@ export const adminService = {
           return list;
         }
       }
-    } catch (_error) { void _error; }
+    } catch (_error) {
+      void _error;
+    }
     return [];
   },
 
@@ -656,7 +694,9 @@ export const adminService = {
           return list;
         }
       }
-    } catch (_error) { void _error; }
+    } catch (_error) {
+      void _error;
+    }
     return [];
   },
 
@@ -678,7 +718,9 @@ export const adminService = {
           motif: motif,
         }),
       });
-    } catch (_error) { void _error; }
+    } catch (_error) {
+      void _error;
+    }
     return true;
   },
 
@@ -705,8 +747,13 @@ export const adminService = {
           },
         };
       }
-    } catch (_error) { void _error; }
-    return { data: [], meta: { current_page: 1, last_page: 1, total: 0, per_page: 15 } };
+    } catch (_error) {
+      void _error;
+    }
+    return {
+      data: [],
+      meta: { current_page: 1, last_page: 1, total: 0, per_page: 15 },
+    };
   },
 
   async updateUserStatus(userId, status) {
@@ -724,7 +771,9 @@ export const adminService = {
         },
         body: JSON.stringify({ statut_compte: status }),
       });
-    } catch (_error) { void _error; }
+    } catch (_error) {
+      void _error;
+    }
     return true;
   },
 
@@ -745,7 +794,9 @@ export const adminService = {
           return list;
         }
       }
-    } catch (_error) { void _error; }
+    } catch (_error) {
+      void _error;
+    }
     return [];
   },
 
@@ -766,7 +817,9 @@ export const adminService = {
           return list;
         }
       }
-    } catch (_error) { void _error; }
+    } catch (_error) {
+      void _error;
+    }
     return [];
   },
 
@@ -784,76 +837,171 @@ export const adminService = {
         const data = await res.json();
         return data.unread_count || 0;
       }
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
     return 0;
   },
 
   async getSupportConversations(page = 1) {
     const token = this.getToken();
     try {
-      const res = await fetch(`${API_BASE}/admin/support/conversations?page=${page}`, {
-        headers: {
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          Accept: 'application/json',
-        },
-      });
+      const res = await fetch(
+        `${API_BASE}/admin/support/conversations?page=${page}`,
+        {
+          headers: {
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            Accept: 'application/json',
+          },
+        }
+      );
       if (res.ok) {
         const data = await res.json();
         return data.data || { data: [] };
       }
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
     return { data: [] };
   },
 
   async getSupportConversation(id) {
     const token = this.getToken();
     try {
-      const res = await fetch(`${API_BASE}/admin/support/conversations/${id}`, {
-        headers: {
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          Accept: 'application/json',
-        },
-      });
+      const res = await fetch(
+        `${API_BASE}/admin/support/conversations/${id}`,
+        {
+          headers: {
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            Accept: 'application/json',
+          },
+        }
+      );
       if (res.ok) {
         return await res.json();
       }
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
     return null;
   },
 
   async replySupportConversation(id, message) {
     const token = this.getToken();
-    const res = await fetch(`${API_BASE}/admin/support/conversations/${id}/reply`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-      body: JSON.stringify({ message }),
-    });
+    const res = await fetch(
+      `${API_BASE}/admin/support/conversations/${id}/reply`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ message }),
+      }
+    );
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
-      throw new Error(data.message || 'Erreur lors de l’envoi de la réponse.');
+      throw new Error(data.message || "Erreur lors de l'envoi de la réponse.");
     }
     return await res.json();
   },
 
   async closeSupportConversation(id) {
     const token = this.getToken();
-    const res = await fetch(`${API_BASE}/admin/support/conversations/${id}/close`, {
-      method: 'PATCH',
-      headers: {
-        Accept: 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-    });
+    const res = await fetch(
+      `${API_BASE}/admin/support/conversations/${id}/close`,
+      {
+        method: 'PATCH',
+        headers: {
+          Accept: 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      }
+    );
     if (!res.ok) {
       throw new Error('Erreur lors de la clôture de la conversation.');
     }
     return await res.json();
   },
+  // 8. GESTION DES COMMANDES DES CAGNOTTES
+ async getCommandes(filters = {}) {
+  const token = this.getToken();
+  if (!token) return { data: [], meta: { current_page: 1, last_page: 1, total: 0 } };
+
+  const params = new URLSearchParams();
+  if (filters.q) params.set('q', filters.q);
+  if (filters.statut) params.set('statut', filters.statut);
+  if (filters.page) params.set('page', filters.page);
+
+  try {
+    const res = await fetch(`${API_BASE}/admin/commandes?${params.toString()}`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/json',
+      },
+    });
+    if (res.ok) {
+      const json = await res.json();
+      return {
+        data: Array.isArray(json.data) ? json.data : [],
+        meta: json.meta || { current_page: 1, last_page: 1, total: 0 },
+      };
+    }
+  } catch (_error) {
+    void _error;
+  }
+  return { data: [], meta: { current_page: 1, last_page: 1, total: 0 } };
+},
+
+  async getCagnotteOrders(cagnotteId = null) {
+    const token = this.getToken();
+    if (!token) return [];
+    const url = cagnotteId
+      ? `${API_BASE}/admin/cagnottes/${cagnotteId}/commandes`
+      : `${API_BASE}/admin/cagnottes/commandes`;
+    try {
+      const res = await fetch(url, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: 'application/json',
+        },
+      });
+      if (res.ok) {
+        const json = await res.json();
+        const list = json.data || json;
+        if (Array.isArray(list)) {
+          return list;
+        }
+      }
+    } catch (_error) {
+      void _error;
+    }
+    return [];
+  },
+
+  async updateCommandeStatut(commandeId, statut) {
+    const token = this.getToken();
+    if (!token) return false;
+    try {
+      const res = await fetch(
+        `${API_BASE}/admin/commandes/${commandeId}/statut`,
+        {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+            Accept: 'application/json',
+          },
+          body: JSON.stringify({ statut }),
+        }
+      );
+      return res.ok;
+    } catch (_error) {
+      void _error;
+      return false;
+    }
+  },
 };
 
-export default adminService;
-
+  export default adminService;

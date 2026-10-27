@@ -36,4 +36,26 @@ class Commande extends Model
     {
         return $this->hasMany(CommandeProduit::class, 'commande_id');
     }
+
+    public function transactions(): HasMany
+    {
+        return $this->hasMany(Transaction::class, 'commande_id');
+    }
+
+    /**
+     * Génère une référence lisible si absente.
+     */
+    public static function genererReference(): string
+    {
+        return 'CMD-' . strtoupper(uniqid());
+    }
+
+    protected static function booted(): void
+    {
+        static::creating(function (Commande $commande) {
+            if (empty($commande->reference)) {
+                $commande->reference = self::genererReference();
+            }
+        });
+    }
 }

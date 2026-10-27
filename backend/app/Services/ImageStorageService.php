@@ -8,26 +8,16 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
-/**
- * Service de stockage des images :
- * - Accepte tous les formats d'image courants (PNG, JPEG, JPG, WEBP, GIF, SVG, BMP)
- * - Conserve le format d'origine sans conversion forcée en WebP
- * - Stocke le nom de fichier original (ex: telephone.jpeg) tel quel en base de données
- */
 class ImageStorageService
 {
     private const DISK = 'public';
 
     /**
-     * Traite une valeur d'image envoyée et retourne le nom de fichier à persister en base
-     * (ex: "telephone.jpeg" ou URL distante).
+     * Enregistre une image et retourne son chemin relatif.
      *
-     * @param  mixed  $input  UploadedFile, data-URI base64, URL ou nom de fichier
-     * @param  string  $directory  sous-dossier de stockage (ex: produits, categories)
-     * @param  string|null  $current  valeur actuelle en base
-     * @param  string  $attribute  nom du champ pour les erreurs
-     * @param  string|null  $preferredName  nom de fichier d'origine souhaité (ex: telephone.jpeg)
-     * @return string|null nom de l'image (ex: telephone.jpeg) ou URL
+     * Exemples :
+     * produits/telephone.jpeg
+     * categories/accessoire.png
      */
     public function process(
         mixed $input,
@@ -36,134 +26,323 @@ class ImageStorageService
         string $attribute = 'image',
         ?string $preferredName = null
     ): ?string {
-        if ($input === null || $input === '' || $input === $current) {
+        if ($input === null || $input === '') {
             return $current;
         }
 
-        // Fichier multipart UploadedFile
+        if ($input === $current) {
+            return $current;
+        }
+
+        $directory = trim(
+            str_replace('\\', '/', $directory),
+            '/'
+        );
+
+        /*
+         * 1. Fichier envoyé par formulaire multipart.
+         */
         if ($input instanceof UploadedFile) {
-            $filename = $this->sanitizeFilename($preferredName ?: $input->getClientOriginalName());
+            if (! $input->isValid()) {
+                throw $this->invalid(
+                    $attribute,
+                    'Le fichier image envoyé est invalide.'
+                );
+            }
 
-            // Sauvegarde dans le sous-dossier (ex: storage/produits/telephone.jpeg)
-            Storage::disk(self::DISK)->putFileAs($directory, $input, $filename);
-            // Copie à la racine du disque public pour garantir l'accès direct si besoin
-            Storage::disk(self::DISK)->putFileAs('', $input, $filename);
+            $this->validateImage($input, $attribute);
 
-            return $filename;
+            $filename = $this->sanitizeFilename(
+                $preferredName ?: $input->getClientOriginalName()
+            );
+
+            $path = $input->storeAs(
+                $directory,
+                $filename,
+                self::DISK
+            );
+
+            if (! $path) {
+                throw $this->invalid(
+                    $attribute,
+                    'Impossible d’enregistrer le fichier image.'
+                );
+            }
+
+            return $path;
         }
 
         if (! is_string($input)) {
-            throw $this->invalid($attribute, 'Le format de l\'image est invalide.');
+            throw $this->invalid(
+                $attribute,
+                'Le format de l’image est invalide.'
+            );
         }
 
-        // Data-URI base64 : conservation du format d'origine (PNG, JPEG, GIF, AVIF, HEIC, etc.)
-        if (str_starts_with($input, 'data:image/') || str_starts_with($input, 'data:application/octet-stream')) {
+        /*
+         * 2. Image encodée en Data URI base64.
+         * Accepte image/* et application/octet-stream.
+         */
+        if (
+            str_starts_with($input, 'data:image/') ||
+            str_starts_with($input, 'data:application/octet-stream')
+        ) {
             $comma = strpos($input, ',');
-            $header = substr($input, 0, $comma);
-            $binary = base64_decode(substr($input, $comma + 1), true);
 
-            if ($binary === false) {
-                throw $this->invalid($attribute, 'Le contenu base64 de l\'image est invalide.');
+            if ($comma === false) {
+                throw $this->invalid(
+                    $attribute,
+                    'Le contenu de l’image est invalide.'
+                );
+            }
+
+            $header = substr($input, 0, $comma);
+
+            $binary = base64_decode(
+                substr($input, $comma + 1),
+                true
+            );
+
+            if ($binary === false || $binary === '') {
+                throw $this->invalid(
+                    $attribute,
+                    'Le contenu base64 de l’image est invalide.'
+                );
             }
 
             if (strlen($binary) > ImageContent::MAX_BYTES) {
-                throw $this->invalid($attribute, 'L\'image dépasse la taille maximale de 10 Mo.');
+                throw $this->invalid(
+                    $attribute,
+                    'L’image dépasse la taille maximale autorisée de 10 Mo.'
+                );
             }
 
-            // Déduction de l'extension d'origine à partir du header MIME
-            $extension = $this->guessExtensionFromHeader($header, $binary);
+            $extension = $this->guessExtensionFromHeader(
+                $header,
+                $binary
+            );
 
-            if ($preferredName) {
-                $filename = $this->sanitizeFilename($preferredName);
-                if (! str_contains($filename, '.')) {
-                    $filename .= '.'.$extension;
-                }
-            } else {
-                $filename = 'image_'.time().'_'.Str::random(6).'.'.$extension;
+            $filename = $preferredName
+                ? $this->sanitizeFilename($preferredName)
+                : 'image_' . Str::uuid() . '.' . $extension;
+
+            if (! pathinfo($filename, PATHINFO_EXTENSION)) {
+                $filename .= '.' . $extension;
             }
 
-            // Sauvegarde brute sans conversion WebP forcée
-            Storage::disk(self::DISK)->put($directory.'/'.$filename, $binary);
-            Storage::disk(self::DISK)->put($filename, $binary);
+            $path = $directory . '/' . $filename;
 
-            return $filename;
+            if (! Storage::disk(self::DISK)->put($path, $binary)) {
+                throw $this->invalid(
+                    $attribute,
+                    'Impossible d’enregistrer l’image.'
+                );
+            }
+
+            return $path;
         }
 
-        // URL distante : conservée telle quelle
+        /*
+         * 3. URL distante.
+         */
         if (preg_match('#^https?://#i', $input)) {
-            if (preg_match('#/storage/(?:'.$directory.'/)?(.+)$#i', $input, $m)) {
-                return basename($m[1]);
+            if (filter_var($input, FILTER_VALIDATE_URL) === false) {
+                throw $this->invalid(
+                    $attribute,
+                    'L’URL de l’image est invalide.'
+                );
             }
 
-            if (filter_var($input, FILTER_VALIDATE_URL) !== false) {
-                return $input;
+            $path = parse_url($input, PHP_URL_PATH);
+
+            if (is_string($path)) {
+                $prefix = '/storage/' . $directory . '/';
+
+                if (str_starts_with($path, $prefix)) {
+                    return basename($path);
+                }
+
+                if (str_starts_with($path, '/storage/')) {
+                    return basename($path);
+                }
             }
 
-            throw $this->invalid($attribute, 'L\'URL de l\'image est invalide.');
+            // Les URL externes valides sont conservées.
+            return $input;
         }
 
-        // Nom de fichier direct (ex: telephone.jpeg) ou chemin relatif
-        return $this->sanitizeFilename(basename($input));
+        /*
+         * 4. Nom de fichier ou chemin local existant.
+         */
+        $input = str_replace('\\', '/', trim($input));
+
+        if (str_starts_with($input, '/storage/')) {
+            $input = substr($input, strlen('/storage/'));
+        }
+
+        $filename = basename($input);
+
+        if (
+            $filename === '' ||
+            $filename === '.' ||
+            $filename === '..'
+        ) {
+            throw $this->invalid(
+                $attribute,
+                'Le nom du fichier image est invalide.'
+            );
+        }
+
+        $filename = $this->sanitizeFilename($filename);
+
+        $candidatePaths = [
+            $directory . '/' . $filename,
+            $filename,
+        ];
+
+        foreach ($candidatePaths as $path) {
+            if (Storage::disk(self::DISK)->exists($path)) {
+                return $path;
+            }
+        }
+
+        /*
+         * Compatibilité avec les anciens enregistrements.
+         * Le chemin est conservé même si le fichier est absent.
+         */
+        return $filename;
     }
 
     /**
-     * Supprime une image du disque.
+     * Valide un fichier image envoyé par formulaire.
+     */
+    private function validateImage(
+        UploadedFile $file,
+        string $attribute
+    ): void {
+        $mime = $file->getMimeType();
+
+        $allowedMimes = [
+            'image/jpeg',
+            'image/png',
+            'image/webp',
+            'image/gif',
+            'image/bmp',
+            'image/svg+xml',
+        ];
+
+        if (! in_array($mime, $allowedMimes, true)) {
+            throw $this->invalid(
+                $attribute,
+                'Le format de l’image n’est pas autorisé.'
+            );
+        }
+
+        if ($file->getSize() > ImageContent::MAX_BYTES) {
+            throw $this->invalid(
+                $attribute,
+                'L’image dépasse la taille maximale autorisée de 10 Mo.'
+            );
+        }
+    }
+
+    /**
+     * Supprime un fichier image local.
+     * Ne supprime jamais les images hébergées à l'extérieur.
      */
     public function delete(?string $path): void
     {
-        if ($path === null || $path === '' || preg_match('#^https?://#i', $path)) {
+        if (
+            $path === null ||
+            trim($path) === '' ||
+            preg_match('#^(https?://|data:)#i', $path)
+        ) {
+            return;
+        }
+
+        $path = str_replace('\\', '/', trim($path));
+
+        if (str_starts_with($path, '/storage/')) {
+            $path = substr($path, strlen('/storage/'));
+        }
+
+        $path = ltrim($path, '/');
+
+        // Empêche les traversées de répertoires.
+        if (in_array('..', explode('/', $path), true)) {
             return;
         }
 
         try {
+            Storage::disk(self::DISK)->delete($path);
+
+            /*
+             * Compatibilité avec les anciens fichiers
+             * qui pouvaient aussi être copiés à la racine.
+             */
             $filename = basename($path);
-            Storage::disk(self::DISK)->delete('produits/'.$filename);
-            Storage::disk(self::DISK)->delete('categories/'.$filename);
-            Storage::disk(self::DISK)->delete($filename);
-            if ($path !== $filename) {
-                Storage::disk(self::DISK)->delete($path);
+
+            if ($filename !== $path) {
+                Storage::disk(self::DISK)->delete($filename);
             }
-        } catch (\Throwable) {
-            // Ignorer les échecs de suppression physique
+        } catch (\Throwable $exception) {
+            report($exception);
         }
     }
 
     /**
-     * Nettoie et sécurise le nom de fichier tout en conservant son extension et son nom d'origine.
+     * Nettoie et sécurise un nom de fichier.
      */
     private function sanitizeFilename(string $name): string
     {
-        $name = basename($name);
-        // Supprime d'éventuels caractères dangereux tout en gardant lettres, chiffres, tirets, underscores et points
-        $clean = preg_replace('/[^A-Za-z0-9._ -]/', '', $name);
+        $name = basename(str_replace('\\', '/', $name));
 
-        return $clean !== '' ? $clean : 'image_'.time().'.jpg';
+        $clean = preg_replace(
+            '/[^A-Za-z0-9._ -]/',
+            '',
+            $name
+        );
+
+        $clean = trim($clean ?? '', '. ');
+
+        return $clean !== ''
+            ? $clean
+            : 'image_' . Str::uuid() . '.jpg';
     }
 
     /**
-     * Déduit l'extension depuis l'en-tête Data-URI ou le binaire.
+     * Déduit l'extension depuis le Data URI ou le contenu binaire.
      */
-    private function guessExtensionFromHeader(string $header, string $binary): string
-    {
-        if (preg_match('#^data:(?:image/([a-zA-Z0-9.+-]+)|application/octet-stream)#i', $header, $m)) {
-            $type = strtolower($m[1] ?? '');
-            if ($type === 'jpeg' || $type === 'jpg' || $type === 'jfif' || $type === 'pjpeg') {
-                return 'jpeg';
-            }
-            if ($type === 'svg+xml') {
-                return 'svg';
-            }
-            if ($type === 'x-png') {
-                return 'png';
-            }
-            if (in_array($type, ['png', 'webp', 'gif', 'bmp', 'avif', 'heic', 'heif'])) {
-                return $type;
+    private function guessExtensionFromHeader(
+        string $header,
+        string $binary
+    ): string {
+        if (
+            preg_match(
+                '#^data:(?:image/([a-zA-Z0-9.+-]+)|application/octet-stream)#i',
+                $header,
+                $matches
+            )
+        ) {
+            $type = strtolower($matches[1] ?? '');
+
+            $extension = match ($type) {
+                'jpeg', 'jpg', 'jfif', 'pjpeg' => 'jpeg',
+                'svg+xml' => 'svg',
+                'x-png' => 'png',
+                'png', 'webp', 'gif', 'bmp', 'avif', 'heic', 'heif' => $type,
+                default => null,
+            };
+
+            if ($extension !== null) {
+                return $extension;
             }
         }
 
         $info = @getimagesizefromstring($binary);
+        $mime = $info['mime'] ?? '';
 
-        return match ($info['mime'] ?? '') {
+        $extension = match ($mime) {
             'image/jpeg' => 'jpeg',
             'image/png' => 'png',
             'image/gif' => 'gif',
@@ -172,12 +351,29 @@ class ImageStorageService
             'image/avif' => 'avif',
             'image/heic' => 'heic',
             'image/heif' => 'heif',
-            default => 'jpg',
+            'image/svg+xml' => 'svg',
+            default => null,
         };
+
+        if ($extension !== null) {
+            return $extension;
+        }
+
+        throw $this->invalid(
+            'image',
+            'Impossible de déterminer le format de cette image.'
+        );
     }
 
-    private function invalid(string $attribute, string $message): ValidationException
-    {
-        return ValidationException::withMessages([$attribute => $message]);
+    /**
+     * Construit une erreur de validation Laravel.
+     */
+    private function invalid(
+        string $attribute,
+        string $message
+    ): ValidationException {
+        return ValidationException::withMessages([
+            $attribute => $message,
+        ]);
     }
 }
