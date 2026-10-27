@@ -48,6 +48,10 @@ Route::get('produits', [ProduitController::class, 'index'])->name('produits.inde
 Route::get('produits/{produit}', [ProduitController::class, 'show'])->name('produits.show');
 Route::get('promotions', [PromotionController::class, 'index'])->name('promotions.index');
 Route::get('cagnottes', [CagnotteController::class, 'index'])->name('cagnottes.index');
+Route::post('cagnottes/{cagnotte}/confirmer-reception', [CagnotteController::class, 'confirmerReception'])->name('cagnottes.confirmer-reception');
+Route::get('notifications', [NotificationController::class, 'index'])->name('notifications.index');
+Route::put('notifications/{notification}/lire', [NotificationController::class, 'marquerCommeLu'])->name('notifications.marquer-lu');
+Route::post('notifications/tout-lire', [NotificationController::class, 'toutMarquerCommeLu'])->name('notifications.tout-lire');
 
 /*
 |--------------------------------------------------------------------------
@@ -124,7 +128,7 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
     Route::apiResource('adresses', AdresseController::class)
         ->parameters(['adresses' => 'adresse']);
     Route::apiResource('documents', DocumentController::class);
-    Route::apiResource('notifications', NotificationController::class);
+    Route::apiResource('notifications', NotificationController::class)->except(['index']);
     Route::apiResource('commandes', CommandeController::class);
     Route::apiResource('commande-produits', CommandeProduitController::class);
 

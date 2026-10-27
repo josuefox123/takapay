@@ -12,6 +12,7 @@ export default function ClientHeader({
   onSearch,
   searchQuery = '',
   cagnotteCount = 0,
+  unreadNotifCount = 0,
 }) {
   const [localSearch, setLocalSearch] = useState(searchQuery);
   const [selectedCat, setSelectedCat] = useState('Tous');
@@ -164,6 +165,7 @@ export default function ClientHeader({
                 <span className="material-symbols-outlined" style={{ fontSize: '21px' }}>
                   notifications
                 </span>
+                {unreadNotifCount > 0 && <span className="sec1-badge-count">{unreadNotifCount}</span>}
               </button>
 
               <button
@@ -454,6 +456,7 @@ export default function ClientHeader({
               >
                 <span className="material-symbols-outlined">notifications</span>
                 <span>Notifications</span>
+                {unreadNotifCount > 0 && <span className="sec1-badge-count" style={{ marginLeft: 'auto' }}>{unreadNotifCount}</span>}
               </button>
 
               <button

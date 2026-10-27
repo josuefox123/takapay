@@ -63,6 +63,89 @@ export const adminService = {
     return data;
   },
 
+  async confirmOrderReception(commandeId) {
+    const token = this.getClientToken() || this.getToken();
+    try {
+      const res = await fetch(`${API_BASE}/commandes/${commandeId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ statut: 'livree' }),
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  },
+
+  async confirmCagnotteReception(cagnotteId) {
+    try {
+      const res = await fetch(`${API_BASE}/cagnottes/${cagnotteId}/confirmer-reception`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  },
+
+  async getNotifications(userId = null) {
+    try {
+      const query = userId ? `?user_id=${userId}` : '';
+      const res = await fetch(`${API_BASE}/notifications${query}`, {
+        headers: {
+          Accept: 'application/json',
+          ...(this.getToken() ? { Authorization: `Bearer ${this.getToken()}` } : {}),
+        },
+      });
+      if (!res.ok) return [];
+      const json = await res.json();
+      return json.data || json || [];
+    } catch {
+      return [];
+    }
+  },
+
+  async markNotificationAsRead(notifId) {
+    try {
+      const res = await fetch(`${API_BASE}/notifications/${notifId}/lire`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          ...(this.getToken() ? { Authorization: `Bearer ${this.getToken()}` } : {}),
+        },
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  },
+
+  async markAllNotificationsAsRead(userId = null) {
+    try {
+      const res = await fetch(`${API_BASE}/notifications/tout-lire`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          ...(this.getToken() ? { Authorization: `Bearer ${this.getToken()}` } : {}),
+        },
+        body: JSON.stringify({ user_id: userId }),
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  },
+
   getUser() {
     try {
       const u = localStorage.getItem('takapay_admin_user');
@@ -484,10 +567,11 @@ export const adminService = {
   },
 
   // 2. GESTION DES CAGNOTTES
-  async getCagnottes() {
+  async getCagnottes(userId = null) {
     const token = this.getToken();
     try {
-      const res = await fetch(`${API_BASE}/cagnottes`, {
+      const url = userId ? `${API_BASE}/cagnottes?user_id=${encodeURIComponent(userId)}` : `${API_BASE}/cagnottes`;
+      const res = await fetch(url, {
         headers: {
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
           Accept: 'application/json',
@@ -719,3 +803,6 @@ export const adminService = {
     return await res.json();
   },
 };
+
+export default adminService;
+
