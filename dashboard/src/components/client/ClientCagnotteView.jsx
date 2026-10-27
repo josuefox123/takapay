@@ -76,18 +76,25 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
   const [selectedReceipt, setSelectedReceipt] = useState(null);
   const [paymentData, setPaymentData] = useState(null);
   const [depositError, setDepositError] = useState('');
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
+  const [showConfirmReceiptModal, setShowConfirmReceiptModal] = useState(false);
+  const [confirmReceiptStep, setConfirmReceiptStep] = useState(1);
+  const [receiptCheckbox, setReceiptCheckbox] = useState(false);
+  const [isConfirmingReceipt, setIsConfirmingReceipt] = useState(false);
 
   // Synchronisation directe avec l'API / le dashboard admin
   useEffect(() => {
     let isMounted = true;
-    adminService.getCagnottes().then((live) => {
+    adminService.getCagnottes(user?.id).then((live) => {
       if (!isMounted) return;
       if (Array.isArray(live)) {
         const converted = live.map(mapBackendCagnotteToClient).filter(Boolean);
         try {
           localStorage.setItem('takapay_backend_cagnottes', JSON.stringify(converted));
         } catch { /* ignore */ }
-        setCagnottesList(converted);
+        const merged = getStoredCagnottes(user);
+        setCagnottesList(merged);
       }
     }).catch(() => {
       if (isMounted) setCagnottesList(getStoredCagnottes(user));
@@ -173,7 +180,11 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
   const cagnotte = activeCagnotte || {};
   const p = cagnotte.product || {};
   const pct = cagnotte.pourcentage || 0;
-  const isFinished = pct >= 100;
+  const isCash = Boolean(cagnotte.isCash || cagnotte.mode === 'cash' || cagnotte.mode === 'cash_cod');
+  const isCod = Boolean(cagnotte.isCod || cagnotte.mode === 'cash_cod');
+  const isArticleReceived = Boolean(cagnotte.articleRecu || cagnotte.statut === 'recu');
+  const isFinished = pct >= 100 || cagnotte.statut === 'completed' || isArticleReceived;
+  const isCancelled = cagnotte.statut === 'cancelled' || cagnotte.statut === 'annulee';
   const isLibre =
     cagnotte.mode === 'libre' ||
     cagnotte.product?.payment?.mode === 'libre' ||
@@ -216,6 +227,153 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
     setDepositTargetId(null);
     setPaymentData(null);
     setDepositError('');
+  };
+
+  const handleCancelCagnotte = async () => {
+    if (!activeCagnotte) return;
+    setIsCancelling(true);
+
+    const targetId = activeCagnotte.id;
+    const paidAmount = Number(activeCagnotte.montantVerse) || 0;
+    const penaltyPercent = 5;
+    const penaltyAmount = Math.round((paidAmount * penaltyPercent) / 100);
+    const refundAmount = Math.max(0, paidAmount - penaltyAmount);
+
+    const now = new Date();
+    const dateFormatted =
+      now.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' }) +
+      ' ' +
+      now.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+
+    const cancelTx = {
+      id: `tx-cancel-${Date.now()}`,
+      reference: `TK-ANNUL-${Date.now()}`,
+      titre: 'Annulation cagnotte (Retenue 5% CGU)',
+      methode: activeCagnotte.moyenPaiement || 'Mobile Money',
+      date: dateFormatted,
+      montant: refundAmount,
+      statut: 'Remboursement en cours',
+      type: 'annulation',
+      periode: 'aujourdhui',
+      client: clientName,
+    };
+
+    const updatedCagnotte = {
+      ...activeCagnotte,
+      statut: 'cancelled',
+      transactions: [cancelTx, ...(activeCagnotte.transactions || [])],
+    };
+
+    const updatedList = cagnottesList.map((c) =>
+      String(c.id) === String(targetId) ? updatedCagnotte : c
+    );
+
+    setCagnottesList(updatedList);
+
+    try {
+      localStorage.setItem('takapay_backend_cagnottes', JSON.stringify(updatedList));
+      window.dispatchEvent(new CustomEvent('takapay_cagnotte_updated'));
+    } catch {
+      // Ignorer
+    }
+
+    if (activeCagnotte.backendId) {
+      try {
+        const token = adminService.getClientToken() || adminService.getToken();
+        fetch(`/api/cagnottes/${activeCagnotte.backendId}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({ statut: 'annulee' }),
+        }).catch(() => {});
+      } catch {
+        // Ignorer
+      }
+    }
+
+    setIsCancelling(false);
+    setShowCancelModal(false);
+
+    onShowToast?.(
+      paidAmount > 0
+        ? `Cagnotte annulée. Frais de gestion de 5% déduits (${formatFCFA(penaltyAmount)}). Remboursement net : ${formatFCFA(refundAmount)}.`
+        : 'Cagnotte annulée avec succès.'
+    );
+  };
+
+  const handleConfirmReceipt = async () => {
+    if (!activeCagnotte) return;
+    setIsConfirmingReceipt(true);
+
+    const targetId = activeCagnotte.id;
+    const now = new Date();
+    const dateFormatted =
+      now.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' }) +
+      ' ' +
+      now.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+
+    const deliveryTx = {
+      id: `tx-received-${Date.now()}`,
+      reference: `TK-RECU-${Date.now()}`,
+      titre: 'Réception confirmée par le client',
+      methode: activeCagnotte.isCod ? 'Espèces à la livraison' : 'Remise en main propre',
+      date: dateFormatted,
+      montant: activeCagnotte.prixTotal,
+      statut: 'Article reçu',
+      type: 'reception',
+      periode: 'aujourdhui',
+      client: clientName,
+    };
+
+    const updatedCagnotte = {
+      ...activeCagnotte,
+      articleRecu: true,
+      statut: 'recu',
+      dateReception: dateFormatted,
+      montantVerse: activeCagnotte.prixTotal,
+      resteAPayer: 0,
+      pourcentage: 100,
+      transactions: [deliveryTx, ...(activeCagnotte.transactions || [])],
+    };
+
+    const updatedList = cagnottesList.map((c) =>
+      String(c.id) === String(targetId) ? updatedCagnotte : c
+    );
+
+    setCagnottesList(updatedList);
+
+    try {
+      localStorage.setItem('takapay_backend_cagnottes', JSON.stringify(updatedList));
+      window.dispatchEvent(new CustomEvent('takapay_cagnotte_updated'));
+    } catch {
+      // Ignorer
+    }
+
+    const orderIdToConfirm = activeCagnotte.commandeId || activeCagnotte.backendId;
+    if (orderIdToConfirm) {
+      try {
+        await adminService.confirmOrderReception(orderIdToConfirm);
+      } catch {
+        // Ignorer
+      }
+    }
+    if (activeCagnotte.backendId) {
+      try {
+        await adminService.confirmCagnotteReception(activeCagnotte.backendId);
+      } catch {
+        // Ignorer
+      }
+    }
+
+    setIsConfirmingReceipt(false);
+    setShowConfirmReceiptModal(false);
+    setConfirmReceiptStep(1);
+    setReceiptCheckbox(false);
+
+    onShowToast?.('🎉 Merci ! Vous avez confirmé la bonne réception de votre article.');
   };
 
   const handleMakeDeposit = async (e) => {
@@ -439,7 +597,11 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
               {cagnottesList.map((item) => {
                 const prod = item.product || {};
                 const itemPct = item.pourcentage || 0;
-                const isItemFinished = itemPct >= 100;
+                const isItemCash = Boolean(item.isCash || item.mode === 'cash' || item.mode === 'cash_cod');
+                const isItemCod = Boolean(item.isCod || item.mode === 'cash_cod');
+                const isItemReceived = Boolean(item.articleRecu || item.statut === 'recu');
+                const isItemFinished = itemPct >= 100 || item.statut === 'completed' || isItemReceived;
+                const isItemCancelled = item.statut === 'cancelled' || item.statut === 'annulee';
                 return (
                   <div
                     key={item.id}
@@ -473,13 +635,43 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                             gap: '6px',
                             padding: '4px 12px',
                             borderRadius: '99px',
-                            background: isItemFinished ? '#dcfce7' : '#fee2e2',
-                            color: isItemFinished ? '#15803d' : '#b91c1c',
+                            background: isItemCancelled
+                              ? '#fee2e2'
+                              : isItemReceived
+                              ? '#dcfce7'
+                              : isItemCod
+                              ? '#e0f2fe'
+                              : isItemCash
+                              ? '#f0fdf4'
+                              : isItemFinished
+                              ? '#dcfce7'
+                              : '#fee2e2',
+                            color: isItemCancelled
+                              ? '#b91c1c'
+                              : isItemReceived
+                              ? '#15803d'
+                              : isItemCod
+                              ? '#0369a1'
+                              : isItemCash
+                              ? '#166534'
+                              : isItemFinished
+                              ? '#15803d'
+                              : '#b91c1c',
                             fontSize: '11.5px',
                             fontWeight: 800,
                           }}
                         >
-                          {isItemFinished ? '🎉 Complétée' : `● En cours (${itemPct}%)`}
+                          {isItemCancelled
+                            ? '✕ Annulée'
+                            : isItemReceived
+                            ? '✔ Article reçu'
+                            : isItemCod
+                            ? '🚚 Paiement à la livraison'
+                            : isItemCash
+                            ? '💵 Achat comptant'
+                            : isItemFinished
+                            ? '🎉 Complétée'
+                            : `● En cours (${itemPct}%)`}
                         </span>
                         <span style={{ fontSize: '11.5px', color: '#8c8580' }}>{item.dateCommande}</span>
                       </div>
@@ -529,28 +721,45 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                           border: '1px solid #f0e8e0',
                         }}
                       >
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12.5px', marginBottom: '6px' }}>
-                          <span style={{ color: '#706966' }}>
-                            Cotisé : <b style={{ color: '#15803d' }}>{formatFCFA(item.montantVerse)}</b>
-                          </span>
-                          <span style={{ color: '#706966' }}>
-                            Reste : <b style={{ color: '#b91c1c' }}>{formatFCFA(item.resteAPayer)}</b>
-                          </span>
-                        </div>
+                        {isItemCash ? (
+                          <div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12.5px', marginBottom: '4px' }}>
+                              <span style={{ color: '#706966' }}>{isItemCod ? 'Modalité :' : 'Règlement :'}</span>
+                              <b style={{ color: isItemReceived ? '#15803d' : isItemCod ? '#0369a1' : '#166534' }}>
+                                {isItemReceived ? 'Colis livré & réceptionné' : isItemCod ? 'À régler au livreur' : 'Payé au comptant'}
+                              </b>
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
+                              <span style={{ color: '#706966' }}>Montant :</span>
+                              <b style={{ color: '#1b1716' }}>{formatFCFA(item.prixTotal)}</b>
+                            </div>
+                          </div>
+                        ) : (
+                          <>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12.5px', marginBottom: '6px' }}>
+                              <span style={{ color: '#706966' }}>
+                                Cotisé : <b style={{ color: '#15803d' }}>{formatFCFA(item.montantVerse)}</b>
+                              </span>
+                              <span style={{ color: '#706966' }}>
+                                Reste : <b style={{ color: '#b91c1c' }}>{formatFCFA(item.resteAPayer)}</b>
+                              </span>
+                            </div>
 
-                        <div style={{ width: '100%', height: '8px', background: '#ece5de', borderRadius: '99px', overflow: 'hidden' }}>
-                          <div
-                            style={{
-                              height: '100%',
-                              width: `${Math.min(100, itemPct)}%`,
-                              background: isItemFinished
-                                ? 'linear-gradient(90deg, #16a34a, #22c55e)'
-                                : 'linear-gradient(90deg, #dc2626, #ef4444)',
-                              borderRadius: '99px',
-                              transition: 'width 0.3s ease',
-                            }}
-                          />
-                        </div>
+                            <div style={{ width: '100%', height: '8px', background: '#ece5de', borderRadius: '99px', overflow: 'hidden' }}>
+                              <div
+                                style={{
+                                  height: '100%',
+                                  width: `${Math.min(100, itemPct)}%`,
+                                  background: isItemFinished
+                                    ? 'linear-gradient(90deg, #16a34a, #22c55e)'
+                                    : 'linear-gradient(90deg, #dc2626, #ef4444)',
+                                  borderRadius: '99px',
+                                  transition: 'width 0.3s ease',
+                                }}
+                              />
+                            </div>
+                          </>
+                        )}
                       </div>
                     </div>
 
@@ -571,10 +780,10 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                           cursor: 'pointer',
                         }}
                       >
-                        Détails & Versements →
+                        {isItemCash ? 'Détails & Suivi →' : 'Détails & Versements →'}
                       </button>
 
-                      {!isItemFinished && (
+                      {!isItemCash && !isItemFinished && !isItemCancelled && (
                         <button
                           type="button"
                           onClick={() => openDeposit(item.id)}
@@ -628,13 +837,45 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                       gap: '5px',
                       padding: '4px 12px',
                       borderRadius: '99px',
-                      background: isFinished ? '#dcfce7' : '#fee2e2',
-                      color: isFinished ? '#15803d' : '#b91c1c',
+                      background: isCancelled
+                        ? '#fee2e2'
+                        : isArticleReceived
+                        ? '#dcfce7'
+                        : isCod
+                        ? '#e0f2fe'
+                        : isCash
+                        ? '#f0fdf4'
+                        : isFinished
+                        ? '#dcfce7'
+                        : '#fee2e2',
+                      color: isCancelled
+                        ? '#b91c1c'
+                        : isArticleReceived
+                        ? '#15803d'
+                        : isCod
+                        ? '#0369a1'
+                        : isCash
+                        ? '#166534'
+                        : isFinished
+                        ? '#15803d'
+                        : '#b91c1c',
                       fontSize: '12px',
                       fontWeight: 800,
                     }}
                   >
-                    {isFinished ? '🎉 Financement complété' : isLibre ? `● Cotisation libre (${pct}%)` : `● Échéance en cours (${pct}%)`}
+                    {isCancelled
+                      ? '✕ Cagnotte annulée'
+                      : isArticleReceived
+                      ? '✔ Article reçu'
+                      : isCod
+                      ? '🚚 Paiement à la livraison'
+                      : isCash
+                      ? '💵 Achat comptant'
+                      : isFinished
+                      ? '🎉 Financement complété'
+                      : isLibre
+                      ? `● Cotisation libre (${pct}%)`
+                      : `● Échéance en cours (${pct}%)`}
                   </span>
                 </div>
                 <p style={{ margin: '4px 0 0', color: '#706966', fontSize: '13.5px' }}>
@@ -661,23 +902,158 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                 ← Toutes mes cagnottes ({cagnottesList.length})
               </button>
 
-              {!isFinished && (
+              {isCash && !isArticleReceived && (
                 <button
                   type="button"
-                  onClick={() => openDeposit(cagnotte.id)}
+                  onClick={() => {
+                    setConfirmReceiptStep(1);
+                    setReceiptCheckbox(false);
+                    setShowConfirmReceiptModal(true);
+                  }}
                   style={{
-                    ...primaryButtonStyle,
-                    padding: '10px 20px',
+                    padding: '10px 18px',
                     borderRadius: '12px',
-                    fontSize: '14px',
-                    boxShadow: '0 4px 14px rgba(220,38,38,0.25)',
+                    border: 'none',
+                    background: '#16a34a',
+                    color: '#ffffff',
+                    fontWeight: 800,
+                    fontSize: '13.5px',
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    boxShadow: '0 4px 14px rgba(22,163,74,0.3)',
                   }}
                 >
-                  Effectuer un versement
+                  <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>check_circle</span>
+                  Oui, article reçu
+                </button>
+              )}
+
+              {!isCash && !isFinished && !isCancelled && (
+                <button
+                  type="button"
+                  onClick={() => setShowCancelModal(true)}
+                  style={{
+                    padding: '10px 18px',
+                    borderRadius: '12px',
+                    border: '1.5px solid #fecaca',
+                    background: '#fff1f2',
+                    color: '#dc2626',
+                    fontWeight: 700,
+                    fontSize: '13.5px',
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    transition: 'all 0.15s ease',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = '#fee2e2';
+                    e.currentTarget.style.borderColor = '#fca5a5';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = '#fff1f2';
+                    e.currentTarget.style.borderColor = '#fecaca';
+                  }}
+                >
+                  <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>cancel</span>
+                  Annuler la cagnotte
                 </button>
               )}
             </div>
           </div>
+
+          {/* Bannière commande paiement à la livraison */}
+          {isCod && !isArticleReceived && (
+            <div
+              style={{
+                background: 'linear-gradient(135deg, #0284c7, #0369a1)',
+                color: '#ffffff',
+                borderRadius: '20px',
+                padding: '20px 24px',
+                marginBottom: '24px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: '16px',
+                boxShadow: '0 8px 24px rgba(2,132,199,0.2)',
+              }}
+            >
+              <div>
+                <h3 style={{ margin: '0 0 4px', fontSize: '18px', fontWeight: 800 }}>
+                  Commande en mode Cash (Paiement à la livraison)
+                </h3>
+                <p style={{ margin: '0 0 6px', fontSize: '14px', opacity: 0.95 }}>
+                  📢 <b>La disponibilité de l’article vous sera communiquée par l’équipe en charge dans quelques instants.</b>
+                </p>
+                <p style={{ margin: 0, fontSize: '13px', opacity: 0.9 }}>
+                  Vous réglerez <b>{formatFCFA(cagnotte.prixTotal)}</b> en espèces directement au livreur lors de la réception.
+                </p>
+              </div>
+              <span style={{ fontSize: '32px' }}>🚚📦</span>
+            </div>
+          )}
+
+          {/* Bannière article reçu */}
+          {isArticleReceived && (
+            <div
+              style={{
+                background: 'linear-gradient(135deg, #15803d, #166534)',
+                color: '#ffffff',
+                borderRadius: '20px',
+                padding: '20px 24px',
+                marginBottom: '24px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: '16px',
+                boxShadow: '0 8px 24px rgba(21,128,61,0.2)',
+              }}
+            >
+              <div>
+                <h3 style={{ margin: '0 0 4px', fontSize: '18px', fontWeight: 800 }}>
+                  🎉 Article réceptionné avec succès !
+                </h3>
+                <p style={{ margin: 0, fontSize: '13.5px', opacity: 0.95 }}>
+                  Vous avez confirmé la bonne réception de votre commande. Merci pour votre confiance !
+                </p>
+              </div>
+              <span style={{ fontSize: '32px' }}>✅</span>
+            </div>
+          )}
+
+          {/* Bannière d'annulation si annulée */}
+          {isCancelled && (
+            <div
+              style={{
+                background: '#fff1f2',
+                border: '1.5px solid #fecaca',
+                color: '#991b1b',
+                borderRadius: '20px',
+                padding: '20px 24px',
+                marginBottom: '24px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: '16px',
+                boxShadow: '0 4px 16px rgba(220,38,38,0.08)',
+              }}
+            >
+              <div>
+                <h3 style={{ margin: '0 0 4px', fontSize: '18px', fontWeight: 800 }}>
+                  Cagnotte clôturée et annulée
+                </h3>
+                <p style={{ margin: 0, fontSize: '13.5px', opacity: 0.95 }}>
+                  Cette cagnotte est annulée. Conformément aux conditions d'utilisation, une retenue forfaitaire de 5% a été appliquée sur vos versements pour frais de gestion. Le remboursement est en cours de traitement.
+                </p>
+              </div>
+              <span style={{ fontSize: '32px' }}>🚫</span>
+            </div>
+          )}
 
           {/* Bannière de félicitations si complétée */}
           {isFinished && (
@@ -708,9 +1084,488 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
             </div>
           )}
 
-          {/* Grille à 2 colonnes */}
-          <div
-            style={{
+          {/* AFFICHAGE PAIEMENT À LA LIVRAISON VS CAGNOTTE CLASSIQUE */}
+          {isCod ? (
+            <div style={{ display: 'grid', gap: '24px' }}>
+              {/* Grille principale : Produit + Infos de Livraison */}
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 360px), 1fr))',
+                  gap: '24px',
+                  alignItems: 'start',
+                }}
+              >
+                {/* CARTE 1 : Récapitulatif Article & Règlement Cash */}
+                <div
+                  style={{
+                    background: '#ffffff',
+                    borderRadius: '24px',
+                    border: '1.5px solid #eee7e0',
+                    padding: '24px',
+                    boxShadow: '0 4px 20px rgba(0,0,0,0.03)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '20px',
+                  }}
+                >
+                  <div style={{ display: 'flex', gap: '18px', alignItems: 'center' }}>
+                    <div
+                      style={{
+                        width: '100px',
+                        height: '100px',
+                        borderRadius: '18px',
+                        overflow: 'hidden',
+                        background: '#f7f2ed',
+                        flexShrink: 0,
+                        display: 'grid',
+                        placeItems: 'center',
+                      }}
+                    >
+                      <img
+                        src={p.im || ''}
+                        alt={p.n || 'Article'}
+                        style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                        onError={(e) => {
+                          e.target.onerror = null;
+                          e.target.style.opacity = '0';
+                        }}
+                      />
+                    </div>
+
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <span
+                        style={{
+                          display: 'inline-block',
+                          fontSize: '11px',
+                          fontWeight: 700,
+                          color: '#706966',
+                          background: '#f3ece6',
+                          padding: '3px 8px',
+                          borderRadius: '6px',
+                          marginBottom: '6px',
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.5px',
+                        }}
+                      >
+                        {p.c || p.subcategory || 'Article commandé'}
+                      </span>
+                      <h2 style={{ fontSize: '20px', fontWeight: 800, color: '#1b1716', margin: '0 0 4px', lineHeight: 1.25 }}>
+                        {p.n}
+                      </h2>
+                      <div style={{ fontSize: '13px', color: '#706966' }}>
+                        {cleanVariantDisplay(p.variant)}
+                      </div>
+                      <div style={{ fontSize: '12px', color: '#8c8580', marginTop: '6px', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                        <span>📅</span>
+                        <span>Commandé le {cagnotte.dateCommande}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Encadré Montant à payer en espèces */}
+                  <div
+                    style={{
+                      background: isArticleReceived ? '#f0fdf4' : '#f8fafc',
+                      border: isArticleReceived ? '1.5px solid #bbf7d0' : '1.5px solid #e2e8f0',
+                      borderRadius: '18px',
+                      padding: '18px 20px',
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                      <span style={{ fontSize: '13px', fontWeight: 700, color: '#475569' }}>
+                        Montant à régler au livreur :
+                      </span>
+                      <span
+                        style={{
+                          fontSize: '11.5px',
+                          fontWeight: 800,
+                          color: isArticleReceived ? '#15803d' : '#0369a1',
+                          background: isArticleReceived ? '#dcfce7' : '#e0f2fe',
+                          padding: '3px 10px',
+                          borderRadius: '99px',
+                        }}
+                      >
+                        {isArticleReceived ? '✔ Réceptionné & Payé' : '💵 Espèces à la livraison'}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: '28px', fontWeight: 900, color: '#0f172a', letterSpacing: '-0.5px' }}>
+                      {formatFCFA(cagnotte.prixTotal)}
+                    </div>
+                    <p style={{ margin: '6px 0 0', fontSize: '12.5px', color: '#64748b', lineHeight: 1.4 }}>
+                      {isArticleReceived
+                        ? 'Le règlement a été effectué en totalité auprès du coursier.'
+                        : 'Aucun paiement en ligne requis. Vous réglerez cette somme directement au coursier à la réception.'}
+                    </p>
+                  </div>
+
+                  {/* Bouton d'action principal */}
+                  {!isArticleReceived ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setConfirmReceiptStep(1);
+                        setReceiptCheckbox(false);
+                        setShowConfirmReceiptModal(true);
+                      }}
+                      style={{
+                        width: '100%',
+                        padding: '16px',
+                        borderRadius: '16px',
+                        border: 'none',
+                        background: '#16a34a',
+                        color: '#ffffff',
+                        fontWeight: 800,
+                        fontSize: '15.5px',
+                        cursor: 'pointer',
+                        boxShadow: '0 6px 20px rgba(22, 163, 74, 0.28)',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '10px',
+                        transition: 'all .15s ease',
+                      }}
+                      onMouseEnter={(e) => { e.currentTarget.style.background = '#15803d'; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.background = '#16a34a'; }}
+                    >
+                      <span className="material-symbols-outlined" style={{ fontSize: '22px' }}>check_circle</span>
+                      Oui, j'ai reçu l'article
+                    </button>
+                  ) : (
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '10px',
+                        padding: '14px 18px',
+                        borderRadius: '14px',
+                        background: '#dcfce7',
+                        color: '#15803d',
+                        fontWeight: 800,
+                        fontSize: '14px',
+                      }}
+                    >
+                      <span className="material-symbols-outlined" style={{ fontSize: '22px' }}>verified</span>
+                      <span>Article réceptionné & commande clôturée avec succès.</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* CARTE 2 : Coordonnées de livraison */}
+                <div
+                  style={{
+                    background: '#ffffff',
+                    borderRadius: '24px',
+                    border: '1.5px solid #eee7e0',
+                    padding: '24px',
+                    boxShadow: '0 4px 20px rgba(0,0,0,0.03)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '18px',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '2px' }}>
+                    <span style={{ fontSize: '24px' }}>📍</span>
+                    <div>
+                      <h3 style={{ fontSize: '18px', fontWeight: 800, color: '#1b1716', margin: 0 }}>
+                        Détails de la livraison
+                      </h3>
+                      <small style={{ color: '#706966', fontSize: '12px' }}>
+                        Coordonnées transmises au service de livraison
+                      </small>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                    {/* Adresse */}
+                    <div
+                      style={{
+                        background: '#faf6f3',
+                        borderRadius: '14px',
+                        padding: '14px 16px',
+                        border: '1px solid #f0e8e0',
+                      }}
+                    >
+                      <small style={{ color: '#8c8580', fontSize: '11.5px', display: 'block', marginBottom: '4px', textTransform: 'uppercase', fontWeight: 700 }}>
+                        Adresse de destination
+                      </small>
+                      <b style={{ fontSize: '14px', color: '#1b1716', lineHeight: 1.4 }}>
+                        {cagnotte.deliveryAddress || user?.adresse || 'Position convenue avec le coursier'}
+                      </b>
+                    </div>
+
+                    {/* Contact téléphone */}
+                    <div
+                      style={{
+                        background: '#faf6f3',
+                        borderRadius: '14px',
+                        padding: '14px 16px',
+                        border: '1px solid #f0e8e0',
+                      }}
+                    >
+                      <small style={{ color: '#8c8580', fontSize: '11.5px', display: 'block', marginBottom: '4px', textTransform: 'uppercase', fontWeight: 700 }}>
+                        Numéro à contacter par le livreur
+                      </small>
+                      <b style={{ fontSize: '15px', color: '#1b1716' }}>
+                        {cagnotte.deliveryPhone || user?.telephone || user?.phone || 'Numéro client'}
+                      </b>
+                    </div>
+
+                    {/* Note d'information si présente */}
+                    {cagnotte.deliveryNote && (
+                      <div
+                        style={{
+                          background: '#faf6f3',
+                          borderRadius: '14px',
+                          padding: '14px 16px',
+                          border: '1px solid #f0e8e0',
+                        }}
+                      >
+                        <small style={{ color: '#8c8580', fontSize: '11.5px', display: 'block', marginBottom: '4px', textTransform: 'uppercase', fontWeight: 700 }}>
+                          Note pour le livreur
+                        </small>
+                        <span style={{ fontSize: '13.5px', color: '#2b2624', lineHeight: 1.4 }}>
+                          {cagnotte.deliveryNote}
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Mode de règlement */}
+                    <div
+                      style={{
+                        background: '#faf6f3',
+                        borderRadius: '14px',
+                        padding: '14px 16px',
+                        border: '1px solid #f0e8e0',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                      }}
+                    >
+                      <div>
+                        <small style={{ color: '#8c8580', fontSize: '11.5px', display: 'block', marginBottom: '2px', textTransform: 'uppercase', fontWeight: 700 }}>
+                          Mode de règlement
+                        </small>
+                        <b style={{ fontSize: '13.5px', color: '#1b1716' }}>Espèces à la réception</b>
+                      </div>
+                      <span style={{ fontSize: '20px' }}>🤝</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* CARTE 3 : Étapes et suivi de la commande (Timeline) */}
+              <div
+                style={{
+                  background: '#ffffff',
+                  borderRadius: '24px',
+                  border: '1.5px solid #eee7e0',
+                  padding: '24px',
+                  boxShadow: '0 4px 20px rgba(0,0,0,0.03)',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px' }}>
+                  <span style={{ fontSize: '24px' }}>🚚</span>
+                  <div>
+                    <h3 style={{ fontSize: '18px', fontWeight: 800, color: '#1b1716', margin: 0 }}>
+                      Étapes de votre commande
+                    </h3>
+                    <small style={{ color: '#706966', fontSize: '12px' }}>
+                      Progression en temps réel de votre livraison
+                    </small>
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+                    gap: '16px',
+                  }}
+                >
+                  {/* Étape 1 */}
+                  <div
+                    style={{
+                      background: '#f0fdf4',
+                      border: '1.5px solid #bbf7d0',
+                      borderRadius: '16px',
+                      padding: '16px',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                      <span style={{ background: '#16a34a', color: '#ffffff', width: '24px', height: '24px', borderRadius: '50%', display: 'grid', placeItems: 'center', fontSize: '12px', fontWeight: 800 }}>
+                        1
+                      </span>
+                      <b style={{ fontSize: '13.5px', color: '#15803d' }}>Commande passée</b>
+                    </div>
+                    <p style={{ margin: 0, fontSize: '12px', color: '#475569', lineHeight: 1.4 }}>
+                      Votre commande a bien été enregistrée le {cagnotte.dateCommande}.
+                    </p>
+                  </div>
+
+                  {/* Étape 2 */}
+                  <div
+                    style={{
+                      background: isArticleReceived ? '#f0fdf4' : '#eff6ff',
+                      border: isArticleReceived ? '1.5px solid #bbf7d0' : '1.5px solid #bfdbfe',
+                      borderRadius: '16px',
+                      padding: '16px',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                      <span
+                        style={{
+                          background: isArticleReceived ? '#16a34a' : '#2563eb',
+                          color: '#ffffff',
+                          width: '24px',
+                          height: '24px',
+                          borderRadius: '50%',
+                          display: 'grid',
+                          placeItems: 'center',
+                          fontSize: '12px',
+                          fontWeight: 800,
+                        }}
+                      >
+                        2
+                      </span>
+                      <b style={{ fontSize: '13.5px', color: isArticleReceived ? '#15803d' : '#1d4ed8' }}>
+                        Confirmation stock
+                      </b>
+                    </div>
+                    <p style={{ margin: 0, fontSize: '12px', color: '#475569', lineHeight: 1.4 }}>
+                      {isArticleReceived
+                        ? 'Disponibilité confirmée avec succès.'
+                        : 'L’équipe vérifie la disponibilité et vous contactera sous peu.'}
+                    </p>
+                  </div>
+
+                  {/* Étape 3 */}
+                  <div
+                    style={{
+                      background: isArticleReceived ? '#f0fdf4' : '#faf6f3',
+                      border: isArticleReceived ? '1.5px solid #bbf7d0' : '1.5px solid #f0e8e0',
+                      borderRadius: '16px',
+                      padding: '16px',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                      <span
+                        style={{
+                          background: isArticleReceived ? '#16a34a' : '#706966',
+                          color: '#ffffff',
+                          width: '24px',
+                          height: '24px',
+                          borderRadius: '50%',
+                          display: 'grid',
+                          placeItems: 'center',
+                          fontSize: '12px',
+                          fontWeight: 800,
+                        }}
+                      >
+                        3
+                      </span>
+                      <b style={{ fontSize: '13.5px', color: isArticleReceived ? '#15803d' : '#2b2624' }}>
+                        Acheminement
+                      </b>
+                    </div>
+                    <p style={{ margin: 0, fontSize: '12px', color: '#475569', lineHeight: 1.4 }}>
+                      {isArticleReceived
+                        ? 'Le colis a été acheminé à destination.'
+                        : 'Le coursier est déployé pour acheminer votre colis à votre adresse.'}
+                    </p>
+                  </div>
+
+                  {/* Étape 4 */}
+                  <div
+                    style={{
+                      background: isArticleReceived ? '#f0fdf4' : '#faf6f3',
+                      border: isArticleReceived ? '1.5px solid #bbf7d0' : '1.5px solid #f0e8e0',
+                      borderRadius: '16px',
+                      padding: '16px',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                      <span
+                        style={{
+                          background: isArticleReceived ? '#16a34a' : '#706966',
+                          color: '#ffffff',
+                          width: '24px',
+                          height: '24px',
+                          borderRadius: '50%',
+                          display: 'grid',
+                          placeItems: 'center',
+                          fontSize: '12px',
+                          fontWeight: 800,
+                        }}
+                      >
+                        4
+                      </span>
+                      <b style={{ fontSize: '13.5px', color: isArticleReceived ? '#15803d' : '#2b2624' }}>
+                        Réception & Cash
+                      </b>
+                    </div>
+                    <p style={{ margin: 0, fontSize: '12px', color: '#475569', lineHeight: 1.4 }}>
+                      {isArticleReceived
+                        ? 'Réceptionné et réglé en espèces.'
+                        : `Contrôle de l’article et paiement de ${formatFCFA(cagnotte.prixTotal)} en espèces.`}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* CARTE 4 : Consignes utiles pour le client */}
+              <div
+                style={{
+                  background: '#f8fafc',
+                  borderRadius: '20px',
+                  border: '1.5px solid #e2e8f0',
+                  padding: '20px 24px',
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+                  gap: '20px',
+                }}
+              >
+                <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+                  <span style={{ fontSize: '22px' }}>💵</span>
+                  <div>
+                    <b style={{ fontSize: '13.5px', color: '#1e293b', display: 'block', marginBottom: '3px' }}>
+                      Préparez la somme exacte
+                    </b>
+                    <span style={{ fontSize: '12.5px', color: '#64748b', lineHeight: 1.4 }}>
+                      Afin de faciliter l’échange avec le coursier, veuillez préparer <b>{formatFCFA(cagnotte.prixTotal)}</b> en espèces.
+                    </span>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+                  <span style={{ fontSize: '22px' }}>📞</span>
+                  <div>
+                    <b style={{ fontSize: '13.5px', color: '#1e293b', display: 'block', marginBottom: '3px' }}>
+                      Restez joignable au téléphone
+                    </b>
+                    <span style={{ fontSize: '12.5px', color: '#64748b', lineHeight: 1.4 }}>
+                      Le livreur vous contactera sur le <b>{cagnotte.deliveryPhone || user?.telephone || 'votre numéro'}</b> avant de se présenter.
+                    </span>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+                  <span style={{ fontSize: '22px' }}>🔍</span>
+                  <div>
+                    <b style={{ fontSize: '13.5px', color: '#1e293b', display: 'block', marginBottom: '3px' }}>
+                      Vérifiez l’article à la remise
+                    </b>
+                    <span style={{ fontSize: '12.5px', color: '#64748b', lineHeight: 1.4 }}>
+                      Inspectez le colis en présence du livreur avant de remettre le paiement et de valider la réception.
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            /* Grille à 2 colonnes classique pour les cagnottes */
+            <div
+              style={{
               display: 'grid',
               gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 340px), 1fr))',
               gap: '24px',
@@ -846,8 +1701,82 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                 </div>
               )}
 
-              {/* Bouton principal */}
-              {!isFinished && (
+              {/* Coordonnées de livraison si commande cash / livraison */}
+              {isCash && (
+                <div
+                  style={{
+                    background: '#faf6f3',
+                    borderRadius: '16px',
+                    padding: '16px',
+                    border: '1px solid #f0e8e0',
+                    marginTop: '16px',
+                  }}
+                >
+                  <h4 style={{ fontSize: '13.5px', fontWeight: 800, color: '#1b1716', margin: '0 0 10px' }}>
+                    📦 Coordonnées de livraison
+                  </h4>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '12.5px' }}>
+                    <div>
+                      <span style={{ color: '#706966' }}>Adresse : </span>
+                      <b>{cagnotte.deliveryAddress || user?.adresse || 'À convenir avec le livreur'}</b>
+                    </div>
+                    <div>
+                      <span style={{ color: '#706966' }}>Contact livreur : </span>
+                      <b>{cagnotte.deliveryPhone || user?.telephone || user?.phone || 'Numéro du profil'}</b>
+                    </div>
+                    {cagnotte.deliveryNote && (
+                      <div>
+                        <span style={{ color: '#706966' }}>Note : </span>
+                        <span>{cagnotte.deliveryNote}</span>
+                      </div>
+                    )}
+                    <div>
+                      <span style={{ color: '#706966' }}>Statut réception : </span>
+                      <b style={{ color: isArticleReceived ? '#15803d' : '#0369a1' }}>
+                        {isArticleReceived ? '✔ Article remis & reçu' : '⏳ En attente de livraison'}
+                      </b>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Bouton principal si Cash : Oui article reçu */}
+              {isCash && !isArticleReceived && (
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmReceiptModal(true)}
+                  style={{
+                    width: '100%',
+                    padding: '16px',
+                    borderRadius: '16px',
+                    border: 'none',
+                    background: '#16a34a',
+                    color: '#ffffff',
+                    fontWeight: 800,
+                    fontSize: '15.5px',
+                    cursor: 'pointer',
+                    boxShadow: '0 6px 20px rgba(22, 163, 74, 0.28)',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    marginTop: '16px',
+                    transition: 'background .15s',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = '#15803d';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = '#16a34a';
+                  }}
+                >
+                  <span className="material-symbols-outlined" style={{ fontSize: '20px' }}>check_circle</span>
+                  Oui, article reçu
+                </button>
+              )}
+
+              {/* Bouton principal si Cagnotte : Effectuer un versement */}
+              {!isCash && !isFinished && !isCancelled && (
                 <button
                   type="button"
                   onClick={() => openDeposit(cagnotte.id)}
@@ -1047,7 +1976,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                   </b>
                 </div>
 
-                {!isFinished && (
+                {!isFinished && !isCancelled && (
                   <button
                     type="button"
                     onClick={() => openDeposit(cagnotte.id)}
@@ -1067,6 +1996,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
               </div>
             </div>
           </div>
+        )}
         </>
       )}
 
@@ -1377,6 +2307,467 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                 Fermer
               </button>
             </div>
+          </div>
+        </div>
+      )}
+      {/* Modal 3 : Confirmation d'annulation de cagnotte */}
+      {showCancelModal && (
+        <div
+          style={overlayStyle}
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !isCancelling) setShowCancelModal(false);
+          }}
+        >
+          <div
+            style={{
+              background: '#ffffff',
+              borderRadius: '24px',
+              maxWidth: '480px',
+              width: '100%',
+              padding: 'clamp(20px, 4vw, 28px)',
+              boxShadow: '0 20px 60px rgba(0,0,0,0.25)',
+              color: '#1b1716',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '16px' }}>
+              <div
+                style={{
+                  width: '48px',
+                  height: '48px',
+                  borderRadius: '50%',
+                  background: '#fef2f2',
+                  color: '#dc2626',
+                  display: 'grid',
+                  placeItems: 'center',
+                  flexShrink: 0,
+                }}
+              >
+                <span className="material-symbols-outlined" style={{ fontSize: '26px' }}>
+                  warning
+                </span>
+              </div>
+              <div>
+                <h3 style={{ fontSize: '18px', fontWeight: 800, margin: '0 0 2px' }}>
+                  Annuler cette cagnotte ?
+                </h3>
+                <small style={{ color: '#706966', fontSize: '12px' }}>
+                  {p.n || 'Article TakaPay'}
+                </small>
+              </div>
+            </div>
+
+            <p style={{ fontSize: '13.5px', color: '#4b443f', lineHeight: 1.5, margin: '0 0 16px' }}>
+              Êtes-vous vraiment sûr de vouloir annuler votre cagnotte en cours ?
+            </p>
+
+            {/* Avertissement CGU et pourcentage */}
+            <div
+              style={{
+                background: '#fffbeb',
+                border: '1.5px solid #fef3c7',
+                borderRadius: '14px',
+                padding: '14px 16px',
+                marginBottom: '18px',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                <span style={{ fontSize: '18px' }}>⚠️</span>
+                <div style={{ fontSize: '12.5px', color: '#92400e', lineHeight: 1.5 }}>
+                  <b>Conformément aux conditions générales d’utilisation :</b>
+                  <br />
+                  Une retenue forfaitaire de <b>5%</b> à titre de frais de dossier et de gestion sera déduite du montant total cotisé. Le reste vous sera reversé.
+                </div>
+              </div>
+            </div>
+
+            {/* Détail du calcul financier */}
+            <div
+              style={{
+                background: '#faf6f3',
+                border: '1px solid #eee7e0',
+                borderRadius: '14px',
+                padding: '14px 16px',
+                marginBottom: '22px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '8px',
+                fontSize: '13px',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: '#706966' }}>Montant total cotisé :</span>
+                <b style={{ color: '#1b1716' }}>{formatFCFA(cagnotte.montantVerse || 0)}</b>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: '#b91c1c' }}>Frais déduits (5% selon CGU) :</span>
+                <b style={{ color: '#b91c1c' }}>
+                  - {formatFCFA(Math.round(((cagnotte.montantVerse || 0) * 5) / 100))}
+                </b>
+              </div>
+              <div
+                style={{
+                  borderTop: '1px solid #e5ded7',
+                  paddingTop: '8px',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  fontSize: '14px',
+                }}
+              >
+                <span style={{ fontWeight: 800, color: '#15803d' }}>Montant net remboursable :</span>
+                <b style={{ fontWeight: 800, color: '#15803d' }}>
+                  {formatFCFA(
+                    Math.max(
+                      0,
+                      (cagnotte.montantVerse || 0) -
+                        Math.round(((cagnotte.montantVerse || 0) * 5) / 100)
+                    )
+                  )}
+                </b>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button
+                type="button"
+                onClick={() => setShowCancelModal(false)}
+                disabled={isCancelling}
+                style={{
+                  flex: 1,
+                  padding: '12px',
+                  borderRadius: '12px',
+                  border: '1px solid #ded6cd',
+                  background: '#ffffff',
+                  color: '#1b1716',
+                  fontWeight: 700,
+                  fontSize: '13.5px',
+                  cursor: isCancelling ? 'not-allowed' : 'pointer',
+                }}
+              >
+                Non, garder ma cagnotte
+              </button>
+
+              <button
+                type="button"
+                onClick={handleCancelCagnotte}
+                disabled={isCancelling}
+                style={{
+                  flex: 1,
+                  padding: '12px',
+                  borderRadius: '12px',
+                  border: 'none',
+                  background: '#dc2626',
+                  color: '#ffffff',
+                  fontWeight: 800,
+                  fontSize: '13.5px',
+                  cursor: isCancelling ? 'not-allowed' : 'pointer',
+                  boxShadow: '0 4px 14px rgba(220,38,38,0.25)',
+                  opacity: isCancelling ? 0.7 : 1,
+                }}
+              >
+                {isCancelling ? 'Annulation...' : 'Oui, confirmer l’annulation'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Modal 4 : Confirmation et Reconfirmation de réception d'article (Paiement Cash / Livraison) */}
+      {showConfirmReceiptModal && (
+        <div
+          style={overlayStyle}
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !isConfirmingReceipt) {
+              setShowConfirmReceiptModal(false);
+              setConfirmReceiptStep(1);
+              setReceiptCheckbox(false);
+            }
+          }}
+        >
+          <div
+            style={{
+              background: '#ffffff',
+              borderRadius: '24px',
+              maxWidth: '480px',
+              width: '100%',
+              padding: 'clamp(20px, 4vw, 28px)',
+              boxShadow: '0 20px 60px rgba(0,0,0,0.25)',
+              color: '#1b1716',
+              textAlign: 'center',
+            }}
+          >
+            {/* Indicateur de progression (Étape 1 sur 2 / Étape 2 sur 2) */}
+            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
+              <span
+                style={{
+                  width: '32px',
+                  height: '6px',
+                  borderRadius: '99px',
+                  background: '#16a34a',
+                }}
+              />
+              <span
+                style={{
+                  width: '32px',
+                  height: '6px',
+                  borderRadius: '99px',
+                  background: confirmReceiptStep === 2 ? '#16a34a' : '#e2e8f0',
+                  transition: 'background .2s ease',
+                }}
+              />
+            </div>
+
+            {confirmReceiptStep === 1 ? (
+              /* ÉTAPE 1 : PREMIÈRE CONFIRMATION */
+              <>
+                <div
+                  style={{
+                    width: '60px',
+                    height: '60px',
+                    borderRadius: '50%',
+                    background: '#e0f2fe',
+                    color: '#0284c7',
+                    display: 'grid',
+                    placeItems: 'center',
+                    margin: '0 auto 16px',
+                  }}
+                >
+                  <span className="material-symbols-outlined" style={{ fontSize: '32px' }}>
+                    local_shipping
+                  </span>
+                </div>
+
+                <div style={{ fontSize: '12px', fontWeight: 800, color: '#0369a1', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' }}>
+                  Étape 1 sur 2 · Confirmation de réception
+                </div>
+
+                <h3 style={{ fontSize: '20px', fontWeight: 800, margin: '0 0 10px', color: '#1b1716' }}>
+                  Avez-vous bien reçu cet article ?
+                </h3>
+
+                <p style={{ fontSize: '14px', color: '#4b443f', lineHeight: 1.5, margin: '0 0 18px' }}>
+                  Vous confirmez que le livreur s'est présenté à votre adresse et vous a remis votre commande :
+                </p>
+
+                <div
+                  style={{
+                    background: '#faf6f3',
+                    border: '1px solid #f0e8e0',
+                    borderRadius: '16px',
+                    padding: '14px 16px',
+                    textAlign: 'left',
+                    marginBottom: '20px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '12px',
+                  }}
+                >
+                  <div
+                    style={{
+                      width: '48px',
+                      height: '48px',
+                      borderRadius: '10px',
+                      background: '#ffffff',
+                      overflow: 'hidden',
+                      flexShrink: 0,
+                      display: 'grid',
+                      placeItems: 'center',
+                    }}
+                  >
+                    <img
+                      src={p.im || ''}
+                      alt={p.n}
+                      style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                      onError={(e) => { e.target.style.opacity = '0'; }}
+                    />
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <b style={{ fontSize: '14.5px', color: '#1b1716', display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {p.n}
+                    </b>
+                    <span style={{ fontSize: '13px', color: '#15803d', fontWeight: 800 }}>
+                      Montant : {formatFCFA(cagnotte.prixTotal)}
+                    </span>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowConfirmReceiptModal(false);
+                      setConfirmReceiptStep(1);
+                      setReceiptCheckbox(false);
+                    }}
+                    style={{
+                      flex: 1,
+                      padding: '13px',
+                      borderRadius: '12px',
+                      border: '1px solid #ded6cd',
+                      background: '#ffffff',
+                      color: '#1b1716',
+                      fontWeight: 700,
+                      fontSize: '13.5px',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Non, pas encore
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setConfirmReceiptStep(2)}
+                    style={{
+                      flex: 1,
+                      padding: '13px',
+                      borderRadius: '12px',
+                      border: 'none',
+                      background: '#0284c7',
+                      color: '#ffffff',
+                      fontWeight: 800,
+                      fontSize: '13.5px',
+                      cursor: 'pointer',
+                      boxShadow: '0 4px 14px rgba(2,132,199,0.3)',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '6px',
+                    }}
+                  >
+                    <span>Oui, continuer</span>
+                    <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>arrow_forward</span>
+                  </button>
+                </div>
+              </>
+            ) : (
+              /* ÉTAPE 2 : RECONFIRMATION FINALE */
+              <>
+                <div
+                  style={{
+                    width: '60px',
+                    height: '60px',
+                    borderRadius: '50%',
+                    background: '#dcfce7',
+                    color: '#15803d',
+                    display: 'grid',
+                    placeItems: 'center',
+                    margin: '0 auto 16px',
+                  }}
+                >
+                  <span className="material-symbols-outlined" style={{ fontSize: '32px' }}>
+                    verified
+                  </span>
+                </div>
+
+                <div style={{ fontSize: '12px', fontWeight: 800, color: '#15803d', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' }}>
+                  Étape 2 sur 2 · Reconfirmation définitive
+                </div>
+
+                <h3 style={{ fontSize: '20px', fontWeight: 800, margin: '0 0 10px', color: '#1b1716' }}>
+                  Êtes-vous absolument certain(e) ?
+                </h3>
+
+                <p style={{ fontSize: '13.5px', color: '#4b443f', lineHeight: 1.5, margin: '0 0 16px' }}>
+                  Cette confirmation est <b>irréversible</b> et atteste de la bonne livraison de votre colis.
+                </p>
+
+                <div
+                  style={{
+                    background: '#fffbeb',
+                    border: '1.5px solid #fde68a',
+                    borderRadius: '16px',
+                    padding: '14px',
+                    textAlign: 'left',
+                    marginBottom: '18px',
+                    fontSize: '13px',
+                    color: '#92400e',
+                    lineHeight: 1.45,
+                  }}
+                >
+                  <div style={{ display: 'flex', gap: '8px', marginBottom: '6px', alignItems: 'center' }}>
+                    <span style={{ fontSize: '18px' }}>⚠️</span>
+                    <b>Points à vérifier impérativement :</b>
+                  </div>
+                  <ul style={{ margin: 0, paddingLeft: '20px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <li>Le produit a été examiné et est conforme à vos attentes.</li>
+                    <li>La somme de <b>{formatFCFA(cagnotte.prixTotal)}</b> a bien été remise en espèces au livreur.</li>
+                  </ul>
+                </div>
+
+                <label
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    textAlign: 'left',
+                    cursor: 'pointer',
+                    background: '#f8fafc',
+                    padding: '12px 14px',
+                    borderRadius: '12px',
+                    border: '1px solid #e2e8f0',
+                    marginBottom: '20px',
+                    fontSize: '13px',
+                    color: '#1e293b',
+                    fontWeight: 600,
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={receiptCheckbox}
+                    onChange={(e) => setReceiptCheckbox(e.target.checked)}
+                    style={{ width: '18px', height: '18px', accentColor: '#16a34a', cursor: 'pointer' }}
+                  />
+                  <span>
+                    Je certifie avoir reçu l'article conforme et avoir réglé la totalité en espèces au livreur.
+                  </span>
+                </label>
+
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmReceiptStep(1)}
+                    disabled={isConfirmingReceipt}
+                    style={{
+                      flex: 1,
+                      padding: '13px',
+                      borderRadius: '12px',
+                      border: '1px solid #ded6cd',
+                      background: '#ffffff',
+                      color: '#1b1716',
+                      fontWeight: 700,
+                      fontSize: '13.5px',
+                      cursor: isConfirmingReceipt ? 'not-allowed' : 'pointer',
+                    }}
+                  >
+                    ‹ Retour
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleConfirmReceipt}
+                    disabled={!receiptCheckbox || isConfirmingReceipt}
+                    style={{
+                      flex: 1.5,
+                      padding: '13px',
+                      borderRadius: '12px',
+                      border: 'none',
+                      background: !receiptCheckbox || isConfirmingReceipt ? '#a7f3d0' : '#16a34a',
+                      color: '#ffffff',
+                      fontWeight: 800,
+                      fontSize: '13.5px',
+                      cursor: !receiptCheckbox || isConfirmingReceipt ? 'not-allowed' : 'pointer',
+                      boxShadow: receiptCheckbox ? '0 4px 14px rgba(22,163,74,0.3)' : 'none',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '6px',
+                      transition: 'all .15s ease',
+                    }}
+                  >
+                    <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>check_circle</span>
+                    {isConfirmingReceipt ? 'Confirmation...' : 'Confirmer définitivement'}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}

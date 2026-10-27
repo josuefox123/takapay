@@ -460,13 +460,25 @@ export const createCagnotteFromOrder = (orderData, user = null) => {
     });
   }
 
+  const isCash = Boolean(orderData?.isCash || orderData?.type_paiement === 'cash');
+  const isCod = Boolean(orderData?.isCod || orderData?.mode_reglement === 'livraison');
+
   return {
     id: `cag-${Date.now()}`,
     userId: clientUserId,
     userPhone: clientPhone,
     userEmail: clientEmail,
-    mode: mode,
+    mode: isCash ? (isCod ? 'cash_cod' : 'cash') : mode,
     isReal: true,
+    isCash: isCash,
+    isCod: isCod,
+    articleRecu: false,
+    deliveryAddress: orderData?.deliveryAddress || user?.adresse || '',
+    deliveryPhone: orderData?.deliveryPhone || clientPhone,
+    deliveryNote: orderData?.deliveryNote || '',
+    deliveryCoords: orderData?.deliveryCoords || '',
+    commandeId: orderData?.commandeId || orderData?.commande_id || null,
+    reference: orderData?.reference || (isCod ? `TK-COD-${Date.now()}` : (isCash ? `TK-CASH-${Date.now()}` : null)),
     product: {
       id: prod.id || Date.now(),
       n: prod.n || prod.nom || 'Article TakaPay',
@@ -479,33 +491,47 @@ export const createCagnotteFromOrder = (orderData, user = null) => {
         : 'Standard · 1 unité',
       payment: {
         ...(prod.payment || {}),
-        mode: mode,
-        installmentAmount: installmentAmount,
+        mode: isCash ? (isCod ? 'cash_cod' : 'cash') : mode,
+        installmentAmount: isCash ? null : installmentAmount,
       },
     },
     dateCommande: now.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' }),
     created_at: now.toISOString(),
     prixTotal: totalOrderPrice,
-    montantVerse: initialPaid,
-    resteAPayer: remaining,
-    pourcentage: percent,
-    prochainVersement: isLibre ? null : {
+    montantVerse: isCod ? 0 : (isCash ? totalOrderPrice : initialPaid),
+    resteAPayer: isCod ? totalOrderPrice : (isCash ? 0 : remaining),
+    pourcentage: isCod ? 0 : (isCash ? 100 : percent),
+    prochainVersement: (isLibre || isCash) ? null : {
       montant: remaining > 0 ? Math.min(installmentAmount || remaining, remaining) : 0,
       date: nextDueDateFormatted,
     },
-    dateFinEstimee: isLibre ? null : estimatedEndFormatted,
-    moisRestants: isLibre ? null : moisRestants,
-    statut: remaining === 0 ? 'completed' : 'active',
-    transactions: [
+    dateFinEstimee: (isLibre || isCash) ? (isCash ? 'Comptant' : null) : estimatedEndFormatted,
+    moisRestants: (isLibre || isCash) ? null : moisRestants,
+    statut: isCod ? 'en_attente_livraison' : (remaining === 0 || isCash ? 'completed' : 'active'),
+    transactions: isCod ? [
+      {
+        id: `tx-cod-${Date.now()}`,
+        reference: orderData?.reference || `TK-COD-${Date.now()}`,
+        titre: 'Commande enregistrée (Paiement à la livraison)',
+        methode: 'Espèces à la livraison',
+        date: dateFormatted,
+        montant: totalOrderPrice,
+        statut: 'À régler à la livraison',
+        type: 'paiement_livraison',
+        periode: 'aujourdhui',
+        telephone: orderData?.deliveryPhone || clientPhone,
+        client: clientName,
+      }
+    ] : [
       {
         id: `tx-${Date.now()}`,
-        reference: `TK-${orderData?.provider === 'Moov' ? 'MOOV' : 'MM'}-${Math.floor(100000 + Math.random() * 900000)}`,
-        titre: 'Premier versement (Acompte)',
-        methode: orderData?.provider === 'Moov' ? 'Moov Money' : 'MTN Mobile Money',
+        reference: orderData?.reference || `TK-${orderData?.provider === 'Moov' ? 'MOOV' : 'MM'}-${Math.floor(100000 + Math.random() * 900000)}`,
+        titre: isCash ? 'Paiement comptant (Mobile Money)' : 'Premier versement (Acompte)',
+        methode: orderData?.provider === 'Moov' ? 'Moov Money' : (orderData?.provider === 'MTN' ? 'MTN Mobile Money' : 'Mobile Money'),
         date: dateFormatted,
-        montant: initialPaid,
+        montant: isCash ? totalOrderPrice : initialPaid,
         statut: 'Réussi',
-        type: 'versement',
+        type: isCash ? 'paiement_cash' : 'versement',
         periode: 'aujourdhui',
         telephone: clientPhone,
         client: clientName,
@@ -575,16 +601,38 @@ export const mapBackendCagnotteToClient = (c) => {
   }
   if (!categoryName) categoryName = 'Catalogue';
 
+  const isCod = Boolean(
+    c.isCod ||
+    c.moyen_paiement === 'livraison' ||
+    c.mode_reglement === 'livraison' ||
+    txs.some((t) => t.type === 'paiement_livraison' || t.methode === 'livraison' || t.methode === 'Espèces à la livraison')
+  );
+
+  const isCash = Boolean(
+    isCod ||
+    c.isCash ||
+    c.mode === 'cash' ||
+    c.mode === 'cash_cod' ||
+    c.moyen_paiement === 'cash' ||
+    txs.some((t) => t.type === 'commande_cash' || t.type === 'paiement_cash')
+  );
+
+  const articleRecu = Boolean(
+    c.articleRecu ||
+    c.statut === 'livree' ||
+    c.statut === 'recu'
+  );
+
   const isLibre = param.mode_paiement === 'libre';
-  const mode = isLibre ? 'libre' : 'echelonne';
+  const mode = isCod ? 'cash_cod' : (isCash ? 'cash' : (isLibre ? 'libre' : 'echelonne'));
 
   // Montant régulier prévu de chaque échéance (en mode échelonné)
-  const installmentAmount = !isLibre
+  const installmentAmount = !isLibre && !isCash
     ? Number(param.prix_echelonne || (prod.duree > 0 ? Math.round(total / prod.duree) : Math.round(total * 0.1)))
     : null;
 
   // Calcul mathématique des mois restants basé sur le reste à payer
-  const moisRestants = !isLibre && installmentAmount > 0 && remaining > 0
+  const moisRestants = !isLibre && !isCash && installmentAmount > 0 && remaining > 0
     ? Math.ceil(remaining / installmentAmount)
     : 0;
 
@@ -618,58 +666,74 @@ export const mapBackendCagnotteToClient = (c) => {
   return {
     id: `cag-${c.id}`,
     backendId: c.id,
-    userId: c.utilisateur_id ? String(c.utilisateur_id) : null,
-    userPhone: c.client_tel || null,
+    userId: c.utilisateur_id ? String(c.utilisateur_id) : (c.userId || null),
+    userPhone: c.telephone_livraison || c.client_tel || c.deliveryPhone || null,
     mode: mode,
+    isReal: true,
+    isCash: isCash,
+    isCod: isCod,
+    articleRecu: articleRecu,
+    deliveryAddress: c.adresse_livraison || c.deliveryAddress || '',
+    deliveryPhone: c.telephone_livraison || c.deliveryPhone || c.client_tel || '',
+    deliveryNote: c.note_livraison || c.deliveryNote || '',
+    deliveryCoords: c.coordonnees_gps || c.deliveryCoords || '',
+    commandeId: c.commande_id || c.commandeId || null,
     product: {
       id: prod.id || Date.now(),
-      n: prod.nom || 'Article TakaPay',
+      n: prod.nom || prod.n || 'Article TakaPay',
       c: categoryName,
       subcategory: subcategoryName,
       p: total,
       im: primaryImg,
       variant: (() => {
-      if (!prod.couleur) return 'Standard · 1 unité';
-      try {
-        if (typeof prod.couleur === 'string' && (prod.couleur.startsWith('[') || prod.couleur.startsWith('{'))) {
-          const parsed = JSON.parse(prod.couleur);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            const firstItem = parsed[0];
-            const col = typeof firstItem === 'string' ? firstItem : (firstItem.nom || firstItem.name || 'Standard');
-            return `${col} · 1 unité`;
+        if (c.selectedColor?.name) return `${c.selectedColor.name} · 1 unité`;
+        if (!prod.couleur) return 'Standard · 1 unité';
+        try {
+          if (typeof prod.couleur === 'string' && (prod.couleur.startsWith('[') || prod.couleur.startsWith('{'))) {
+            const parsed = JSON.parse(prod.couleur);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              const firstItem = parsed[0];
+              const col = typeof firstItem === 'string' ? firstItem : (firstItem.nom || firstItem.name || 'Standard');
+              return `${col} · 1 unité`;
+            }
+          } else if (typeof prod.couleur === 'string') {
+            const first = prod.couleur.split(',')[0].trim();
+            const clean = first.replace(/\([^)]*\)/g, '').replace(/:.*$/, '').trim();
+            return `${clean || 'Standard'} · 1 unité`;
           }
-        } else if (typeof prod.couleur === 'string') {
-          const first = prod.couleur.split(',')[0].trim();
-          const clean = first.replace(/\([^)]*\)/g, '').replace(/:.*$/, '').trim();
-          return `${clean || 'Standard'} · 1 unité`;
-        }
-      } catch { /* ignore */ }
-      return 'Standard · 1 unité';
-    })(),
+        } catch { /* ignore */ }
+        return 'Standard · 1 unité';
+      })(),
     },
     dateCommande: c.created_at ? new Date(c.created_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Récemment',
     created_at: c.created_at || null,
     prixTotal: total,
-    montantVerse: paid,
-    resteAPayer: remaining,
-    pourcentage: percent,
-    prochainVersement: isLibre ? null : {
+    montantVerse: isCash && !isCod ? total : paid,
+    resteAPayer: isCash ? (isCod ? total : 0) : remaining,
+    pourcentage: isCash ? (isCod ? 0 : 100) : percent,
+    prochainVersement: (isLibre || isCash) ? null : {
       montant: remaining > 0 ? Math.min(installmentAmount || remaining, remaining) : 0,
       date: nextDueDateFormatted,
     },
-    dateFinEstimee: isLibre ? null : estimatedEndFormatted,
-    moisRestants: isLibre ? null : moisRestants,
-    statut: c.statut === 'terminee' || percent >= 100 ? 'completed' : 'active',
+    dateFinEstimee: (isLibre || isCash) ? null : estimatedEndFormatted,
+    moisRestants: (isLibre || isCash) ? null : moisRestants,
+    statut: articleRecu
+      ? 'completed'
+      : (c.statut === 'annulee' || c.statut === 'cancelled'
+          ? 'cancelled'
+          : (isCash
+              ? (isCod ? 'active' : 'completed')
+              : (c.statut === 'terminee' || percent >= 100 ? 'completed' : 'active'))),
     transactions: txs.length > 0 ? txs : [
       {
         id: `tx-init-${c.id}`,
         reference: `TK-INIT-${c.id}`,
-        titre: 'Versement initial',
-        methode: c.moyen_paiement || 'MTN Mobile Money',
+        titre: isCod ? 'Paiement à la livraison' : (isCash ? 'Paiement comptant' : 'Versement initial'),
+        methode: isCod ? 'Espèces à la livraison' : (c.moyen_paiement || 'Mobile Money'),
         date: c.created_at ? new Date(c.created_at).toLocaleDateString('fr-FR') : 'Récemment',
-        montant: paid,
-        statut: 'Réussi',
-        type: 'versement',
+        montant: total,
+        statut: isCod ? (articleRecu ? 'Réussi' : 'En attente') : 'Réussi',
+        type: isCod ? 'paiement_livraison' : (isCash ? 'commande_cash' : 'versement'),
         periode: 'aujourdhui',
       }
     ],
@@ -677,13 +741,13 @@ export const mapBackendCagnotteToClient = (c) => {
 };
 
 export const getStoredCagnottes = (_user = null) => {
-  // Nettoyage immédiat et strict du localStorage contre toute ancienne cagnotte fictive
+  // Nettoyage immédiat et strict du localStorage contre les cagnottes fantômes et de test
   try {
     localStorage.removeItem('takapay-demo-cagnotte');
     localStorage.removeItem('takapay-client-cagnottes');
   } catch { /* ignore */ }
 
-  // Lire UNIQUEMENT les cagnottes réelles issues du backend / dashboard admin
+  // 1. Lire les cagnottes réelles synchronisées depuis le backend
   let backendList = [];
   try {
     const rawBackend = localStorage.getItem('takapay_backend_cagnottes');
@@ -693,8 +757,20 @@ export const getStoredCagnottes = (_user = null) => {
     }
   } catch { /* ignore */ }
 
-  // Filtre strict : Ne conserver que les cagnottes authentiques du dashboard admin
-  return backendList.filter((c) => c && (c.backendId || c.id));
+  // Filtrer pour ne garder que les cagnottes avec un produit réel valide
+  let validList = backendList.filter(
+    (c) => c && c.product && (c.product.n || c.product.nom) && (c.backendId || c.id)
+  );
+
+  // Filtrer strictement par utilisateur connecté
+  if (_user && _user.id) {
+    validList = validList.filter((c) => {
+      if (!c.userId) return false;
+      return String(c.userId) === String(_user.id);
+    });
+  }
+
+  return validList;
 };
 
 

@@ -45,6 +45,14 @@ export default function ClientOrderFlow({
   const [quantity, setQuantity] = useState(initialQuantity || 1);
   const [successModalData, setSuccessModalData] = useState(null);
 
+  // Mode Cash : Choix entre Paiement à la livraison et Mobile Money
+  const [cashPaymentMode, setCashPaymentMode] = useState('delivery'); // 'delivery' ou 'online'
+  const [deliveryAddress, setDeliveryAddress] = useState(user?.adresse || '');
+  const [deliveryPhone, setDeliveryPhone] = useState(user?.telephone || user?.phone || '');
+  const [deliveryNote, setDeliveryNote] = useState('');
+  const [deliveryCoords, setDeliveryCoords] = useState('');
+  const [isLocating, setIsLocating] = useState(false);
+
   // Connexion Google
   const handleGoogleAuth = async () => {
     setError('La connexion directe avec Google sera disponible prochainement. Veuillez vous inscrire ou vous connecter avec votre numéro de téléphone.');
@@ -177,6 +185,106 @@ export default function ClientOrderFlow({
   );
   const effectiveQuantity = orderType === 'cash' ? Math.max(1, quantity) : 1;
   const paymentAmount = orderType === 'cash' ? (cashPrice * effectiveQuantity) : minDeposit;
+
+  // Géolocalisation pour l'adresse de livraison
+  const handleGetLocation = () => {
+    if (!navigator.geolocation) {
+      setError('La géolocalisation n’est pas disponible sur votre navigateur.');
+      return;
+    }
+    setIsLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setIsLocating(false);
+        const lat = pos.coords.latitude.toFixed(5);
+        const lng = pos.coords.longitude.toFixed(5);
+        setDeliveryCoords(`${lat}, ${lng}`);
+        const gpsLabel = `Position GPS (${lat}, ${lng})`;
+        setDeliveryAddress((prev) => (prev ? `${prev} · ${gpsLabel}` : gpsLabel));
+      },
+      () => {
+        setIsLocating(false);
+        setError('Impossible d’accéder à votre position GPS. Veuillez renseigner l’adresse manuellement.');
+      },
+      { timeout: 8000 }
+    );
+  };
+
+  // Soumission de commande avec paiement à la livraison (COD)
+  const handleDeliveryOrderSubmit = async (e) => {
+    e.preventDefault();
+    if (!deliveryAddress.trim()) {
+      setError('Veuillez renseigner votre adresse de livraison.');
+      return;
+    }
+    if (!deliveryPhone.trim()) {
+      setError('Veuillez renseigner un numéro de téléphone joignable pour le livreur.');
+      return;
+    }
+    setError('');
+    setSubmitting(true);
+
+    const orderRef = `CMD_COD_${Date.now()}_${Math.floor(1000 + Math.random() * 9000)}`;
+
+    try {
+      const initRes = await adminService.initiatePayment({
+        amount: cashPrice * effectiveQuantity,
+        produit_id: product?.id,
+        type_paiement: 'cash',
+        quantite: effectiveQuantity,
+        moyen_paiement: 'livraison',
+        user_id: user?.id,
+        adresse_livraison: deliveryAddress.trim(),
+        telephone_livraison: deliveryPhone.trim(),
+        note_livraison: deliveryNote.trim(),
+        coordonnees_gps: deliveryCoords,
+      });
+
+      const finalRef = initRes?.reference || orderRef;
+      setSuccessModalData({
+        product: { ...product, p: effectivePrice },
+        selectedColor,
+        provider: 'Paiement à la livraison',
+        initialAmount: 0,
+        totalPrice: cashPrice * effectiveQuantity,
+        reference: finalRef,
+        transactionId: finalRef,
+        date: new Date().toISOString(),
+        isCash: true,
+        isCod: true,
+        quantity: effectiveQuantity,
+        deliveryAddress: deliveryAddress.trim(),
+        deliveryPhone: deliveryPhone.trim(),
+        deliveryNote: deliveryNote.trim(),
+        deliveryCoords,
+        commandeId: initRes?.commande_id || null,
+        backendId: initRes?.cagnotte_id || null,
+        message: 'La disponibilité de l’article vous sera communiquée par l’équipe en charge dans quelques instants.',
+      });
+    } catch {
+      setSuccessModalData({
+        product: { ...product, p: effectivePrice },
+        selectedColor,
+        provider: 'Paiement à la livraison',
+        initialAmount: 0,
+        totalPrice: cashPrice * effectiveQuantity,
+        reference: orderRef,
+        transactionId: orderRef,
+        date: new Date().toISOString(),
+        isCash: true,
+        isCod: true,
+        quantity: effectiveQuantity,
+        deliveryAddress: deliveryAddress.trim(),
+        deliveryPhone: deliveryPhone.trim(),
+        deliveryNote: deliveryNote.trim(),
+        deliveryCoords,
+        commandeId: null,
+        message: 'La disponibilité de l’article vous sera communiquée par l’équipe en charge dans quelques instants.',
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   // Étape 4 : Initiation et Validation Paiement FeexPay
   const handlePaymentSubmit = async (e) => {
@@ -686,8 +794,182 @@ export default function ClientOrderFlow({
               </div>
             )}
 
-            {/* Choix de l'opérateur Mobile Money et Déclenchement FeexPay */}
-            {paymentData ? (
+            {/* Sélecteur de méthode de règlement en mode CASH */}
+            {orderType === 'cash' && (
+              <div style={{ marginBottom: '18px' }}>
+                <div style={{ fontSize: '13px', fontWeight: 700, marginBottom: '8px', color: 'var(--tx)' }}>
+                  Choisissez votre méthode de règlement :
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                  <button
+                    type="button"
+                    onClick={() => { setCashPaymentMode('delivery'); setPaymentData(null); }}
+                    style={{
+                      padding: '12px',
+                      borderRadius: '12px',
+                      border: cashPaymentMode === 'delivery' ? '2px solid var(--p, #dc2626)' : '1.5px solid #ded6ce',
+                      background: cashPaymentMode === 'delivery' ? 'rgba(220,38,38,0.06)' : '#ffffff',
+                      color: cashPaymentMode === 'delivery' ? 'var(--p, #dc2626)' : '#1b1716',
+                      fontWeight: 700,
+                      fontSize: '13px',
+                      cursor: 'pointer',
+                      textAlign: 'center',
+                    }}
+                  >
+                    <span style={{ fontSize: '20px', display: 'block', marginBottom: '4px' }}>🚚</span>
+                    Paiement à la livraison
+                    <small style={{ display: 'block', fontSize: '11px', color: '#706966', marginTop: '2px' }}>
+                      Règlement au livreur
+                    </small>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setCashPaymentMode('online')}
+                    style={{
+                      padding: '12px',
+                      borderRadius: '12px',
+                      border: cashPaymentMode === 'online' ? '2px solid var(--p, #dc2626)' : '1.5px solid #ded6ce',
+                      background: cashPaymentMode === 'online' ? 'rgba(220,38,38,0.06)' : '#ffffff',
+                      color: cashPaymentMode === 'online' ? 'var(--p, #dc2626)' : '#1b1716',
+                      fontWeight: 700,
+                      fontSize: '13px',
+                      cursor: 'pointer',
+                      textAlign: 'center',
+                    }}
+                  >
+                    <span style={{ fontSize: '20px', display: 'block', marginBottom: '4px' }}>📱</span>
+                    Mobile Money
+                    <small style={{ display: 'block', fontSize: '11px', color: '#706966', marginTop: '2px' }}>
+                      Payer en ligne
+                    </small>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* CAS 1 : Paiement à la livraison */}
+            {orderType === 'cash' && cashPaymentMode === 'delivery' ? (
+              <form onSubmit={handleDeliveryOrderSubmit}>
+                {/* Information disponibilité */}
+                <div
+                  style={{
+                    background: '#f0fdf4',
+                    border: '1.5px solid #bbf7d0',
+                    borderRadius: '14px',
+                    padding: '14px 16px',
+                    marginBottom: '18px',
+                  }}
+                >
+                  <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+                    <span style={{ fontSize: '20px' }}>ℹ️</span>
+                    <div style={{ fontSize: '13px', color: '#166534', lineHeight: 1.5 }}>
+                      <b>Information commande :</b><br />
+                      La disponibilité de l’article vous sera communiquée par l’équipe en charge dans quelques instants.
+                      Vous réglerez <b>{formatFCFA(paymentAmount)}</b> en espèces directement au livreur.
+                    </div>
+                  </div>
+                </div>
+
+                {/* Adresse de livraison */}
+                <div style={{ marginBottom: '14px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                    <label className="fl" htmlFor="delivery-address" style={{ margin: 0 }}>
+                      Adresse de livraison *
+                    </label>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      {user?.adresse && (
+                        <button
+                          type="button"
+                          onClick={() => setDeliveryAddress(user.adresse)}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            color: '#0369a1',
+                            fontSize: '11.5px',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                            textDecoration: 'underline',
+                          }}
+                        >
+                          Mon adresse de profil
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={handleGetLocation}
+                        disabled={isLocating}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: 'var(--p, #dc2626)',
+                          fontSize: '11.5px',
+                          fontWeight: 700,
+                          cursor: isLocating ? 'wait' : 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '3px',
+                        }}
+                      >
+                        📍 {isLocating ? 'Localisation...' : 'Ma position'}
+                      </button>
+                    </div>
+                  </div>
+                  <input
+                    id="delivery-address"
+                    type="text"
+                    required
+                    className="fi"
+                    placeholder="Ex: Cotonou, Akpakpa, rue 124, maison jaune"
+                    value={deliveryAddress}
+                    onChange={(e) => setDeliveryAddress(e.target.value)}
+                  />
+                </div>
+
+                {/* Numéro pour le livreur */}
+                <div style={{ marginBottom: '14px' }}>
+                  <label className="fl" htmlFor="delivery-phone">
+                    Numéro de téléphone à contacter par le livreur *
+                  </label>
+                  <input
+                    id="delivery-phone"
+                    type="tel"
+                    required
+                    className="fi"
+                    placeholder="+229 97 00 00 00"
+                    value={deliveryPhone}
+                    onChange={(e) => setDeliveryPhone(e.target.value)}
+                  />
+                  <small style={{ color: '#706966', fontSize: '11.5px', display: 'block', marginTop: '4px' }}>
+                    Le livreur vous appellera sur ce numéro pour coordonner la remise en main propre.
+                  </small>
+                </div>
+
+                {/* Note facultative */}
+                <div style={{ marginBottom: '18px' }}>
+                  <label className="fl" htmlFor="delivery-note">
+                    Note d’information pour le livreur (facultatif)
+                  </label>
+                  <input
+                    id="delivery-note"
+                    type="text"
+                    className="fi"
+                    placeholder="Ex: Repère, sonnerie, instructions d'accès..."
+                    value={deliveryNote}
+                    onChange={(e) => setDeliveryNote(e.target.value)}
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  className="client-btn w100"
+                  disabled={submitting}
+                  style={{ padding: '16px', fontSize: '15px' }}
+                >
+                  {submitting ? 'Enregistrement de la commande...' : 'Confirmer la commande (Paiement à la livraison)'}
+                </button>
+              </form>
+            ) : paymentData ? (
               <FeexPayProvider>
                 <div style={{ marginTop: '16px' }}>
                   <div style={{ marginBottom: '14px', padding: '12px', background: 'rgba(22, 163, 74, 0.08)', borderRadius: '10px', fontSize: '13px', color: '#166534', fontWeight: 600 }}>
@@ -847,13 +1129,22 @@ export default function ClientOrderFlow({
             </div>
 
             <h2 style={{ fontSize: '20px', fontWeight: 800, margin: '0 0 8px', color: '#111827' }}>
-              {successModalData.isCash
+              {successModalData.isCod
+                ? 'Commande enregistrée avec succès !'
+                : successModalData.isCash
                 ? 'Paiement confirmé avec succès !'
                 : 'Félicitations ! Votre cagnotte est créée !'}
             </h2>
 
             <p style={{ fontSize: '14px', color: '#4b5563', lineHeight: 1.5, margin: '0 0 20px' }}>
-              {successModalData.isCash ? (
+              {successModalData.isCod ? (
+                <>
+                  <b style={{ color: '#0369a1', display: 'block', marginBottom: '6px' }}>
+                    📢 La disponibilité de l’article vous sera communiquée par l’équipe en charge dans quelques instants.
+                  </b>
+                  Votre commande pour <b>{successModalData.product?.n}</b> a bien été enregistrée. Le règlement de <b>{formatFCFA(successModalData.totalPrice)}</b> s’effectuera directement auprès du livreur à la réception.
+                </>
+              ) : successModalData.isCash ? (
                 <>
                   Votre règlement comptant de <b>{formatFCFA(successModalData.initialAmount)}</b> pour <b>{successModalData.product?.n}</b> a bien été validé. Votre commande est prise en charge !
                 </>
@@ -880,13 +1171,23 @@ export default function ClientOrderFlow({
                 <span style={{ fontWeight: 600, color: '#111827' }}>{successModalData.reference}</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                <span style={{ color: '#6b7280' }}>Montant versé :</span>
-                <span style={{ fontWeight: 700, color: '#16a34a' }}>{formatFCFA(successModalData.initialAmount)}</span>
+                <span style={{ color: '#6b7280' }}>Mode de règlement :</span>
+                <span style={{ fontWeight: 700, color: successModalData.isCod ? '#0369a1' : '#16a34a' }}>
+                  {successModalData.provider}
+                </span>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: '#6b7280' }}>Prix total de l’article :</span>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                <span style={{ color: '#6b7280' }}>Total à régler :</span>
                 <span style={{ fontWeight: 700, color: '#111827' }}>{formatFCFA(successModalData.totalPrice)}</span>
               </div>
+              {successModalData.deliveryAddress && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #e5e7eb', paddingTop: '6px', marginTop: '6px' }}>
+                  <span style={{ color: '#6b7280' }}>Adresse :</span>
+                  <span style={{ fontWeight: 600, color: '#111827', maxWidth: '60%', textAlign: 'right' }}>
+                    {successModalData.deliveryAddress}
+                  </span>
+                </div>
+              )}
             </div>
 
             <button
