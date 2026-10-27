@@ -1,22 +1,89 @@
-import { useState } from 'react';
-import { DEFAULT_NOTIFICATIONS } from '../../data/clientStore';
+import { useState, useEffect } from 'react';
+import { adminService } from '../../services/adminService';
+
+const getStoredUser = () => {
+  try {
+    const saved = localStorage.getItem('takapay-client-user');
+    return saved ? JSON.parse(saved) : null;
+  } catch {
+    return null;
+  }
+};
 
 export default function ClientNotificationsView({
+  user: propUser,
   onBack,
   onGoCagnotte,
   onGoCatalog,
 }) {
+  const user = propUser || getStoredUser();
   const [activeFilter, setActiveFilter] = useState('Tous'); // 'Tous' | 'Paiements' | 'Cagnotte' | 'Infos'
-  const [notifications] = useState(() => {
-    try {
-      const saved = localStorage.getItem('takapay-notifications');
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
-
+  const [notifications, setNotifications] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [selectedNotif, setSelectedNotif] = useState(null);
+
+  const loadNotifications = async () => {
+    if (!user?.id) {
+      setNotifications([]);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    try {
+      const data = await adminService.getNotifications(user.id);
+      if (Array.isArray(data)) {
+        // Filtrage strict par utilisateur connecté
+        const userNotifs = data
+          .filter((n) => String(n.utilisateur_id) === String(user.id))
+          .map((item) => ({
+            id: item.id,
+            utilisateur_id: item.utilisateur_id,
+            title: item.titre,
+            description: item.message,
+            date: item.date_formattee || (item.created_at ? new Date(item.created_at).toLocaleDateString('fr-FR') : 'Récemment'),
+            category: item.type === 'cagnotte' ? 'cagnotte' : (item.type === 'paiements' ? 'paiements' : 'infos'),
+            statut: item.statut || 'non_lu',
+            unread: item.statut !== 'lu',
+            iconType: item.type === 'paiements' ? 'success' : (item.type === 'cagnotte' ? 'warning' : 'info'),
+          }));
+        setNotifications(userNotifs);
+      }
+    } catch {
+      setNotifications([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadNotifications();
+  }, [user?.id]);
+
+  const handleOpenDetail = async (notif) => {
+    setSelectedNotif(notif);
+    if (notif.unread) {
+      try {
+        await adminService.markNotificationAsRead(notif.id);
+        setNotifications((prev) =>
+          prev.map((n) => (n.id === notif.id ? { ...n, unread: false, statut: 'lu' } : n))
+        );
+        window.dispatchEvent(new CustomEvent('takapay_notification_updated'));
+      } catch {
+        // Ignorer
+      }
+    }
+  };
+
+  const handleMarkAllAsRead = async () => {
+    if (!user?.id) return;
+    try {
+      await adminService.markAllNotificationsAsRead(user.id);
+      setNotifications((prev) => prev.map((n) => ({ ...n, unread: false, statut: 'lu' })));
+      window.dispatchEvent(new CustomEvent('takapay_notification_updated'));
+    } catch {
+      // Ignorer
+    }
+  };
 
   // Filtrage selon la catégorie
   const filtered = notifications.filter((item) => {
@@ -27,9 +94,7 @@ export default function ClientNotificationsView({
     return true;
   });
 
-  const handleOpenDetail = (notif) => {
-    setSelectedNotif(notif);
-  };
+  const unreadCount = notifications.filter((n) => n.unread).length;
 
   const getIcon = (type) => {
     if (type === 'success') {
@@ -103,39 +168,80 @@ export default function ClientNotificationsView({
   return (
     <div style={{ maxWidth: '860px', margin: '0 auto', padding: '16px 20px 48px' }}>
       {/* 1. Bouton retour & Titre */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '20px' }}>
-        {onBack && (
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '14px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+          {onBack && (
+            <button
+              type="button"
+              onClick={onBack}
+              aria-label="Retour"
+              style={{
+                width: '42px',
+                height: '42px',
+                borderRadius: '50%',
+                background: '#ffffff',
+                border: '1.5px solid #ece5de',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+                display: 'grid',
+                placeItems: 'center',
+                cursor: 'pointer',
+                fontSize: '20px',
+                color: '#1b1716',
+                fontWeight: 800,
+              }}
+            >
+              ‹
+            </button>
+          )}
+
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <h1 style={{ fontSize: '26px', fontWeight: 800, color: '#1b1716', margin: 0, letterSpacing: '-0.5px' }}>
+                Notifications
+              </h1>
+              {unreadCount > 0 && (
+                <span
+                  style={{
+                    background: '#dc2626',
+                    color: '#ffffff',
+                    fontSize: '11.5px',
+                    fontWeight: 800,
+                    padding: '2px 8px',
+                    borderRadius: '99px',
+                  }}
+                >
+                  {unreadCount} non lue{unreadCount > 1 ? 's' : ''}
+                </span>
+              )}
+            </div>
+            <p style={{ margin: '4px 0 0', color: '#706966', fontSize: '13.5px' }}>
+              Toutes vos alertes de versements, commandes et réceptions d'articles.
+            </p>
+          </div>
+        </div>
+
+        {unreadCount > 0 && (
           <button
             type="button"
-            onClick={onBack}
-            aria-label="Retour"
+            onClick={handleMarkAllAsRead}
             style={{
-              width: '42px',
-              height: '42px',
-              borderRadius: '50%',
+              padding: '8px 16px',
+              borderRadius: '12px',
+              border: '1px solid #e2dad0',
               background: '#ffffff',
-              border: '1.5px solid #ece5de',
-              boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
-              display: 'grid',
-              placeItems: 'center',
-              cursor: 'pointer',
-              fontSize: '20px',
               color: '#1b1716',
-              fontWeight: 800,
+              fontSize: '13px',
+              fontWeight: 700,
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              boxShadow: '0 2px 6px rgba(0,0,0,0.02)',
             }}
           >
-            ‹
+            <span>✓</span> Tout marquer comme lu
           </button>
         )}
-
-        <div>
-          <h1 style={{ fontSize: '26px', fontWeight: 800, color: '#1b1716', margin: 0, letterSpacing: '-0.5px' }}>
-            Notification
-          </h1>
-          <p style={{ margin: '4px 0 0', color: '#706966', fontSize: '13.5px' }}>
-            Toutes vos alertes de versements, rappels d'échéances et offres promotionnelles.
-          </p>
-        </div>
       </div>
 
       {/* 2. Filtres par catégorie (Photo 3) */}
@@ -167,23 +273,30 @@ export default function ClientNotificationsView({
         })}
       </div>
 
-      {/* 3. Cartes de notifications (Photo 3) */}
-      <div style={{ display: 'grid', gap: '12px' }}>
-        {filtered.map((item) => (
+      {/* 3. Liste des notifications */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        {loading && (
+          <div style={{ textAlign: 'center', padding: '48px 20px', color: '#8c8580', fontSize: '14px' }}>
+            Chargement de vos notifications...
+          </div>
+        )}
+
+        {!loading && filtered.map((item) => (
           <div
             key={item.id}
             onClick={() => handleOpenDetail(item)}
             style={{
-              background: '#ffffff',
+              background: item.unread ? '#fffaf5' : '#ffffff',
               borderRadius: '20px',
-              border: '1px solid #ece5df',
+              border: item.unread ? '1.5px solid #fdba74' : '1px solid #ece5df',
               padding: '18px 22px',
               display: 'flex',
               alignItems: 'center',
               gap: '16px',
               cursor: 'pointer',
-              boxShadow: '0 2px 8px rgba(0,0,0,0.02)',
+              boxShadow: item.unread ? '0 4px 16px rgba(234, 88, 12, 0.08)' : '0 2px 8px rgba(0,0,0,0.02)',
               transition: 'transform .15s, box-shadow .15s',
+              position: 'relative',
             }}
             onMouseEnter={(e) => {
               e.currentTarget.style.transform = 'translateY(-1px)';
@@ -191,14 +304,28 @@ export default function ClientNotificationsView({
             }}
             onMouseLeave={(e) => {
               e.currentTarget.style.transform = 'none';
-              e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.02)';
+              e.currentTarget.style.boxShadow = item.unread ? '0 4px 16px rgba(234, 88, 12, 0.08)' : '0 2px 8px rgba(0,0,0,0.02)';
             }}
           >
             {getIcon(item.iconType)}
 
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '4px', flexWrap: 'wrap', gap: '4px' }}>
-                <b style={{ fontSize: '15px', color: '#1b1716' }}>{item.title}</b>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  {item.unread && (
+                    <span
+                      style={{
+                        width: '8px',
+                        height: '8px',
+                        borderRadius: '50%',
+                        background: '#ea580c',
+                        display: 'inline-block',
+                      }}
+                      title="Non lue"
+                    />
+                  )}
+                  <b style={{ fontSize: '15px', color: '#1b1716' }}>{item.title}</b>
+                </div>
                 <span style={{ fontSize: '11px', color: '#8c8580', marginLeft: 'auto', whiteSpace: 'nowrap' }}>
                   {item.date}
                 </span>
@@ -221,7 +348,7 @@ export default function ClientNotificationsView({
           </div>
         ))}
 
-        {filtered.length === 0 && (
+        {!loading && filtered.length === 0 && (
           <div style={{ textAlign: 'center', padding: '48px 20px', color: '#8c8580', fontSize: '14px' }}>
             Aucune notification dans cette catégorie.
           </div>

@@ -7,6 +7,7 @@ use App\Mail\MerchantPaymentNotificationMail;
 use App\Models\Cagnotte;
 use App\Models\Commande;
 use App\Models\CommandeProduit;
+use App\Models\Notification;
 use App\Models\Produit;
 use App\Models\Transaction;
 use App\Models\User;
@@ -101,7 +102,7 @@ class PaymentController extends Controller
                 $unitCash = $prixCash > 0 ? $prixCash : $fullProductPrice;
                 $amount = $unitCash * max(1, $quantite);
                 $fullProductPrice = $unitCash;
-                $reference = 'CMD_CASH_' . time() . '_' . rand(1000, 9999);
+                $reference = ($request->input('moyen_paiement') === 'livraison' ? 'CMD_COD_' : 'CMD_CASH_') . time() . '_' . rand(1000, 9999);
             } else {
                 $quantite = 1;
                 // Cagnotte : vérifier le 1er versement plancher
@@ -115,27 +116,78 @@ class PaymentController extends Controller
                 $reference = 'CMD_CAG_' . time() . '_' . rand(1000, 9999);
             }
 
-            if ($user) {
-                $commande = DB::transaction(function () use ($user, $reference, $amount, $fullProductPrice, $produitId, $quantite) {
-                    $cmd = Commande::create([
-                        'utilisateur_id' => $user->id,
-                        'reference' => $reference,
-                        'statut' => 'en_attente',
-                        'prix_total' => $amount,
-                    ]);
+            $isCod = $request->input('moyen_paiement') === 'livraison';
 
-                    CommandeProduit::create([
-                        'commande_id' => $cmd->id,
-                        'produit_id' => $produitId,
-                        'quantite' => $quantite,
-                        'prix_unitaire' => $fullProductPrice, // Vrai prix catalogue du produit
-                        'total' => $fullProductPrice * $quantite,
-                    ]);
+            if ($user || $isCod) {
+                $createdData = DB::transaction(function () use ($user, $reference, $amount, $fullProductPrice, $produitId, $quantite, $isCod, $request) {
+                    $cmd = null;
+                    if ($user) {
+                        $cmd = Commande::create([
+                            'utilisateur_id' => $user->id,
+                            'reference' => $reference,
+                            'statut' => 'en_attente',
+                            'prix_total' => $amount,
+                        ]);
 
-                    return $cmd;
+                        CommandeProduit::create([
+                            'commande_id' => $cmd->id,
+                            'produit_id' => $produitId,
+                            'quantite' => $quantite,
+                            'prix_unitaire' => $fullProductPrice,
+                            'total' => $fullProductPrice * $quantite,
+                        ]);
+                    }
+
+                    $cag = null;
+                    if ($isCod) {
+                        $cag = Cagnotte::create([
+                            'utilisateur_id' => $user?->id,
+                            'produit_id' => $produitId,
+                            'prix_unitaire' => $amount,
+                            'montant_verse' => 0.00,
+                            'moyen_paiement' => 'livraison',
+                            'statut' => 'en_attente',
+                            'adresse_livraison' => $request->input('adresse_livraison') ?? $request->input('delivery_address'),
+                            'telephone_livraison' => $request->input('telephone_livraison') ?? $request->input('delivery_phone') ?? $user?->telephone,
+                            'note_livraison' => $request->input('note_livraison') ?? $request->input('delivery_note'),
+                            'coordonnees_gps' => $request->input('coordonnees_gps') ?? $request->input('delivery_coords'),
+                        ]);
+
+                        Transaction::create([
+                            'cagnotte_id' => $cag->id,
+                            'reference_externe' => $reference,
+                            'date' => now(),
+                            'statut' => 'en_attente',
+                            'montant' => $amount,
+                            'prestataire' => 'LIVRAISON',
+                            'type' => 'paiement_livraison',
+                            'moyen_paiement' => 'livraison',
+                            'devise' => 'XOF',
+                        ]);
+
+                        if ($user) {
+                            Notification::create([
+                                'utilisateur_id' => $user->id,
+                                'cagnotte_id' => $cag->id,
+                                'titre' => 'Commande Cash enregistrée',
+                                'message' => 'Votre commande pour ' . $produit->nom . ' a bien été enregistrée avec paiement à la livraison (' . number_format($amount, 0, ',', ' ') . ' FCFA). Notre équipe vous contactera sous peu pour convenir de la remise.',
+                                'type' => 'cagnotte',
+                                'statut' => 'non_lu',
+                            ]);
+                        }
+                    }
+
+                    return ['commande' => $cmd, 'cagnotte' => $cag];
                 });
+
+                $commande = $createdData['commande'];
+                if ($createdData['cagnotte']) {
+                    $cagnotteId = $createdData['cagnotte']->id;
+                }
             }
         }
+
+        $isCod = $request->input('moyen_paiement') === 'livraison';
 
         return response()->json([
             'shop_id' => config('services.feexpay.shop_id'),
@@ -146,6 +198,8 @@ class PaymentController extends Controller
             'commande_id' => $commande?->id,
             'cagnotte_id' => $cagnotteId,
             'type_paiement' => $typePaiement,
+            'is_cod' => $isCod,
+            'message' => $isCod ? 'La disponibilité de l’article vous sera communiquée par l’équipe en charge dans quelques instants.' : null,
         ]);
     }
 
@@ -279,14 +333,15 @@ class PaymentController extends Controller
                 $cagnotteId = null;
                 $cmdProduit = $commande->commandeProduits()->first();
 
-                // Si ce n'est PAS un achat comptant, on crée la cagnotte avec le vrai prix total du produit
-                if (!$isCash && $cmdProduit && $cmdProduit->produit_id) {
+                // Création de la cagnotte pour le suivi de la commande chez le client (Comptant ou Échelonné)
+                if ($cmdProduit && $cmdProduit->produit_id) {
                     $cagnotte = Cagnotte::create([
+                        'utilisateur_id' => $commande->utilisateur_id ?? $userId,
                         'produit_id' => $cmdProduit->produit_id,
-                        'prix_unitaire' => $cmdProduit->prix_unitaire, // Prix total réel du produit
+                        'prix_unitaire' => $isCash ? (float) $commande->prix_total : (float) $cmdProduit->prix_unitaire,
                         'montant_verse' => $finalAmount,
                         'moyen_paiement' => $network,
-                        'statut' => $finalAmount >= $cmdProduit->prix_unitaire ? 'terminee' : 'en_cours',
+                        'statut' => $isCash ? 'terminee' : ($finalAmount >= (float) $cmdProduit->prix_unitaire ? 'terminee' : 'en_cours'),
                     ]);
                     $cagnotteId = $cagnotte->id;
                     $resolvedCagnotte = $cagnotte;
@@ -310,6 +365,26 @@ class PaymentController extends Controller
                 $resolvedUser = $commande->utilisateur ?? ($userId ? User::find($userId) : null);
             }
         });
+
+        // Enregistrement de la notification interne pour le client
+        if ($resolvedUser) {
+            try {
+                $prodName = $resolvedCagnotte?->produit?->nom ?? 'votre commande';
+                $notifTitle = $resolvedCagnotte ? 'Versement validé' : 'Paiement validé';
+                $notifMsg = 'Votre paiement de ' . number_format($finalAmount, 0, ',', ' ') . ' FCFA pour ' . $prodName . ' a été validé avec succès (Réf: ' . $transactionId . ').';
+
+                Notification::create([
+                    'utilisateur_id' => $resolvedUser->id,
+                    'cagnotte_id' => $resolvedCagnotte?->id,
+                    'titre' => $notifTitle,
+                    'message' => $notifMsg,
+                    'type' => 'paiements',
+                    'statut' => 'non_lu',
+                ]);
+            } catch (\Throwable $e) {
+                Log::warning('Impossible de créer la notification de paiement : ' . $e->getMessage());
+            }
+        }
 
         // Envoi des emails de notification (Client et Marchand)
         if ($resolvedCommande && $resolvedUser) {

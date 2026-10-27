@@ -19,6 +19,7 @@ export default function Header({
   onSearch,
   searchQuery = '',
   cagnotteCount = 0,
+  unreadNotifCount = 0,
 }) {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const location = useLocation();
@@ -40,6 +41,7 @@ export default function Header({
         onSearch={onSearch}
         searchQuery={searchQuery}
         cagnotteCount={cagnotteCount}
+        unreadNotifCount={unreadNotifCount}
       />
     );
   }

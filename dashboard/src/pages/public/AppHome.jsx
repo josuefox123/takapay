@@ -70,6 +70,7 @@ export default function AppHome({ initialTab = 'home' }) {
 
   const [cagnotteKey, setCagnotteKey] = useState(0);
   const [currentCagnotte, setCurrentCagnotte] = useState(null);
+  const [unreadNotifCount, setUnreadNotifCount] = useState(0);
 
   // Modal de bienvenue
   const [showWelcome, setShowWelcome] = useState(false);
@@ -127,6 +128,39 @@ export default function AppHome({ initialTab = 'home' }) {
     return () => window.removeEventListener('takapay_cagnotte_updated', handleCagUpdate);
   }, [user]);
 
+  // Synchronisation des notifications non lues filtrées pour l'utilisateur connecté
+  useEffect(() => {
+    let isMounted = true;
+    const fetchNotifs = async () => {
+      if (!user?.id) {
+        if (isMounted) setUnreadNotifCount(0);
+        return;
+      }
+      try {
+        const notifs = await adminService.getNotifications(user.id);
+        if (isMounted && Array.isArray(notifs)) {
+          const userNotifs = notifs.filter((n) => String(n.utilisateur_id) === String(user.id));
+          const unread = userNotifs.filter((n) => n.statut === 'non_lu').length;
+          setUnreadNotifCount(unread);
+        }
+      } catch {
+        // En cas d'erreur réseau, ne rien faire
+      }
+    };
+
+    fetchNotifs();
+
+    const handleNotifUpdate = () => {
+      fetchNotifs();
+    };
+
+    window.addEventListener('takapay_notification_updated', handleNotifUpdate);
+    return () => {
+      isMounted = false;
+      window.removeEventListener('takapay_notification_updated', handleNotifUpdate);
+    };
+  }, [user]);
+
   // Chargement initial des catégories depuis l'API
   useEffect(() => {
     adminService.getCategories().then((cats) => {
@@ -157,13 +191,14 @@ export default function AppHome({ initialTab = 'home' }) {
 
     const loadLiveCagnottes = async () => {
       try {
-        const live = await adminService.getCagnottes();
+        const live = await adminService.getCagnottes(user?.id);
         if (isMounted && Array.isArray(live)) {
           const converted = live.map(mapBackendCagnotteToClient).filter(Boolean);
           try {
             localStorage.setItem('takapay_backend_cagnottes', JSON.stringify(converted));
           } catch { /* ignore */ }
-          setCagnotteCount(converted.length);
+          const merged = getStoredCagnottes(user);
+          setCagnotteCount(merged.length);
           setCagnotteKey((k) => k + 1);
         }
       } catch { /* ignore */ }
@@ -356,6 +391,7 @@ export default function AppHome({ initialTab = 'home' }) {
         }}
         searchQuery={searchQuery}
         cagnotteCount={cagnotteCount}
+        unreadNotifCount={unreadNotifCount}
       />
 
       {/* Contenu principal du portail client */}
@@ -400,6 +436,8 @@ export default function AppHome({ initialTab = 'home' }) {
             <ClientProductDetail
               productId={activeProductId}
               product={productsList.find((p) => p.id === Number(activeProductId)) || PRODUCTS.find((p) => p.id === Number(activeProductId))}
+              user={user}
+              onShowToast={showToast}
               onBack={() => setView(previousView || 'shop')}
               onStartOrder={handleStartOrder}
               onSelectProduct={handleOpenProduct}
@@ -442,6 +480,7 @@ export default function AppHome({ initialTab = 'home' }) {
 
           {view === 'notif' && (
             <ClientNotificationsView
+              user={user}
               onBack={() => setView(previousView || 'home')}
               onGoCagnotte={() => setView('cag')}
               onGoCatalog={() => handleSelectTab('shop')}

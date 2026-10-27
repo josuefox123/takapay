@@ -36,11 +36,11 @@ class UpdateCommandeRequest extends FormRequest
         $commandeId = is_object($commande) ? $commande->id : $commande;
 
         if (! ($this->user()?->isAdmin() ?? false)) {
-            // Le client ne peut que annuler sa commande ; tout le reste est serveur
+            // Le client ne peut que annuler sa commande ou confirmer sa réception (livrée) ; tout le reste est serveur
             return [
                 'utilisateur_id' => 'prohibited',
                 'reference' => 'prohibited',
-                'statut' => ['sometimes', Rule::in(['annulee'])],
+                'statut' => ['sometimes', Rule::in(['annulee', 'livree'])],
                 'prix_total' => 'prohibited',
             ];
         }

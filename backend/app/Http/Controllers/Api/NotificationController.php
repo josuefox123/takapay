@@ -12,17 +12,26 @@ use Illuminate\Http\Request;
 class NotificationController extends Controller
 {
     /**
-     * Liste des notifications : celles de l'utilisateur, ou toutes pour un administrateur.
+     * Liste des notifications : filtrées par utilisateur connecté ou administrateur.
      */
     public function index(Request $request)
     {
-        $user = $request->user();
+        $user = $request->user('sanctum') ?? $request->user();
+        $userId = $request->query('user_id') ?? $user?->id;
 
-        $query = $user->isAdmin()
-            ? Notification::query()
-            : Notification::where('utilisateur_id', $user->id);
+        $query = Notification::query()->latest();
 
-        return NotificationResource::collection($query->latest()->get());
+        if ($userId && (!$user || $user->role === 'client')) {
+            $query->where('utilisateur_id', $userId);
+        } elseif (!$user || $user->role === 'client') {
+            if ($user) {
+                $query->where('utilisateur_id', $user->id);
+            } else {
+                return NotificationResource::collection(collect());
+            }
+        }
+
+        return NotificationResource::collection($query->get());
     }
 
     /**
@@ -67,5 +76,29 @@ class NotificationController extends Controller
         $notification->delete();
 
         return response()->noContent();
+    }
+
+    /**
+     * Marquer une notification comme lue.
+     */
+    public function marquerCommeLu(Request $request, Notification $notification)
+    {
+        $notification->update(['statut' => 'lu']);
+        return new NotificationResource($notification);
+    }
+
+    /**
+     * Marquer toutes les notifications d'un utilisateur comme lues.
+     */
+    public function toutMarquerCommeLu(Request $request)
+    {
+        $user = $request->user('sanctum') ?? $request->user();
+        $userId = $request->input('user_id') ?? $request->query('user_id') ?? $user?->id;
+
+        if ($userId) {
+            Notification::where('utilisateur_id', $userId)->update(['statut' => 'lu']);
+        }
+
+        return response()->json(['message' => 'Toutes les notifications ont été marquées comme lues.']);
     }
 }
