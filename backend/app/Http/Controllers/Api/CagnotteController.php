@@ -7,6 +7,8 @@ use App\Http\Requests\StoreCagnotteRequest;
 use App\Http\Requests\UpdateCagnotteRequest;
 use App\Http\Resources\CagnotteResource;
 use App\Models\Cagnotte;
+use App\Models\Notification;
+use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 
@@ -15,11 +17,20 @@ class CagnotteController extends Controller
     /**
      * Liste paginée des cagnottes.
      */
-    public function index(): AnonymousResourceCollection
+    public function index(Request $request): AnonymousResourceCollection
     {
-        return CagnotteResource::collection(
-            Cagnotte::with(['produit.imageProduits', 'produit.parametreProduit', 'produit.sousCategorie.categorie', 'transactions'])->latest()->get()
-        );
+        $user = $request->user('sanctum');
+        $userId = $request->query('user_id') ?? $user?->id;
+
+        $query = Cagnotte::has('produit')
+            ->with(['utilisateur', 'produit.imageProduits', 'produit.parametreProduit', 'produit.sousCategorie.categorie', 'transactions'])
+            ->latest();
+
+        if ($userId && (!$user || $user->role === 'client')) {
+            $query->where('utilisateur_id', $userId);
+        }
+
+        return CagnotteResource::collection($query->get());
     }
 
     /**
@@ -63,6 +74,35 @@ class CagnotteController extends Controller
 
         return response()->json([
             'message' => 'Cagnotte supprimée avec succès.'
+        ]);
+    }
+
+    /**
+     * Confirmer la réception d'un article par le client (Paiement cash / livraison).
+     */
+    public function confirmerReception(Request $request, Cagnotte $cagnotte): JsonResponse
+    {
+        $cagnotte->update([
+            'statut' => 'terminee',
+            'montant_verse' => $cagnotte->prix_unitaire,
+        ]);
+
+        $cagnotte->transactions()->update(['statut' => 'succes']);
+
+        if ($cagnotte->utilisateur_id) {
+            Notification::create([
+                'utilisateur_id' => $cagnotte->utilisateur_id,
+                'cagnotte_id' => $cagnotte->id,
+                'titre' => 'Réception confirmée',
+                'message' => 'Vous avez confirmé la bonne réception de votre article ' . ($cagnotte->produit?->nom ?? '') . '. Votre commande est désormais finalisée.',
+                'type' => 'infos',
+                'statut' => 'non_lu',
+            ]);
+        }
+
+        return response()->json([
+            'message' => 'Réception confirmée avec succès.',
+            'cagnotte' => new CagnotteResource($cagnotte->load(['utilisateur', 'produit'])),
         ]);
     }
 }

@@ -14,11 +14,16 @@ class Cagnotte extends Model
     protected $table = 'cagnottes';
 
     protected $fillable = [
+        'utilisateur_id',
         'produit_id',
         'prix_unitaire',
         'montant_verse',
         'moyen_paiement',
         'statut',
+        'adresse_livraison',
+        'telephone_livraison',
+        'note_livraison',
+        'coordonnees_gps',
     ];
 
     protected function casts(): array
@@ -27,6 +32,11 @@ class Cagnotte extends Model
             'prix_unitaire' => 'decimal:2',
             'montant_verse' => 'decimal:2',
         ];
+    }
+
+    public function utilisateur(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'utilisateur_id');
     }
 
     public function produit(): BelongsTo
