@@ -22,6 +22,7 @@ use App\Http\Controllers\Api\TransactionController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\SupportChatController;
 use App\Http\Controllers\Api\AdminStatsController;
+use App\Http\Controllers\Api\CarouselController;
 use App\Http\Controllers\PaymentController;
 use Illuminate\Support\Facades\Route;
 
@@ -49,6 +50,10 @@ Route::get('produits', [ProduitController::class, 'index'])->name('produits.inde
 Route::get('produits/{produit}', [ProduitController::class, 'show'])->name('produits.show');
 Route::get('promotions', [PromotionController::class, 'index'])->name('promotions.index');
 Route::get('cagnottes', [CagnotteController::class, 'index'])->name('cagnottes.index');
+Route::get('commandes', [CommandeController::class, 'index'])->name('commandes.index');
+Route::get('carousels', [CarouselController::class, 'index'])->name('carousels.index');
+Route::put('profile', [AuthController::class, 'updateProfile'])->name('profile.update');
+Route::put('profile/pin', [AuthController::class, 'updatePin'])->name('profile.update-pin');
 Route::post('cagnottes/{cagnotte}/confirmer-reception', [CagnotteController::class, 'confirmerReception'])->name('cagnottes.confirmer-reception');
 Route::get('notifications', [NotificationController::class, 'index'])->name('notifications.index');
 Route::put('notifications/{notification}/lire', [NotificationController::class, 'marquerCommeLu'])->name('notifications.marquer-lu');
@@ -110,6 +115,13 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
             Route::get('/support/conversations/{id}', [SupportChatController::class, 'adminGetConversation']);
             Route::post('/support/conversations/{id}/reply', [SupportChatController::class, 'adminReply']);
             Route::patch('/support/conversations/{id}/close', [SupportChatController::class, 'adminCloseConversation']);
+
+            // Bannières Carrousel
+            Route::get('/carousels', [CarouselController::class, 'adminIndex']);
+            Route::post('/carousels', [CarouselController::class, 'store']);
+            Route::post('/carousels/{carousel}', [CarouselController::class, 'update']);
+            Route::put('/carousels/{carousel}', [CarouselController::class, 'update']);
+            Route::delete('/carousels/{carousel}', [CarouselController::class, 'destroy']);
         });
 
         // Gestion des comptes, du KYC, des audits et des livreurs
@@ -142,7 +154,7 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
         ->parameters(['adresses' => 'adresse']);
     Route::apiResource('documents', DocumentController::class);
     Route::apiResource('notifications', NotificationController::class)->except(['index']);
-    Route::apiResource('commandes', CommandeController::class);
+    Route::apiResource('commandes', CommandeController::class)->except(['index']);
     Route::apiResource('commande-produits', CommandeProduitController::class);
 });
 

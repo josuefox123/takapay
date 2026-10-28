@@ -375,8 +375,14 @@ export default function AppHome({ initialTab = 'home' }) {
   }
 
   setCagnotteKey((k) => k + 1);
-  showToast(`Votre commande pour ${orderData.product.n} a été initiée avec succès !`);
-  setView('cag');
+  const isCashOrder = Boolean(orderData?.isCash || orderData?.isCod || orderData?.type_commande === 'cash');
+  if (isCashOrder) {
+    showToast(`Votre commande pour ${orderData.product?.n || 'l’article'} a été enregistrée avec succès !`);
+    setView('pro');
+  } else {
+    showToast(`Votre cagnotte pour ${orderData.product?.n || 'l’article'} a été initiée avec succès !`);
+    setView('cag');
+  }
 };
 
   const handleLogout = () => {
@@ -384,6 +390,7 @@ export default function AppHome({ initialTab = 'home' }) {
     try {
       localStorage.removeItem('takapay-client-user');
       localStorage.removeItem('takapay_client_token');
+      localStorage.removeItem('takapay_backend_cagnottes');
     } catch {
       // Ignorer
     }
@@ -483,7 +490,6 @@ export default function AppHome({ initialTab = 'home' }) {
 
           {view === 'cag' && (
             <ClientCagnotteView
-              key={cagnotteKey}
               user={user}
               onBack={() => setView(previousView || 'home')}
               onShowToast={showToast}

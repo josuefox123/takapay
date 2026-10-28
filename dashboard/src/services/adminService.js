@@ -251,6 +251,158 @@ export const adminService = {
     return data;
   },
 
+  async updateProfile(payload) {
+    const token = this.getClientToken() || this.getToken();
+    const res = await fetch(`${API_BASE}/profile`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const msg =
+        data.message ||
+        Object.values(data.errors || {})?.[0]?.[0] ||
+        'Erreur lors de la mise à jour du profil.';
+      throw new Error(msg);
+    }
+    return data;
+  },
+
+  async updatePin(payload) {
+    const token = this.getClientToken() || this.getToken();
+    const res = await fetch(`${API_BASE}/profile/pin`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const msg =
+        data.message ||
+        Object.values(data.errors || {})?.[0]?.[0] ||
+        'Erreur lors de la modification du code PIN.';
+      throw new Error(msg);
+    }
+    return data;
+  },
+
+  async getClientOrders(userId = null) {
+    const token = this.getClientToken() || this.getToken();
+    try {
+      const url = userId ? `${API_BASE}/commandes?user_id=${encodeURIComponent(userId)}` : `${API_BASE}/commandes`;
+      const res = await fetch(url, {
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          Accept: 'application/json',
+        },
+      });
+      if (res.ok) {
+        const json = await res.json();
+        const list = json.data || json;
+        if (Array.isArray(list)) {
+          return list;
+        }
+      }
+    } catch (_e) {
+      void _e;
+    }
+    return [];
+  },
+
+  // GESTION DU CARROUSEL / BANNIÈRES
+  async getCarousels(all = false) {
+    const token = this.getToken();
+    const url = all ? `${API_BASE}/admin/carousels` : `${API_BASE}/carousels`;
+    try {
+      const res = await fetch(url, {
+        headers: {
+          ...(all && token ? { Authorization: `Bearer ${token}` } : {}),
+          Accept: 'application/json',
+        },
+      });
+      if (res.ok) {
+        const json = await res.json();
+        const list = json.data || json;
+        if (Array.isArray(list)) {
+          return list;
+        }
+      }
+    } catch (_e) {
+      void _e;
+    }
+    return [];
+  },
+
+  async createCarousel(formData) {
+    const token = this.getToken();
+    const res = await fetch(`${API_BASE}/admin/carousels`, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: formData,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const msg = data.message || Object.values(data.errors || {})?.[0]?.[0] || 'Erreur lors de la création de la bannière.';
+      throw new Error(msg);
+    }
+    return data;
+  },
+
+  async updateCarousel(id, formDataOrPayload) {
+    const token = this.getToken();
+    const isFormData = formDataOrPayload instanceof FormData;
+    const url = isFormData ? `${API_BASE}/admin/carousels/${id}?_method=PUT` : `${API_BASE}/admin/carousels/${id}`;
+    const headers = {
+      Accept: 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(!isFormData ? { 'Content-Type': 'application/json' } : {}),
+    };
+    const body = isFormData ? formDataOrPayload : JSON.stringify(formDataOrPayload);
+
+    const res = await fetch(url, {
+      method: 'POST',
+      headers,
+      body,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const msg = data.message || Object.values(data.errors || {})?.[0]?.[0] || 'Erreur lors de la modification de la bannière.';
+      throw new Error(msg);
+    }
+    return data;
+  },
+
+  async deleteCarousel(id) {
+    const token = this.getToken();
+    const res = await fetch(`${API_BASE}/admin/carousels/${id}`, {
+      method: 'DELETE',
+      headers: {
+        Accept: 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const msg = data.message || 'Erreur lors de la suppression de la bannière.';
+      throw new Error(msg);
+    }
+    return data;
+  },
+
   logout() {
     try {
       const token = this.getToken();

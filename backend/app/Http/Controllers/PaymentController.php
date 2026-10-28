@@ -39,6 +39,12 @@ class PaymentController extends Controller
         if (!$user && $request->filled('user_id')) {
             $user = User::find($request->input('user_id'));
         }
+        if (!$user && ($request->filled('telephone_livraison') || $request->filled('delivery_phone'))) {
+            $phone = preg_replace('/\D/', '', $request->input('telephone_livraison') ?? $request->input('delivery_phone'));
+            if (strlen($phone) >= 8) {
+                $user = User::where('telephone', 'like', "%{$phone}%")->first();
+            }
+        }
         if (!$user) {
             $user = User::where('role', 'client')->first() ?? User::first();
         }
@@ -119,13 +125,20 @@ class PaymentController extends Controller
             $isCod = $request->input('moyen_paiement') === 'livraison';
 
             if ($user || $isCod) {
-                $createdData = DB::transaction(function () use ($user, $reference, $amount, $fullProductPrice, $produitId, $quantite, $isCod, $request) {
+                $createdData = DB::transaction(function () use ($user, $reference, $amount, $fullProductPrice, $produitId, $quantite, $isCod, $request, $typePaiement, $produit) {
                     $cmd = null;
                     if ($user) {
                         $cmd = Commande::create([
                             'utilisateur_id' => $user->id,
                             'reference' => $reference,
                             'statut' => 'en_attente',
+                            'type_commande' => $typePaiement === 'cash' ? 'cash' : 'libre',
+                            'mode_paiement' => $request->input('moyen_paiement') ?? ($isCod ? 'livraison' : 'feexpay'),
+                            'statut_reception' => 'non_recu',
+                            'adresse_livraison' => $request->input('adresse_livraison') ?? $request->input('delivery_address'),
+                            'telephone_livraison' => $request->input('telephone_livraison') ?? $request->input('delivery_phone') ?? $user?->telephone,
+                            'note_livraison' => $request->input('note_livraison') ?? $request->input('delivery_note'),
+                            'coordonnees_gps' => $request->input('coordonnees_gps') ?? $request->input('delivery_coords'),
                             'prix_total' => $amount,
                         ]);
 
@@ -154,6 +167,7 @@ class PaymentController extends Controller
                         ]);
 
                         Transaction::create([
+                            'commande_id' => $cmd?->id,
                             'cagnotte_id' => $cag->id,
                             'reference_externe' => $reference,
                             'date' => now(),
@@ -350,6 +364,7 @@ class PaymentController extends Controller
                 Transaction::firstOrCreate(
                     ['reference_externe' => $transactionId],
                     [
+                        'commande_id' => $commande->id,
                         'cagnotte_id' => $cagnotteId,
                         'date' => now(),
                         'statut' => 'succes',

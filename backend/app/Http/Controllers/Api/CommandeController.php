@@ -19,14 +19,23 @@ class CommandeController extends Controller
      */
     public function index(Request $request): AnonymousResourceCollection
     {
-        $user = $request->user();
+        $user = $request->user('sanctum') ?? $request->user();
+        $userId = $request->query('user_id') ?? $user?->id;
 
-        $query = $user->isAdmin()
-            ? Commande::with(['utilisateur:id,nom', 'commandeProduits.produit:id,nom', 'transactions.cagnotte'])
-            : Commande::with(['utilisateur:id,nom', 'commandeProduits.produit:id,nom', 'transactions.cagnotte'])
-                ->where('utilisateur_id', $user->id);
+        $query = Commande::with(['utilisateur', 'commandeProduits.produit', 'transactions.cagnotte'])->latest();
 
-        return CommandeResource::collection($query->latest()->paginate(15));
+        if ($user && $user->isAdmin()) {
+            if ($request->filled('user_id')) {
+                $query->where('utilisateur_id', $request->query('user_id'));
+            }
+        } elseif ($userId) {
+            $query->where('utilisateur_id', $userId);
+        } else {
+            $query->whereRaw('1 = 0');
+        }
+
+        $perPage = (int) $request->query('per_page', 50);
+        return CommandeResource::collection($query->paginate($perPage));
     }
 
     /**
@@ -36,8 +45,8 @@ class CommandeController extends Controller
     public function adminIndex(Request $request): AnonymousResourceCollection
     {
         $query = Commande::with([
-            'utilisateur:id,nom',
-            'commandeProduits.produit:id,nom',
+            'utilisateur',
+            'commandeProduits.produit',
             'transactions.cagnotte',
         ])->latest();
 

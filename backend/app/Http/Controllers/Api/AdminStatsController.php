@@ -71,8 +71,9 @@ class AdminStatsController extends Controller
         // ---- Derniers versements ----
         $derniersVersements = Transaction::with([
                 'commande.utilisateur',
-                'commande.commandeProduits',
+                'commande.commandeProduits.produit',
                 'cagnotte.produit',
+                'cagnotte.utilisateur',
             ])
             ->latest()
             ->take(5)
@@ -80,26 +81,43 @@ class AdminStatsController extends Controller
             ->map(function ($tx) {
                 $commande = $tx->commande;
                 $cagnotte = $tx->cagnotte;
+                $isCash = $tx->type === 'paiement_livraison' 
+                    || $tx->type === 'commande_cash' 
+                    || $tx->moyen_paiement === 'livraison' 
+                    || ($commande && $commande->type_commande === 'cash');
+
+                $articleName = $cagnotte?->produit?->nom
+                    ?? $commande?->commandeProduits?->first()?->produit?->nom
+                    ?? '—';
+
+                $clientName = $commande?->utilisateur?->nom
+                    ?? $cagnotte?->utilisateur?->nom
+                    ?? '—';
+
+                $cagnotteNom = $isCash 
+                    ? ($tx->moyen_paiement === 'livraison' ? 'À la livraison' : 'Comptant')
+                    : ($cagnotte?->nom ?? ($tx->cagnotte_id ? "CG-{$tx->cagnotte_id}" : 'Cagnotte'));
 
                 return [
                     'id'                 => $tx->id,
+                    'is_cash'            => $isCash,
                     'commande_reference' => $commande?->reference
+                        ?? $tx->reference_externe
                         ?? ($tx->commande_id ? "CMD-{$tx->commande_id}" : null),
                     'commande_id'        => $tx->commande_id,
-                    'cagnotte_nom'       => $cagnotte?->nom
-                        ?? ($tx->cagnotte_id ? "CG-{$tx->cagnotte_id}" : null),
-                    'article'            => $cagnotte?->produit?->nom,
+                    'cagnotte_nom'       => $cagnotteNom,
+                    'article'            => $articleName,
                     'montant'            => (float) $tx->montant,
                     'montant_cotise'     => (float) ($cagnotte?->montant_verse ?? 0),
                     'objectif'           => (float) ($cagnotte?->objectif_effectif ?? 0),
-                    'progression'        => (int) ($cagnotte?->progression ?? 0),
+                    'progression'        => $isCash ? null : (int) ($cagnotte?->progression ?? 0),
                     'moyen_paiement'     => $tx->moyen_paiement,
                     'statut'             => $tx->statut,
                     'statut_label'       => $tx->isSuccessful()
                         ? 'Réussi'
                         : ($tx->statut === 'en_attente' ? 'En attente' : 'Échoué'),
-                    'client'             => $commande?->utilisateur?->nom,
-                    'nb_articles'        => $commande?->commandeProduits?->count(),
+                    'client'             => $clientName,
+                    'nb_articles'        => $commande?->commandeProduits?->count() ?? 1,
                     'date'               => $tx->date?->toIso8601String(),
                 ];
             });

@@ -12,6 +12,7 @@ export default function AdminSidebar({
     { id: 'support', label: 'Support & Chat', icon: 'message', badge: unreadSupportCount },
     { id: 'produits', label: 'Produits', icon: 'box' },
     { id: 'promotions', label: 'Promotions', icon: 'tag' },
+    { id: 'carousels', label: 'Bannières Carrousel', icon: 'image' },
     { id: 'cagnottes', label: 'Cagnottes', icon: 'wallet' },
     { id: 'commandes', label: 'Commandes', icon: 'cart' },
     { id: 'documents', label: 'Documents', icon: 'file' },

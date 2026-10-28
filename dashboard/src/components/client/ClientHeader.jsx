@@ -49,7 +49,47 @@ export default function ClientHeader({
       document.cookie = `googtrans=/fr/fr; expires=${expires}; path=/`;
     }
 
-    window.location.reload();
+    const applyTranslate = () => {
+      const select = document.querySelector('select.goog-te-combo') || document.querySelector('#google_translate_element select');
+      if (select) {
+        const targetVal = newLang.toLowerCase();
+        let matched = false;
+        for (let i = 0; i < select.options.length; i++) {
+          if (select.options[i].value.toLowerCase() === targetVal) {
+            select.selectedIndex = i;
+            matched = true;
+            break;
+          }
+        }
+        if (!matched && targetVal === 'fr') {
+          select.selectedIndex = 0;
+        }
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+
+        if (targetVal === 'fr') {
+          try {
+            const iframe = document.querySelector('.goog-te-banner-frame');
+            if (iframe && iframe.contentDocument) {
+              const restoreBtn = iframe.contentDocument.querySelector('button[id*="restore"]') ||
+                                 iframe.contentDocument.querySelector('.goog-te-button button');
+              if (restoreBtn) restoreBtn.click();
+            }
+          } catch { /* ignore */ }
+        }
+        return true;
+      }
+      return false;
+    };
+
+    if (!applyTranslate()) {
+      let attempts = 0;
+      const interval = setInterval(() => {
+        attempts++;
+        if (applyTranslate() || attempts >= 10) {
+          clearInterval(interval);
+        }
+      }, 100);
+    }
   };
   const [favCount, setFavCount] = useState(() => {
     try {

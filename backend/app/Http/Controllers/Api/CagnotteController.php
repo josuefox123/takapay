@@ -7,6 +7,7 @@ use App\Http\Requests\StoreCagnotteRequest;
 use App\Http\Requests\UpdateCagnotteRequest;
 use App\Http\Resources\CagnotteResource;
 use App\Models\Cagnotte;
+use App\Models\Commande;
 use App\Models\Notification;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
@@ -88,6 +89,24 @@ class CagnotteController extends Controller
         ]);
 
         $cagnotte->transactions()->update(['statut' => 'succes']);
+
+        // Mise à jour de la commande liée via transaction ou jointure utilisateur + produit
+        $tx = $cagnotte->transactions()->whereNotNull('commande_id')->latest()->first();
+        $commande = $tx?->commande;
+
+        if (!$commande && $cagnotte->utilisateur_id && $cagnotte->produit_id) {
+            $commande = Commande::where('utilisateur_id', $cagnotte->utilisateur_id)
+                ->whereHas('commandeProduits', fn ($q) => $q->where('produit_id', $cagnotte->produit_id))
+                ->latest()
+                ->first();
+        }
+
+        if ($commande) {
+            $commande->update([
+                'statut' => 'terminee',
+                'statut_reception' => 'recu',
+            ]);
+        }
 
         if ($cagnotte->utilisateur_id) {
             Notification::create([

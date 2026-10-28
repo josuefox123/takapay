@@ -166,6 +166,86 @@ class AuthController extends Controller
     }
 
     /**
+     * Mettre à jour le profil de l'utilisateur (nom, prénom, téléphone, email).
+     */
+    public function updateProfile(Request $request): JsonResponse
+    {
+        $user = $request->user('sanctum') ?? $request->user();
+
+        if (! $user && $request->filled('user_id')) {
+            $user = User::find($request->user_id);
+        }
+
+        if (! $user) {
+            return response()->json(['message' => 'Non authentifié. Veuillez vous connecter.'], 401);
+        }
+
+        $request->validate([
+            'nom' => ['nullable', 'string', 'max:255'],
+            'prenom' => ['nullable', 'string', 'max:255'],
+            'telephone' => ['nullable', 'string', 'max:30'],
+            'email' => ['nullable', 'email', 'max:255', 'unique:users,email,'.$user->id],
+        ]);
+
+        if ($request->has('nom')) {
+            $user->nom = trim($request->nom);
+        }
+        if ($request->has('prenom')) {
+            $user->prenom = trim($request->prenom);
+        }
+        if ($request->has('telephone')) {
+            $user->telephone = trim($request->telephone);
+        }
+        if ($request->has('email') && ! empty($request->email)) {
+            $user->email = trim($request->email);
+        }
+
+        $user->save();
+
+        return response()->json([
+            'message' => 'Vos informations de profil ont été mises à jour avec succès.',
+            'user' => new UserResource($user->fresh()),
+        ]);
+    }
+
+    /**
+     * Mettre à jour le code PIN de l'utilisateur.
+     */
+    public function updatePin(Request $request): JsonResponse
+    {
+        $user = $request->user('sanctum') ?? $request->user();
+
+        if (! $user && $request->filled('user_id')) {
+            $user = User::find($request->user_id);
+        }
+
+        if (! $user) {
+            return response()->json(['message' => 'Non authentifié. Veuillez vous connecter.'], 401);
+        }
+
+        $request->validate([
+            'current_pin' => ['nullable', 'string'],
+            'new_pin' => ['required', 'string', 'size:6'],
+            'confirm_pin' => ['required', 'string', 'same:new_pin'],
+        ]);
+
+        if ($request->filled('current_pin') && ! empty($user->password)) {
+            if (! Hash::check($request->current_pin, $user->password)) {
+                throw ValidationException::withMessages([
+                    'current_pin' => ['Le code PIN actuel est incorrect.'],
+                ]);
+            }
+        }
+
+        $user->password = $request->new_pin;
+        $user->save();
+
+        return response()->json([
+            'message' => 'Votre code PIN de sécurité a été modifié avec succès.',
+        ]);
+    }
+
+    /**
      * Déconnexion et révocation du jeton courant
      */
     public function logout(Request $request): JsonResponse

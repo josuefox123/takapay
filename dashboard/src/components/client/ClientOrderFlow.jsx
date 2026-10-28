@@ -15,12 +15,22 @@ export default function ClientOrderFlow({
   onCompleteOrder,
   onBack,
 }) {
+  const [activeUser, setActiveUser] = useState(() => {
+    if (user) return user;
+    try {
+      const s = localStorage.getItem('takapay-client-user');
+      return s ? JSON.parse(s) : null;
+    } catch {
+      return null;
+    }
+  });
+
   // Étapes : 'auth' -> 'pin-create' -> 'pin-confirm' -> 'payment'
-  const [step, setStep] = useState(user ? 'payment' : 'auth');
+  const [step, setStep] = useState(user || activeUser ? 'payment' : 'auth');
   const [authMode, setAuthMode] = useState('signup'); // 'signup' ou 'login'
 
   // Étape effective : si l'utilisateur est déjà connecté, orienter directement sur le paiement
-  const currentStep = user && step === 'auth' ? 'payment' : step;
+  const currentStep = (user || activeUser) && step === 'auth' ? 'payment' : step;
 
   // Formulaire inscription
   const [nom, setNom] = useState('');
@@ -111,6 +121,7 @@ export default function ClientOrderFlow({
           id: backendUser.id || loginId,
         };
         onUserAuthSuccess(loggedUser, 'Connexion réussie.');
+        setActiveUser(loggedUser);
         setStep('payment');
       } catch (err) {
         setError(err.message || 'Identifiant ou code PIN incorrect.');
@@ -166,6 +177,7 @@ export default function ClientOrderFlow({
         id: backendUser.id || phone.trim(),
       };
       onUserAuthSuccess(newUser, result.message || 'Compte créé avec succès !');
+      setActiveUser(newUser);
       setStep('payment');
     } catch (err) {
       setError(err.message || 'Erreur lors de l’enregistrement de votre compte.');
@@ -265,7 +277,7 @@ export default function ClientOrderFlow({
         type_paiement: 'cash',
         quantite: effectiveQuantity,
         moyen_paiement: 'livraison',
-        user_id: user?.id,
+        user_id: activeUser?.id || user?.id,
         adresse_livraison: deliveryAddress.trim(),
         telephone_livraison: deliveryPhone.trim(),
         note_livraison: deliveryNote.trim(),
@@ -334,7 +346,7 @@ export default function ClientOrderFlow({
         type_paiement: orderType,
         quantite: effectiveQuantity,
         moyen_paiement: provider,
-        user_id: user?.id,
+        user_id: activeUser?.id || user?.id,
       });
       setPaymentData(initRes);
     } catch (err) {
@@ -362,7 +374,7 @@ export default function ClientOrderFlow({
           transaction_id: response.transaction_id || response.reference || orderRef,
           amount: response.amount || paymentAmount,
           reseau: response.reseau || provider,
-          user_id: user?.id,
+          user_id: activeUser?.id || user?.id,
           client_email: customerEmail,
         });
 

@@ -131,7 +131,7 @@ export default function ClientProductDetail({
 
     const effectiveQty = orderMode === 'cash' ? cashQuantity : 1;
     const effectiveTotal = orderMode === 'cash' ? (effectiveCashPrice * cashQuantity) : currentPrice;
-    const orderRef = `CMD_COD_${Date.now()}_${Math.floor(1000 + Math.random() * 9000)}`;
+    let orderRef = `CMD_COD_${Date.now()}_${Math.floor(1000 + Math.random() * 9000)}`;
 
     let commandeId = null;
     let backendCagnotteId = null;
@@ -150,6 +150,7 @@ export default function ClientProductDetail({
       });
       if (initRes?.commande_id) commandeId = initRes.commande_id;
       if (initRes?.cagnotte_id) backendCagnotteId = initRes.cagnotte_id;
+      if (initRes?.reference) orderRef = initRes.reference;
     } catch (err) {
       console.warn('Backend initiation COD fallback to local:', err);
     }
