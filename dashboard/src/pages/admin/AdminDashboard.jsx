@@ -10,6 +10,7 @@ import AdminToast from '../../components/admin/AdminToast';
 
 import AdminProductsView from '../../components/admin/AdminProductsView';
 import AdminPromotionsView from '../../components/admin/AdminPromotionsView';
+import AdminCarouselView from '../../components/admin/AdminCarouselView';
 import AdminCagnottesView from '../../components/admin/AdminCagnottesView';
 import AdminCommandesView from '../../components/admin/AdminCommandesView';
 import AdminDocumentsView from '../../components/admin/AdminDocumentsView';
@@ -30,6 +31,7 @@ export default function AdminDashboard() {
     'support',
     'produits',
     'promotions',
+    'carousels',
     'cagnottes',
     'commandes',
     'documents',
@@ -176,6 +178,10 @@ export default function AdminDashboard() {
 
           {activeTab === 'promotions' && (
             <AdminPromotionsView onShowToast={showToast} />
+          )}
+
+          {activeTab === 'carousels' && (
+            <AdminCarouselView onShowToast={showToast} />
           )}
 
           {activeTab === 'cagnottes' && <AdminCagnottesView />}
