@@ -27,28 +27,46 @@ export default function ClientProfileView({
   const [signupTerms, setSignupTerms] = useState(true);
 
   // Modals interactifs pour utilisateur connecté
-  const [activeModal, setActiveModal] = useState(null); // 'edit_profile' | 'history' | 'notifications' | 'help' | 'settings' | 'terms' | 'privacy'
+  const [activeModal, setActiveModal] = useState(null); // 'edit_profile' | 'notifications' | 'help' | 'settings' | 'terms' | 'privacy'
+  const [viewMode, setViewMode] = useState('menu'); // 'menu' | 'history'
+  const [clientOrders, setClientOrders] = useState([]);
+  const [loadingOrders, setLoadingOrders] = useState(false);
 
   // Formulaire d'édition de profil
   const [nom, setNom] = useState('');
+  const [prenom, setPrenom] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [ville, setVille] = useState('Cotonou');
   const [adresse, setAdresse] = useState('');
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [profileError, setProfileError] = useState('');
 
   // Mise à jour automatique des champs lorsque l'utilisateur connecté change
   const [prevUser, setPrevUser] = useState(user);
   if (user !== prevUser) {
     setPrevUser(user);
     if (user) {
-      const full = (user.prenom && user.nom ? `${user.prenom} ${user.nom}` : user.nom || user.n || '').trim();
-      setNom(full || user.nom || user.n || '');
+      setNom(user.nom || '');
+      setPrenom(user.prenom || '');
       setPhone(user.telephone || user.phone || '');
       setEmail(user.email || '');
       if (user.ville) setVille(user.ville);
       if (user.adresse) setAdresse(user.adresse);
     }
   }
+
+  const loadOrders = async () => {
+    setLoadingOrders(true);
+    try {
+      const orders = await adminService.getClientOrders(user?.id);
+      setClientOrders(orders);
+    } catch (_e) {
+      void _e;
+    } finally {
+      setLoadingOrders(false);
+    }
+  };
 
   // Formulaire préférences notifications
   const [notifySms, setNotifySms] = useState(true);
@@ -59,6 +77,8 @@ export default function ClientProfileView({
   const [currentPin, setCurrentPin] = useState('');
   const [newPin, setNewPin] = useState('');
   const [confirmPin, setConfirmPin] = useState('');
+  const [isSavingPin, setIsSavingPin] = useState(false);
+  const [pinError, setPinError] = useState('');
 
   // Gestion Connexion / Inscription si l'utilisateur n'est pas connecté
   const handleAuthSubmit = async (e) => {
@@ -162,37 +182,80 @@ export default function ClientProfileView({
     setAuthError('La connexion directe avec Google sera disponible prochainement. Veuillez vous inscrire ou vous connecter avec votre numéro de téléphone.');
   };
 
-  const handleSaveProfile = (e) => {
+  const handleSaveProfile = async (e) => {
     e.preventDefault();
-    const updated = {
-      ...user,
-      n: nom.trim(),
-      nom: nom.trim(),
-      phone: phone.trim(),
-      email: email.trim(),
-      ville,
-      adresse,
-    };
-    if (onUpdateUser) onUpdateUser(updated);
-    if (onShowToast) onShowToast('Vos informations de profil ont été mises à jour.');
-    setActiveModal(null);
+    setProfileError('');
+    setIsSavingProfile(true);
+
+    try {
+      const payload = {
+        nom: nom.trim(),
+        prenom: prenom.trim(),
+        telephone: phone.trim(),
+        email: email.trim() || null,
+        user_id: user?.id,
+      };
+
+      const result = await adminService.updateProfile(payload);
+      const backendUser = result.user || {};
+
+      const fullName = `${backendUser.prenom || prenom.trim()} ${backendUser.nom || nom.trim()}`.trim();
+      const updated = {
+        ...user,
+        ...backendUser,
+        n: fullName || user.n,
+        nom: backendUser.nom || nom.trim(),
+        prenom: backendUser.prenom || prenom.trim(),
+        phone: backendUser.telephone || phone.trim(),
+        telephone: backendUser.telephone || phone.trim(),
+        email: backendUser.email || email.trim(),
+        ville,
+        adresse,
+      };
+
+      if (onUpdateUser) onUpdateUser(updated, result.message || 'Vos informations de profil ont été mises à jour.');
+      if (onShowToast) onShowToast(result.message || 'Vos informations de profil ont été mises à jour.');
+      setActiveModal(null);
+    } catch (err) {
+      setProfileError(err.message || 'Erreur lors de la mise à jour du profil.');
+    } finally {
+      setIsSavingProfile(false);
+    }
   };
 
-  const handleSavePin = (e) => {
+  const handleSavePin = async (e) => {
     e.preventDefault();
+    setPinError('');
+
     if (newPin.length !== 6 || confirmPin.length !== 6) {
-      alert('Le code PIN doit comporter exactement 6 chiffres.');
+      setPinError('Le code PIN doit comporter exactement 6 chiffres.');
       return;
     }
     if (newPin !== confirmPin) {
-      alert('La confirmation du code PIN ne correspond pas.');
+      setPinError('La confirmation du code PIN ne correspond pas.');
       return;
     }
-    setCurrentPin('');
-    setNewPin('');
-    setConfirmPin('');
-    if (onShowToast) onShowToast('Votre code PIN de sécurité a été modifié.');
-    setActiveModal(null);
+
+    setIsSavingPin(true);
+    try {
+      const payload = {
+        current_pin: currentPin || null,
+        new_pin: newPin,
+        confirm_pin: confirmPin,
+        user_id: user?.id,
+      };
+
+      const res = await adminService.updatePin(payload);
+      setCurrentPin('');
+      setNewPin('');
+      setConfirmPin('');
+      if (onShowToast) onShowToast(res.message || 'Votre code PIN de sécurité a été modifié avec succès.');
+      setActiveModal(null);
+    } catch (err) {
+      setPinError(err.message || 'Erreur lors de la modification du code PIN.');
+    } finally {
+      setIsSavingPin(false);
+    }
   };
 
   const handleSaveNotifications = (e) => {
@@ -450,10 +513,10 @@ export default function ClientProfileView({
     <div style={{ maxWidth: '860px', margin: '0 auto', padding: '16px 20px 48px' }}>
       {/* 1. Bouton retour & Titre */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '20px' }}>
-        {onBack && (
+        {(onBack || viewMode === 'history') && (
           <button
             type="button"
-            onClick={onBack}
+            onClick={viewMode === 'history' ? () => setViewMode('menu') : onBack}
             aria-label="Retour"
             style={{
               width: '42px',
@@ -476,20 +539,339 @@ export default function ClientProfileView({
 
         <div>
           <h1 style={{ fontSize: '26px', fontWeight: 800, color: '#1b1716', margin: 0, letterSpacing: '-0.5px' }}>
-            Profil
+            {viewMode === 'history' ? 'Historique des commandes' : 'Profil'}
           </h1>
           <p style={{ margin: '4px 0 0', color: '#706966', fontSize: '13.5px' }}>
-            Gérez vos coordonnées, vos options de sécurité et vos préférences.
+            {viewMode === 'history'
+              ? 'Consultez le statut et les détails de vos commandes cash et cagnottes.'
+              : 'Gérez vos coordonnées, vos options de sécurité et vos préférences.'}
           </p>
         </div>
       </div>
 
-      {/* 2. Carte principale de Profil (Photo 2) */}
-      <div
-        style={{
-          background: '#ffffff',
-          borderRadius: '24px',
-          border: '1px solid #eee7e0',
+      {viewMode === 'history' ? (
+        <div style={{ display: 'grid', gap: '16px' }}>
+          {loadingOrders ? (
+            <div style={{ textAlign: 'center', padding: '48px 20px', color: '#706966', background: '#fff', borderRadius: '22px', border: '1px solid #eee7e0' }}>
+              <p style={{ fontSize: '15px', fontWeight: 600, margin: 0 }}>Chargement de vos commandes...</p>
+            </div>
+          ) : clientOrders.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '54px 20px', background: '#fff', borderRadius: '24px', border: '1px solid #eee7e0' }}>
+              <div style={{ width: '64px', height: '64px', borderRadius: '50%', background: '#fee2e2', color: '#dc2626', display: 'grid', placeItems: 'center', margin: '0 auto 16px', fontSize: '28px' }}>
+                📦
+              </div>
+              <h3 style={{ fontSize: '18px', fontWeight: 800, color: '#1b1716', margin: '0 0 8px' }}>
+                Aucune commande trouvée
+              </h3>
+              <p style={{ color: '#706966', fontSize: '14px', margin: '0 0 20px' }}>
+                Vous n'avez pas encore passé de commande ou de cotisation.
+              </p>
+              {onBack && (
+                <button
+                  type="button"
+                  onClick={onBack}
+                  style={{
+                    padding: '11px 22px',
+                    borderRadius: '12px',
+                    background: '#dc2626',
+                    color: '#ffffff',
+                    border: 'none',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                  }}
+                >
+                  Découvrir nos produits
+                </button>
+              )}
+            </div>
+          ) : (
+            <>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 4px' }}>
+                <span style={{ fontSize: '13.5px', fontWeight: 700, color: '#706966' }}>
+                  {clientOrders.length} commande{clientOrders.length > 1 ? 's' : ''} enregistrée{clientOrders.length > 1 ? 's' : ''}
+                </span>
+                <button
+                  type="button"
+                  onClick={loadOrders}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: '#dc2626',
+                    fontWeight: 700,
+                    fontSize: '13px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Actualiser
+                </button>
+              </div>
+
+              <div style={{ display: 'grid', gap: '14px' }}>
+                {clientOrders.map((cmd) => {
+                  const isCash =
+                    cmd.type_commande === 'cash' ||
+                    cmd.mode_paiement === 'livraison' ||
+                    String(cmd.reference || '').startsWith('CMD_COD_') ||
+                    String(cmd.reference || '').startsWith('CMD_CASH_');
+
+                  const articles = cmd.articles || [];
+                  const cag = cmd.cagnotte;
+                  const dateFormatted = cmd.created_at
+                    ? new Date(cmd.created_at).toLocaleDateString('fr-FR', {
+                        day: '2-digit',
+                        month: 'short',
+                        year: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })
+                    : '—';
+
+                  const statutLabel =
+                    cmd.statut === 'terminee'
+                      ? 'Terminée'
+                      : cmd.statut === 'en_cours'
+                      ? 'En cours'
+                      : 'Annulée';
+
+                  const statutBadgeBg =
+                    cmd.statut === 'terminee'
+                      ? '#dcfce7'
+                      : cmd.statut === 'en_cours'
+                      ? '#fef3c7'
+                      : '#fee2e2';
+
+                  const statutBadgeColor =
+                    cmd.statut === 'terminee'
+                      ? '#15803d'
+                      : cmd.statut === 'en_cours'
+                      ? '#b45309'
+                      : '#dc2626';
+
+                  return (
+                    <div
+                      key={cmd.id}
+                      style={{
+                        background: '#ffffff',
+                        borderRadius: '20px',
+                        border: '1px solid #eee7e0',
+                        padding: '18px 22px',
+                        boxShadow: '0 2px 10px rgba(0,0,0,0.03)',
+                      }}
+                    >
+                      {/* Entête */}
+                      <div
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'flex-start',
+                          flexWrap: 'wrap',
+                          gap: '10px',
+                          marginBottom: '14px',
+                        }}
+                      >
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                            <span style={{ fontSize: '15px', fontWeight: 800, color: '#1b1716' }}>
+                              {cmd.reference}
+                            </span>
+                            <span
+                              style={{
+                                fontSize: '11px',
+                                fontWeight: 700,
+                                padding: '3px 8px',
+                                borderRadius: '6px',
+                                background: isCash ? '#f0fdf4' : '#eff6ff',
+                                color: isCash ? '#166534' : '#1d4ed8',
+                                border: `1px solid ${isCash ? '#bbf7d0' : '#bfdbfe'}`,
+                              }}
+                            >
+                              {isCash ? '💵 Cash / Paiement à livraison' : '🎯 Cagnotte TakaPay'}
+                            </span>
+                          </div>
+                          <span style={{ fontSize: '12px', color: '#706966', marginTop: '3px', display: 'block' }}>
+                            Passée le {dateFormatted}
+                          </span>
+                        </div>
+
+                        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                          <span
+                            style={{
+                              fontSize: '12px',
+                              fontWeight: 700,
+                              padding: '3px 10px',
+                              borderRadius: '99px',
+                              background: statutBadgeBg,
+                              color: statutBadgeColor,
+                            }}
+                          >
+                            {statutLabel}
+                          </span>
+                          {cmd.statut_reception === 'recu' ? (
+                            <span
+                              style={{
+                                fontSize: '11.5px',
+                                fontWeight: 700,
+                                padding: '3px 9px',
+                                borderRadius: '99px',
+                                background: '#dcfce7',
+                                color: '#15803d',
+                              }}
+                            >
+                              ✓ Article reçu
+                            </span>
+                          ) : (
+                            <span
+                              style={{
+                                fontSize: '11.5px',
+                                fontWeight: 700,
+                                padding: '3px 9px',
+                                borderRadius: '99px',
+                                background: '#f3f4f6',
+                                color: '#4b5563',
+                              }}
+                            >
+                              En attente réception
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Liste des articles */}
+                      <div style={{ borderTop: '1px solid #f4ede6', paddingTop: '12px', marginBottom: '14px' }}>
+                        {articles.length > 0 ? (
+                          articles.map((art, idx) => (
+                            <div
+                              key={idx}
+                              style={{
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                fontSize: '14px',
+                                marginBottom: '6px',
+                              }}
+                            >
+                              <span style={{ fontWeight: 600, color: '#2b2624' }}>
+                                {art.quantite}x {art.produit}
+                              </span>
+                              <span style={{ fontWeight: 700, color: '#1b1716' }}>
+                                {(art.total || art.prix_unitaire * art.quantite).toLocaleString('fr-FR')} F
+                              </span>
+                            </div>
+                          ))
+                        ) : (
+                          <div style={{ fontSize: '13px', color: '#706966' }}>Article commandé</div>
+                        )}
+                      </div>
+
+                      {/* Si cagnotte liée : progression */}
+                      {cag && !isCash && (
+                        <div
+                          style={{
+                            background: '#faf6f3',
+                            borderRadius: '12px',
+                            padding: '10px 14px',
+                            marginBottom: '14px',
+                          }}
+                        >
+                          <div
+                            style={{
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              fontSize: '12px',
+                              marginBottom: '6px',
+                            }}
+                          >
+                            <span style={{ color: '#706966' }}>
+                              Cotisé : <b style={{ color: '#dc2626' }}>{Number(cag.montant_verse || 0).toLocaleString('fr-FR')} F</b>
+                            </span>
+                            <span style={{ color: '#706966' }}>
+                              Objectif : <b>{Number(cag.objectif || 0).toLocaleString('fr-FR')} F</b>
+                            </span>
+                            <span style={{ fontWeight: 800, color: '#15803d' }}>{cag.progression || 0}%</span>
+                          </div>
+                          <div
+                            style={{
+                              width: '100%',
+                              height: '6px',
+                              background: '#e5ded6',
+                              borderRadius: '99px',
+                              overflow: 'hidden',
+                            }}
+                          >
+                            <div
+                              style={{
+                                width: `${Math.min(100, cag.progression || 0)}%`,
+                                height: '100%',
+                                background: (cag.progression || 0) >= 100 ? '#15803d' : '#dc2626',
+                              }}
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Pied de carte */}
+                      <div
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          flexWrap: 'wrap',
+                          gap: '10px',
+                          borderTop: '1px solid #f4ede6',
+                          paddingTop: '12px',
+                        }}
+                      >
+                        <div style={{ fontSize: '12.5px', color: '#706966' }}>
+                          <span>
+                            Mode de paiement : <b>{cmd.mode_paiement || 'Mobile Money'}</b>
+                          </span>
+                          {cmd.adresse_livraison && (
+                            <span style={{ display: 'block', color: '#0369a1', marginTop: '3px' }}>
+                              📍 {cmd.adresse_livraison}
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ textAlign: 'right' }}>
+                          <span style={{ fontSize: '11px', color: '#706966', display: 'block' }}>Montant total</span>
+                          <strong style={{ fontSize: '17px', color: '#dc2626' }}>
+                            {Number(cmd.prix_total || 0).toLocaleString('fr-FR')} F
+                          </strong>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div style={{ marginTop: '16px', textAlign: 'center' }}>
+                <button
+                  type="button"
+                  onClick={() => setViewMode('menu')}
+                  style={{
+                    padding: '11px 20px',
+                    borderRadius: '12px',
+                    border: '1px solid #ded6ce',
+                    background: '#ffffff',
+                    color: '#1b1716',
+                    fontSize: '13.5px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                  }}
+                >
+                  ← Revenir à mon profil
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      ) : (
+        <>
+          {/* 2. Carte principale de Profil (Photo 2) */}
+          <div
+            style={{
+              background: '#ffffff',
+              borderRadius: '24px',
+              border: '1px solid #eee7e0',
           padding: 'clamp(16px, 3.5vw, 24px)',
           display: 'flex',
           gap: 'clamp(14px, 3vw, 24px)',
@@ -656,7 +1038,10 @@ export default function ClientProfileView({
         {/* Item 1 : Historique */}
         <button
           type="button"
-          onClick={() => setActiveModal('history')}
+          onClick={() => {
+            setViewMode('history');
+            loadOrders();
+          }}
           style={{
             width: '100%',
             display: 'flex',
@@ -877,6 +1262,8 @@ export default function ClientProfileView({
         </svg>
         <span>Se déconnecter</span>
       </button>
+        </>
+      )}
 
       {/* --- MODALS DEV INTERACTIFS --- */}
 
@@ -921,30 +1308,58 @@ export default function ClientProfileView({
             </div>
 
             <form onSubmit={handleSaveProfile}>
-              <div style={{ marginBottom: '14px' }}>
-                <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 700, marginBottom: '5px' }}>
-                  Nom complet *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={nom}
-                  onChange={(e) => setNom(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '11px 13px',
-                    borderRadius: '12px',
-                    border: '1.5px solid #ded6ce',
-                    fontSize: '14.5px',
-                    fontWeight: 600,
-                    outline: 'none',
-                  }}
-                />
+              {profileError && (
+                <div style={{ padding: '10px 12px', background: '#fee2e2', color: '#dc2626', borderRadius: '10px', fontSize: '13px', marginBottom: '14px', fontWeight: 600 }}>
+                  {profileError}
+                </div>
+              )}
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '14px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 700, marginBottom: '5px' }}>
+                    Nom *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={nom}
+                    onChange={(e) => setNom(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '11px 13px',
+                      borderRadius: '12px',
+                      border: '1.5px solid #ded6ce',
+                      fontSize: '14px',
+                      fontWeight: 600,
+                      outline: 'none',
+                    }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 700, marginBottom: '5px' }}>
+                    Prénom *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={prenom}
+                    onChange={(e) => setPrenom(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '11px 13px',
+                      borderRadius: '12px',
+                      border: '1.5px solid #ded6ce',
+                      fontSize: '14px',
+                      fontWeight: 600,
+                      outline: 'none',
+                    }}
+                  />
+                </div>
               </div>
 
               <div style={{ marginBottom: '14px' }}>
                 <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 700, marginBottom: '5px' }}>
-                  Téléphone Mobile Money *
+                  Numéro de téléphone *
                 </label>
                 <input
                   type="tel"
@@ -1032,116 +1447,22 @@ export default function ClientProfileView({
 
               <button
                 type="submit"
+                disabled={isSavingProfile}
                 style={{
                   width: '100%',
                   padding: '13px',
-                  background: '#dc2626',
+                  background: isSavingProfile ? '#9ca3af' : '#dc2626',
                   color: '#ffffff',
                   borderRadius: '12px',
                   border: 'none',
                   fontSize: '15px',
                   fontWeight: 800,
-                  cursor: 'pointer',
+                  cursor: isSavingProfile ? 'not-allowed' : 'pointer',
                 }}
               >
-                Enregistrer les modifications
+                {isSavingProfile ? 'Enregistrement en cours...' : 'Enregistrer les modifications'}
               </button>
             </form>
-          </div>
-        </div>
-      )}
-
-      {/* Modal Historique */}
-      {activeModal === 'history' && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            zIndex: 9999,
-            background: 'rgba(0,0,0,0.5)',
-            backdropFilter: 'blur(3px)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '16px',
-          }}
-          onClick={(e) => {
-            if (e.target === e.currentTarget) setActiveModal(null);
-          }}
-        >
-          <div
-            style={{
-              background: '#ffffff',
-              borderRadius: '24px',
-              maxWidth: '440px',
-              width: '100%',
-              padding: '24px',
-              boxShadow: '0 20px 60px rgba(0,0,0,0.25)',
-              color: '#1b1716',
-            }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-              <h3 style={{ fontSize: '18px', fontWeight: 800, margin: 0 }}>Historique de compte</h3>
-              <button
-                type="button"
-                onClick={() => setActiveModal(null)}
-                style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#706966' }}
-              >
-                ✕
-              </button>
-            </div>
-
-            <div style={{ display: 'grid', gap: '12px', maxHeight: '360px', overflowY: 'auto' }}>
-              {(() => {
-                let savedCag = null;
-                try {
-                  const raw = localStorage.getItem('takapay-demo-cagnotte');
-                  if (raw) savedCag = JSON.parse(raw);
-                } catch {
-                  // Ignorer l'erreur de lecture
-                }
-                const cagProdName = savedCag?.product?.n || 'en cours';
-                const cagDate = savedCag?.dateCommande || 'Récemment';
-                const cagPaid = savedCag ? `${Number(savedCag.montantVerse).toLocaleString()} FCFA` : '100 000 FCFA';
-                const cagPercent = savedCag?.pourcentage !== undefined ? savedCag.pourcentage : 25;
-                const isFinished = cagPercent >= 100;
-                return (
-                  <div style={{ padding: '12px', background: '#faf6f3', borderRadius: '12px', border: '1px solid #f0e8e0' }}>
-                    <b style={{ fontSize: '13.5px', color: '#1b1716', display: 'block' }}>Cagnotte {cagProdName}</b>
-                    <span style={{ fontSize: '11px', color: '#706966' }}>{cagDate} · Acompte {cagPaid}</span>
-                    <span style={{ display: 'inline-block', fontSize: '11px', color: '#15803d', fontWeight: 700, background: '#dcfce7', padding: '2px 8px', borderRadius: '99px', marginTop: '6px' }}>
-                      {isFinished ? 'Financée (100%)' : `En cours (${cagPercent}%)`}
-                    </span>
-                  </div>
-                );
-              })()}
-
-              <div style={{ padding: '12px', background: '#faf6f3', borderRadius: '12px', border: '1px solid #f0e8e0' }}>
-                <b style={{ fontSize: '13.5px', color: '#1b1716', display: 'block' }}>Versement MoMo +50 000 FCFA</b>
-                <span style={{ fontSize: '11px', color: '#706966' }}>10 nov 2026 · Reçu #TK-MM-950244</span>
-                <span style={{ display: 'inline-block', fontSize: '11px', color: '#15803d', fontWeight: 700, background: '#dcfce7', padding: '2px 8px', borderRadius: '99px', marginTop: '6px' }}>
-                  Validé
-                </span>
-              </div>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setActiveModal(null)}
-              style={{
-                width: '100%',
-                marginTop: '18px',
-                padding: '12px',
-                background: '#1b1716',
-                color: '#ffffff',
-                borderRadius: '12px',
-                border: 'none',
-                fontWeight: 700,
-                cursor: 'pointer',
-              }}
-            >
-              Fermer
-            </button>
           </div>
         </div>
       )}
@@ -1393,6 +1714,12 @@ export default function ClientProfileView({
             </div>
 
             <form onSubmit={handleSavePin}>
+              {pinError && (
+                <div style={{ padding: '10px 12px', background: '#fee2e2', color: '#dc2626', borderRadius: '10px', fontSize: '13px', marginBottom: '14px', fontWeight: 600 }}>
+                  {pinError}
+                </div>
+              )}
+
               <div style={{ marginBottom: '12px' }}>
                 <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, marginBottom: '5px' }}>
                   Code PIN actuel
@@ -1463,20 +1790,20 @@ export default function ClientProfileView({
 
               <button
                 type="submit"
-                disabled={newPin.length !== 6 || confirmPin.length !== 6}
+                disabled={isSavingPin || newPin.length !== 6 || confirmPin.length !== 6}
                 style={{
                   width: '100%',
                   padding: '13px',
-                  background: newPin.length === 6 && confirmPin.length === 6 ? '#dc2626' : '#ded6ce',
+                  background: !isSavingPin && newPin.length === 6 && confirmPin.length === 6 ? '#dc2626' : '#ded6ce',
                   color: '#ffffff',
                   borderRadius: '12px',
                   border: 'none',
                   fontSize: '14.5px',
                   fontWeight: 800,
-                  cursor: newPin.length === 6 && confirmPin.length === 6 ? 'pointer' : 'not-allowed',
+                  cursor: !isSavingPin && newPin.length === 6 && confirmPin.length === 6 ? 'pointer' : 'not-allowed',
                 }}
               >
-                Mettre à jour mon PIN
+                {isSavingPin ? 'Modification en cours...' : 'Mettre à jour mon PIN'}
               </button>
             </form>
           </div>
