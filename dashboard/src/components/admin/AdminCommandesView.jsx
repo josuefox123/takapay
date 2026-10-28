@@ -44,20 +44,20 @@ export default function AdminCommandesView({ onShowToast }) {
       0
     );
     const enAttente = commandes.filter(
-      (c) => String(c.statut).toLowerCase() === 'en_attente'
+      (c) => c.statut_reception !== 'recu' && String(c.statut).toLowerCase() !== 'terminee' && String(c.statut).toLowerCase() !== 'livree'
     ).length;
-    const payees = commandes.filter(
-      (c) => String(c.statut).toLowerCase() === 'payee'
+    const recues = commandes.filter(
+      (c) => c.statut_reception === 'recu' || String(c.statut).toLowerCase() === 'terminee' || String(c.statut).toLowerCase() === 'livree'
     ).length;
-    return { total, totalMontant, enAttente, payees };
+    return { total, totalMontant, enAttente, recues };
   }, [commandes]);
 
-  const computeStatut = (statut) => {
-    const s = String(statut || '').toLowerCase();
-    if (s === 'payee') return { label: 'Payée', cls: 's1' };
-    if (s === 'livree') return { label: 'Livrée', cls: 's1' };
+  const computeStatut = (cmd) => {
+    const isRecu = cmd.statut_reception === 'recu' || String(cmd.statut || '').toLowerCase() === 'terminee' || String(cmd.statut || '').toLowerCase() === 'livree';
+    if (isRecu) return { label: 'Terminée (Article reçu)', cls: 's1' };
+    const s = String(cmd.statut || '').toLowerCase();
     if (s === 'annulee') return { label: 'Annulée', cls: 's3' };
-    return { label: 'En attente', cls: 's2' };
+    return { label: 'En cours (En attente réception)', cls: 's2' };
   };
 
   const computeProgress = (cmd) => {
@@ -128,10 +128,10 @@ export default function AdminCommandesView({ onShowToast }) {
         </div>
         <div className="admin-kpi-card">
           <div className="admin-kpi-header">
-            <span>Payées</span>
+            <span>Articles reçus</span>
             <i><AdminIcon name="tag" size={16} /></i>
           </div>
-          <b>{stats.payees}</b>
+          <b>{stats.recues}</b>
         </div>
       </div>
 
@@ -209,19 +209,24 @@ export default function AdminCommandesView({ onShowToast }) {
               <thead>
                 <tr>
                   <th>Commande</th>
+                  <th>Type</th>
                   <th>Client</th>
-                  <th>Article(s)</th>
-                  <th>Cagnotte</th>
+                  <th>Article(s) & Qté</th>
                   <th>Montant</th>
-                  <th>Progression</th>
+                  <th>Progression / Suivi</th>
                   <th>Paiement</th>
-                  <th>Statut</th>
+                  <th>Statut Réception</th>
                   <th>Date</th>
                 </tr>
               </thead>
               <tbody>
                 {commandes.map((cmd) => {
-                  const st = computeStatut(cmd.statut);
+                  const st = computeStatut(cmd);
+                  const isCash = cmd.type_commande === 'cash'
+                    || cmd.mode_paiement === 'livraison'
+                    || String(cmd.reference || '').startsWith('CMD_COD_')
+                    || String(cmd.reference || '').startsWith('CMD_CASH_');
+
                   const progress = computeProgress(cmd);
                   const articles = cmd.articles || [];
                   const nbArticles = articles.reduce(
@@ -243,12 +248,15 @@ export default function AdminCommandesView({ onShowToast }) {
                       })
                     : '—';
 
-                  const cagnotte = cmd.cagnotte;
-                  const montantVerse = Number(cagnotte?.montant_verse ?? 0);
-                  const objectif = Number(cagnotte?.objectif ?? 0);
+                  const clientName = cmd.client?.nom
+                    ? `${cmd.client?.nom || ''} ${cmd.client?.prenom || ''}`.trim()
+                    : 'Client';
+
+                  const clientContact = cmd.telephone_livraison || cmd.client?.telephone || cmd.client?.email || '';
 
                   return (
                     <tr key={cmd.id}>
+                      {/* 1. Référence & Nb articles */}
                       <td>
                         <strong style={{ fontFamily: 'monospace' }}>
                           {cmd.reference}
@@ -259,9 +267,54 @@ export default function AdminCommandesView({ onShowToast }) {
                             : 'Aucun article'}
                         </span>
                       </td>
+
+                      {/* 2. Type de commande (Cash vs Libre) */}
                       <td>
-                        {cmd.client?.nom || '—'}
+                        {isCash ? (
+                          <span
+                            className="admin-badge"
+                            style={{
+                              background: '#ecfdf5',
+                              color: '#047857',
+                              border: '1px solid #a7f3d0',
+                              fontWeight: 700,
+                              fontSize: '11.5px',
+                            }}
+                          >
+                            Cash {cmd.mode_paiement === 'livraison' ? '(Livraison)' : '(Comptant)'}
+                          </span>
+                        ) : (
+                          <span
+                            className="admin-badge"
+                            style={{
+                              background: '#eff6ff',
+                              color: '#1d4ed8',
+                              border: '1px solid #bfdbfe',
+                              fontWeight: 700,
+                              fontSize: '11.5px',
+                            }}
+                          >
+                            Libre (Cagnotte)
+                          </span>
+                        )}
                       </td>
+
+                      {/* 3. Client & Coordonnées */}
+                      <td>
+                        <strong>{clientName}</strong>
+                        {clientContact && (
+                          <span className="admin-sub-text">
+                            {clientContact}
+                          </span>
+                        )}
+                        {cmd.adresse_livraison && (
+                          <span className="admin-sub-text" style={{ color: '#0369a1' }}>
+                            📍 {cmd.adresse_livraison}
+                          </span>
+                        )}
+                      </td>
+
+                      {/* 4. Article(s) & Quantité */}
                       <td>
                         {articleLabel}
                         {articles.length > 0 && (
@@ -272,26 +325,29 @@ export default function AdminCommandesView({ onShowToast }) {
                           </span>
                         )}
                       </td>
-                      <td>
-                        {cagnotte ? (
-                          <>
-                            CG-{cagnotte.id}
-                            <span className="admin-sub-text">
-                              {montantVerse.toLocaleString('fr-FR')} /{' '}
-                              {objectif.toLocaleString('fr-FR')} F
-                            </span>
-                          </>
-                        ) : (
-                          <span style={{ color: 'var(--mut)' }}>—</span>
-                        )}
-                      </td>
+
+                      {/* 5. Montant */}
                       <td>
                         <strong>
                           {Number(cmd.prix_total || 0).toLocaleString('fr-FR')} F
                         </strong>
                       </td>
+
+                      {/* 6. Progression / Suivi */}
                       <td>
-                        {cagnotte ? (
+                        {isCash ? (
+                          <span
+                            className="admin-badge"
+                            style={{
+                              background: '#f9fafb',
+                              color: '#374151',
+                              border: '1px solid #e5e7eb',
+                              fontSize: '11.5px',
+                            }}
+                          >
+                            {cmd.mode_paiement === 'livraison' ? 'À régler livraison' : 'Paiement unique'}
+                          </span>
+                        ) : (
                           <div
                             style={{
                               display: 'flex',
@@ -333,24 +389,24 @@ export default function AdminCommandesView({ onShowToast }) {
                               />
                             </div>
                           </div>
-                        ) : (
-                          <span style={{ color: 'var(--mut)' }}>—</span>
                         )}
                       </td>
+
+                      {/* 7. Mode de paiement */}
                       <td>
-                        {cagnotte?.moyen_paiement ? (
-                          <span className="admin-badge s2">
-                            {cagnotte.moyen_paiement}
-                          </span>
-                        ) : (
-                          <span style={{ color: 'var(--mut)' }}>—</span>
-                        )}
+                        <span className="admin-badge s2">
+                          {cmd.mode_paiement || cmd.cagnotte?.moyen_paiement || '—'}
+                        </span>
                       </td>
+
+                      {/* 8. Statut réception client */}
                       <td>
                         <span className={`admin-badge ${st.cls}`}>
                           {st.label}
                         </span>
                       </td>
+
+                      {/* 9. Date */}
                       <td>
                         <span style={{ fontSize: '13px', fontWeight: 500 }}>
                           {dateStr}

@@ -344,7 +344,6 @@ if (typeof window !== 'undefined') {
     localStorage.removeItem('takapay_created_categories');
     localStorage.removeItem('takapay_created_subcategories');
     localStorage.removeItem('takapay_backend_categories');
-    localStorage.removeItem('takapay_backend_cagnottes');
     localStorage.removeItem('takapay-notifications');
     localStorage.removeItem('takapay-demo-cagnotte');
   } catch { /* ignore */ }
@@ -620,7 +619,8 @@ export const mapBackendCagnotteToClient = (c) => {
   const articleRecu = Boolean(
     c.articleRecu ||
     c.statut === 'livree' ||
-    c.statut === 'recu'
+    c.statut === 'recu' ||
+    (isCod && (c.statut === 'terminee' || c.statut === 'completed'))
   );
 
   const isLibre = param.mode_paiement === 'libre';

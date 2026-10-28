@@ -81,42 +81,59 @@ export default function AdminRecentTransactions({ transactions = [] }) {
                   {/* Article · Cagnotte */}
                   <td>
                     {article}
-                    <span className="admin-sub-text">Cagnotte {cagnotte}</span>
+                    <span className="admin-sub-text">
+                      {tx.is_cash ? `Mode ${cagnotte}` : `Cagnotte ${cagnotte}`}
+                    </span>
                   </td>
 
-                  {/* Progression : % + barre */}
+                  {/* Progression : % + barre pour cagnotte, ou Badge Cash pour achat comptant */}
                   <td>
-                    <div
-                      style={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '4px',
-                        minWidth: '110px',
-                      }}
-                    >
-                      <span style={{ fontSize: '12px', fontWeight: 600 }}>
-                        {progression}%
-                      </span>
+                    {tx.is_cash ? (
                       <span
-                        className="admin-progress-bar"
-                        style={{ display: 'block', width: '100%' }}
+                        className="admin-badge"
+                        style={{
+                          background: '#ecfdf5',
+                          color: '#047857',
+                          border: '1px solid #a7f3d0',
+                          fontWeight: 700,
+                          fontSize: '11.5px',
+                        }}
                       >
-                        <i
-                          style={{
-                            width: `${progression}%`,
-                            display: 'block',
-                            height: '100%',
-                            background:
-                              progression >= 100
-                                ? '#16a34a'
-                                : progression >= 50
-                                ? '#f59e0b'
-                                : '#dc2626',
-                            transition: 'width 0.4s ease',
-                          }}
-                        />
+                        {tx.moyen_paiement === 'livraison' ? 'À la livraison' : 'Comptant (Cash)'}
                       </span>
-                    </div>
+                    ) : (
+                      <div
+                        style={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '4px',
+                          minWidth: '110px',
+                        }}
+                      >
+                        <span style={{ fontSize: '12px', fontWeight: 600 }}>
+                          {progression}%
+                        </span>
+                        <span
+                          className="admin-progress-bar"
+                          style={{ display: 'block', width: '100%' }}
+                        >
+                          <i
+                            style={{
+                              width: `${progression}%`,
+                              display: 'block',
+                              height: '100%',
+                              background:
+                                progression >= 100
+                                  ? '#16a34a'
+                                  : progression >= 50
+                                  ? '#f59e0b'
+                                  : '#dc2626',
+                              transition: 'width 0.4s ease',
+                            }}
+                          />
+                        </span>
+                      </div>
+                    )}
                   </td>
 
                   <td style={{ fontWeight: 600 }}>

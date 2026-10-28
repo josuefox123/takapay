@@ -21,15 +21,41 @@ export default function AdminCagnottesView() {
     };
   }, []);
 
+  const formatDate = (dateStr) => {
+    if (!dateStr) return '—';
+    try {
+      const d = new Date(dateStr);
+      return isNaN(d.getTime())
+        ? dateStr
+        : d.toLocaleDateString('fr-FR', {
+            day: '2-digit',
+            month: 'short',
+            year: 'numeric',
+          });
+    } catch {
+      return dateStr;
+    }
+  };
+
   const filtered = cagnottes.filter((c) => {
-    const matchSearch = (c.code || '').toLowerCase().includes(search.toLowerCase()) ||
-      (c.client_nom || '').toLowerCase().includes(search.toLowerCase()) ||
-      (c.produit_nom || '').toLowerCase().includes(search.toLowerCase());
+    const s = search.toLowerCase();
+    const clientNom = c.utilisateur
+      ? `${c.utilisateur.nom || ''} ${c.utilisateur.prenom || ''}`
+      : (c.client_nom || '');
+    const clientTel = c.telephone_livraison || c.utilisateur?.telephone || c.client_tel || '';
+    const produitNom = c.produit?.nom || c.produit_nom || '';
+    const code = c.code || `CG-${c.id}`;
+
+    const matchSearch =
+      code.toLowerCase().includes(s) ||
+      clientNom.toLowerCase().includes(s) ||
+      clientTel.toLowerCase().includes(s) ||
+      produitNom.toLowerCase().includes(s);
     const matchStatus = statusFilter === 'tous' || c.statut === statusFilter;
     return matchSearch && matchStatus;
   });
 
-  const totalMontant = cagnottes.reduce((acc, c) => acc + (c.montant_verse || 0), 0);
+  const totalMontant = cagnottes.reduce((acc, c) => acc + (Number(c.montant_verse) || 0), 0);
   const activeCount = cagnottes.filter((c) => c.statut === 'en_cours').length;
   const completedCount = cagnottes.filter((c) => c.statut === 'terminee').length;
 
@@ -67,7 +93,7 @@ export default function AdminCagnottesView() {
         </div>
         <div className="admin-kpi-card">
           <div className="admin-kpi-header">
-            <span>Total cotisé</span>
+            <span>Total encaissé</span>
             <i><AdminIcon name="wallet" size={16} /></i>
           </div>
           <b>{totalMontant.toLocaleString('fr-FR')} F</b>
@@ -136,27 +162,42 @@ export default function AdminCagnottesView() {
               </thead>
               <tbody>
                 {filtered.map((c) => {
-                  const pct = c.progression || Math.min(100, Math.round(((c.montant_verse || 0) / (c.prix_unitaire || 1)) * 100));
+                  const verse = Number(c.montant_verse || 0);
+                  const prixUnitaire = Number(c.prix_unitaire || 0);
+                  const pct = c.progression !== undefined
+                    ? c.progression
+                    : Math.min(100, Math.round((verse / (prixUnitaire || 1)) * 100));
+
+                  const clientNom = c.utilisateur
+                    ? `${c.utilisateur.nom || ''} ${c.utilisateur.prenom || ''}`.trim()
+                    : (c.client_nom || 'Client');
+                  const clientTel = c.telephone_livraison || c.utilisateur?.telephone || c.client_tel || '—';
+
                   return (
                     <tr key={c.id}>
                       <td>
                         <strong>{c.code || `CG-${c.id}`}</strong>
-                        <span className="admin-sub-text">Lancée le {c.date_creation || 'Récemment'}</span>
+                        <span className="admin-sub-text">Lancée le {formatDate(c.created_at || c.date_creation)}</span>
                       </td>
                       <td>
-                        <strong>{c.client_nom || 'Client Takapay'}</strong>
-                        <span className="admin-sub-text">{c.client_tel || '+229 -- -- -- --'}</span>
+                        <strong>{clientNom}</strong>
+                        <span className="admin-sub-text">{clientTel}</span>
+                        {c.adresse_livraison && (
+                          <span className="admin-sub-text" style={{ fontSize: '11px', color: '#0284c7' }}>
+                            📍 {c.adresse_livraison}
+                          </span>
+                        )}
                       </td>
                       <td>
-                        <span style={{ fontWeight: 600 }}>{c.produit_nom || c.produit?.nom || 'Article'}</span>
-                        <span className="admin-sub-text">Objectif: {(c.prix_unitaire || 0).toLocaleString('fr-FR')} F</span>
+                        <span style={{ fontWeight: 600 }}>{c.produit?.nom || c.produit_nom || 'Article'}</span>
+                        <span className="admin-sub-text">Objectif: {prixUnitaire.toLocaleString('fr-FR')} F</span>
                       </td>
                       <td>
                         <strong style={{ color: 'var(--r)' }}>
-                          {(c.montant_verse || 0).toLocaleString('fr-FR')} F
+                          {verse.toLocaleString('fr-FR')} F
                         </strong>
                         <span className="admin-sub-text">
-                          Reste: {Math.max(0, (c.prix_unitaire || 0) - (c.montant_verse || 0)).toLocaleString('fr-FR')} F
+                          Reste: {Math.max(0, prixUnitaire - verse).toLocaleString('fr-FR')} F
                         </span>
                       </td>
                       <td>

@@ -1,4 +1,18 @@
 import { useState, useEffect } from 'react';
+import {
+  CheckCircle2,
+  PackageCheck,
+  Truck,
+  MapPin,
+  Calendar,
+  Banknote,
+  Phone,
+  Search,
+  Handshake,
+  AlertTriangle,
+  Megaphone,
+  Ban,
+} from 'lucide-react';
 import { FeexPayProvider, FeexPayButton } from '@feexpay/react-sdk';
 import '@feexpay/react-sdk/style.css';
 import { formatFCFA, getStoredCagnottes, mapBackendCagnotteToClient } from '../../data/clientStore';
@@ -64,6 +78,10 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
     const stored = getStoredCagnottes(user);
     return Array.isArray(stored) ? stored : [];
   });
+  const [isLoading, setIsLoading] = useState(() => {
+    const stored = getStoredCagnottes(user);
+    return !Array.isArray(stored) || stored.length === 0;
+  });
   const [selectedCagnotteId, setSelectedCagnotteId] = useState(null);
   const [depositTargetId, setDepositTargetId] = useState(null);
 
@@ -98,6 +116,8 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
       }
     }).catch(() => {
       if (isMounted) setCagnottesList(getStoredCagnottes(user));
+    }).finally(() => {
+      if (isMounted) setIsLoading(false);
     });
     return () => { isMounted = false; };
   }, [user]);
@@ -107,6 +127,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
     const sync = () => {
       const next = getStoredCagnottes(user);
       setCagnottesList(Array.isArray(next) ? next : []);
+      setIsLoading(false);
     };
     window.addEventListener('takapay_cagnotte_updated', sync);
     return () => window.removeEventListener('takapay_cagnotte_updated', sync);
@@ -534,7 +555,9 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                   Mes cagnottes
                 </h1>
                 <p style={{ margin: '4px 0 0', color: '#706966', fontSize: '13.5px' }}>
-                  {cagnottesList.length} cagnotte{cagnottesList.length > 1 ? 's' : ''} en cours ou complétée{cagnottesList.length > 1 ? 's' : ''}
+                  {isLoading
+                    ? 'Chargement de vos cagnottes...'
+                    : `${cagnottesList.length} cagnotte${cagnottesList.length > 1 ? 's' : ''} en cours ou complétée${cagnottesList.length > 1 ? 's' : ''}`}
                 </p>
               </div>
             </div>
@@ -556,7 +579,35 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
             )}
           </div>
 
-          {cagnottesList.length === 0 ? (
+          {isLoading ? (
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 340px), 1fr))',
+                gap: '20px',
+              }}
+            >
+              {[1, 2].map((idx) => (
+                <div
+                  key={idx}
+                  style={{
+                    background: '#ffffff',
+                    borderRadius: '20px',
+                    border: '1px solid #eee7e0',
+                    padding: '20px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '12px',
+                  }}
+                >
+                  <div style={{ height: '140px', background: '#f5f0eb', borderRadius: '14px' }} />
+                  <div style={{ height: '18px', width: '60%', background: '#f5f0eb', borderRadius: '6px' }} />
+                  <div style={{ height: '14px', width: '40%', background: '#f5f0eb', borderRadius: '6px' }} />
+                  <div style={{ height: '38px', background: '#f5f0eb', borderRadius: '10px', marginTop: 'auto' }} />
+                </div>
+              ))}
+            </div>
+          ) : cagnottesList.length === 0 ? (
             <div
               style={{
                 textAlign: 'center',
@@ -985,43 +1036,27 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                 <h3 style={{ margin: '0 0 4px', fontSize: '18px', fontWeight: 800 }}>
                   Commande en mode Cash (Paiement à la livraison)
                 </h3>
-                <p style={{ margin: '0 0 6px', fontSize: '14px', opacity: 0.95 }}>
-                  📢 <b>La disponibilité de l’article vous sera communiquée par l’équipe en charge dans quelques instants.</b>
+                <p style={{ margin: '0 0 6px', fontSize: '14px', opacity: 0.95, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Megaphone size={16} />
+                  <span><b>La disponibilité de l’article vous sera communiquée par l’équipe en charge dans quelques instants.</b></span>
                 </p>
                 <p style={{ margin: 0, fontSize: '13px', opacity: 0.9 }}>
                   Vous réglerez <b>{formatFCFA(cagnotte.prixTotal)}</b> en espèces directement au livreur lors de la réception.
                 </p>
               </div>
-              <span style={{ fontSize: '32px' }}>🚚📦</span>
-            </div>
-          )}
-
-          {/* Bannière article reçu */}
-          {isArticleReceived && (
-            <div
-              style={{
-                background: 'linear-gradient(135deg, #15803d, #166534)',
-                color: '#ffffff',
-                borderRadius: '20px',
-                padding: '20px 24px',
-                marginBottom: '24px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                flexWrap: 'wrap',
-                gap: '16px',
-                boxShadow: '0 8px 24px rgba(21,128,61,0.2)',
-              }}
-            >
-              <div>
-                <h3 style={{ margin: '0 0 4px', fontSize: '18px', fontWeight: 800 }}>
-                  🎉 Article réceptionné avec succès !
-                </h3>
-                <p style={{ margin: 0, fontSize: '13.5px', opacity: 0.95 }}>
-                  Vous avez confirmé la bonne réception de votre commande. Merci pour votre confiance !
-                </p>
+              <div
+                style={{
+                  width: '52px',
+                  height: '52px',
+                  borderRadius: '16px',
+                  background: 'rgba(255, 255, 255, 0.15)',
+                  display: 'grid',
+                  placeItems: 'center',
+                  flexShrink: 0,
+                }}
+              >
+                <Truck size={28} color="#ffffff" />
               </div>
-              <span style={{ fontSize: '32px' }}>✅</span>
             </div>
           )}
 
@@ -1051,36 +1086,85 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                   Cette cagnotte est annulée. Conformément aux conditions d'utilisation, une retenue forfaitaire de 5% a été appliquée sur vos versements pour frais de gestion. Le remboursement est en cours de traitement.
                 </p>
               </div>
-              <span style={{ fontSize: '32px' }}>🚫</span>
+              <div
+                style={{
+                  width: '52px',
+                  height: '52px',
+                  borderRadius: '16px',
+                  background: 'rgba(153, 27, 27, 0.08)',
+                  display: 'grid',
+                  placeItems: 'center',
+                  flexShrink: 0,
+                }}
+              >
+                <Ban size={28} color="#991b1b" />
+              </div>
             </div>
           )}
 
-          {/* Bannière de félicitations si complétée */}
-          {isFinished && (
+          {/* Bannière de félicitations */}
+          {(isFinished || isArticleReceived) && !isCancelled && (
             <div
               style={{
-                background: 'linear-gradient(135deg, #15803d, #166534)',
+                background: 'linear-gradient(135deg, #064e3b 0%, #065f46 60%, #047857 100%)',
                 color: '#ffffff',
                 borderRadius: '20px',
-                padding: '20px 24px',
+                padding: '22px 26px',
                 marginBottom: '24px',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
                 flexWrap: 'wrap',
                 gap: '16px',
-                boxShadow: '0 8px 24px rgba(21,128,61,0.2)',
+                border: '1px solid rgba(255, 255, 255, 0.12)',
+                boxShadow: '0 10px 28px -6px rgba(6, 78, 59, 0.28)',
               }}
             >
-              <div>
-                <h3 style={{ margin: '0 0 4px', fontSize: '18px', fontWeight: 800 }}>
-                  Félicitations{firstName ? ` ${firstName}` : ''} ! Votre {p.n || 'article'} est entièrement financé !
+              <div style={{ flex: 1, minWidth: '260px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                  <span
+                    style={{
+                      fontSize: '11.5px',
+                      fontWeight: 800,
+                      letterSpacing: '0.6px',
+                      textTransform: 'uppercase',
+                      background: 'rgba(255, 255, 255, 0.16)',
+                      padding: '3px 10px',
+                      borderRadius: '99px',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '5px',
+                    }}
+                  >
+                    <CheckCircle2 size={13} />
+                    {isArticleReceived ? 'Livraison effectuée' : 'Financement complété'}
+                  </span>
+                </div>
+                <h3 style={{ margin: '0 0 6px', fontSize: '19px', fontWeight: 800, letterSpacing: '-0.2px' }}>
+                  {isArticleReceived
+                    ? `Félicitations${firstName ? ` ${firstName}` : ''} ! Votre article a bien été réceptionné`
+                    : `Félicitations${firstName ? ` ${firstName}` : ''} ! Votre ${p.n || 'article'} est entièrement financé !`}
                 </h3>
-                <p style={{ margin: 0, fontSize: '13.5px', opacity: 0.95 }}>
-                  L'intégralité des {formatFCFA(cagnotte.prixTotal)} a été versée. Notre équipe prépare votre commande pour la remise en main propre.
+                <p style={{ margin: 0, fontSize: '13.5px', opacity: 0.92, lineHeight: 1.5 }}>
+                  {isArticleReceived
+                    ? 'La réception en main propre a été confirmée et la commande est désormais clôturée avec succès. Merci pour votre confiance !'
+                    : `L'intégralité des ${formatFCFA(cagnotte.prixTotal)} a été versée. Notre équipe prépare votre commande pour la remise en main propre.`}
                 </p>
               </div>
-              <span style={{ fontSize: '32px' }}>🎁📦</span>
+              <div
+                style={{
+                  width: '56px',
+                  height: '56px',
+                  borderRadius: '16px',
+                  background: 'rgba(255, 255, 255, 0.15)',
+                  border: '1px solid rgba(255, 255, 255, 0.25)',
+                  display: 'grid',
+                  placeItems: 'center',
+                  flexShrink: 0,
+                }}
+              >
+                <PackageCheck size={30} color="#ffffff" />
+              </div>
             </div>
           )}
 
@@ -1156,8 +1240,8 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                       <div style={{ fontSize: '13px', color: '#706966' }}>
                         {cleanVariantDisplay(p.variant)}
                       </div>
-                      <div style={{ fontSize: '12px', color: '#8c8580', marginTop: '6px', display: 'flex', alignItems: 'center', gap: '5px' }}>
-                        <span>📅</span>
+                      <div style={{ fontSize: '12px', color: '#8c8580', marginTop: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <Calendar size={13} style={{ color: '#8c8580' }} />
                         <span>Commandé le {cagnotte.dateCommande}</span>
                       </div>
                     </div>
@@ -1166,8 +1250,8 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                   {/* Encadré Montant à payer en espèces */}
                   <div
                     style={{
-                      background: isArticleReceived ? '#f0fdf4' : '#f8fafc',
-                      border: isArticleReceived ? '1.5px solid #bbf7d0' : '1.5px solid #e2e8f0',
+                      background: isArticleReceived ? '#f2fbf7' : '#f8fafc',
+                      border: isArticleReceived ? '1.5px solid #a7f3d0' : '1.5px solid #e2e8f0',
                       borderRadius: '18px',
                       padding: '18px 20px',
                     }}
@@ -1180,13 +1264,22 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                         style={{
                           fontSize: '11.5px',
                           fontWeight: 800,
-                          color: isArticleReceived ? '#15803d' : '#0369a1',
-                          background: isArticleReceived ? '#dcfce7' : '#e0f2fe',
+                          color: isArticleReceived ? '#065f46' : '#0369a1',
+                          background: isArticleReceived ? '#e6f7f0' : '#e0f2fe',
+                          border: isArticleReceived ? '1px solid #b7ebd8' : '1px solid #bae6fd',
                           padding: '3px 10px',
                           borderRadius: '99px',
                         }}
                       >
-                        {isArticleReceived ? '✔ Réceptionné & Payé' : '💵 Espèces à la livraison'}
+                        {isArticleReceived ? (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                            <CheckCircle2 size={12} /> Réceptionné & Payé
+                          </span>
+                        ) : (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                            <Banknote size={12} /> Espèces à la livraison
+                          </span>
+                        )}
                       </span>
                     </div>
                     <div style={{ fontSize: '28px', fontWeight: 900, color: '#0f172a', letterSpacing: '-0.5px' }}>
@@ -1213,22 +1306,22 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                         padding: '16px',
                         borderRadius: '16px',
                         border: 'none',
-                        background: '#16a34a',
+                        background: '#065f46',
                         color: '#ffffff',
                         fontWeight: 800,
                         fontSize: '15.5px',
                         cursor: 'pointer',
-                        boxShadow: '0 6px 20px rgba(22, 163, 74, 0.28)',
+                        boxShadow: '0 6px 20px rgba(6, 78, 59, 0.25)',
                         display: 'inline-flex',
                         alignItems: 'center',
                         justifyContent: 'center',
                         gap: '10px',
                         transition: 'all .15s ease',
                       }}
-                      onMouseEnter={(e) => { e.currentTarget.style.background = '#15803d'; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.background = '#16a34a'; }}
+                      onMouseEnter={(e) => { e.currentTarget.style.background = '#044332'; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.background = '#065f46'; }}
                     >
-                      <span className="material-symbols-outlined" style={{ fontSize: '22px' }}>check_circle</span>
+                      <CheckCircle2 size={20} />
                       Oui, j'ai reçu l'article
                     </button>
                   ) : (
@@ -1239,13 +1332,14 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                         gap: '10px',
                         padding: '14px 18px',
                         borderRadius: '14px',
-                        background: '#dcfce7',
-                        color: '#15803d',
-                        fontWeight: 800,
-                        fontSize: '14px',
+                        background: '#ecfdf5',
+                        border: '1.5px solid #a7f3d0',
+                        color: '#065f46',
+                        fontWeight: 700,
+                        fontSize: '13.5px',
                       }}
                     >
-                      <span className="material-symbols-outlined" style={{ fontSize: '22px' }}>verified</span>
+                      <CheckCircle2 size={20} color="#065f46" />
                       <span>Article réceptionné & commande clôturée avec succès.</span>
                     </div>
                   )}
@@ -1264,8 +1358,10 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                     gap: '18px',
                   }}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '2px' }}>
-                    <span style={{ fontSize: '24px' }}>📍</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '2px' }}>
+                    <div style={{ width: '40px', height: '40px', borderRadius: '12px', background: '#f8fafc', border: '1px solid #e2e8f0', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+                      <MapPin size={20} color="#065f46" />
+                    </div>
                     <div>
                       <h3 style={{ fontSize: '18px', fontWeight: 800, color: '#1b1716', margin: 0 }}>
                         Détails de la livraison
@@ -1348,7 +1444,9 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                         </small>
                         <b style={{ fontSize: '13.5px', color: '#1b1716' }}>Espèces à la réception</b>
                       </div>
-                      <span style={{ fontSize: '20px' }}>🤝</span>
+                      <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: '#e6f7f0', display: 'grid', placeItems: 'center' }}>
+                        <Handshake size={18} color="#065f46" />
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1364,8 +1462,10 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                   boxShadow: '0 4px 20px rgba(0,0,0,0.03)',
                 }}
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px' }}>
-                  <span style={{ fontSize: '24px' }}>🚚</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '20px' }}>
+                  <div style={{ width: '40px', height: '40px', borderRadius: '12px', background: '#f8fafc', border: '1px solid #e2e8f0', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+                    <Truck size={20} color="#065f46" />
+                  </div>
                   <div>
                     <h3 style={{ fontSize: '18px', fontWeight: 800, color: '#1b1716', margin: 0 }}>
                       Étapes de votre commande
@@ -1386,17 +1486,17 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                   {/* Étape 1 */}
                   <div
                     style={{
-                      background: '#f0fdf4',
-                      border: '1.5px solid #bbf7d0',
+                      background: '#f2fbf7',
+                      border: '1.5px solid #a7f3d0',
                       borderRadius: '16px',
                       padding: '16px',
                     }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                      <span style={{ background: '#16a34a', color: '#ffffff', width: '24px', height: '24px', borderRadius: '50%', display: 'grid', placeItems: 'center', fontSize: '12px', fontWeight: 800 }}>
+                      <span style={{ background: '#065f46', color: '#ffffff', width: '24px', height: '24px', borderRadius: '50%', display: 'grid', placeItems: 'center', fontSize: '12px', fontWeight: 800 }}>
                         1
                       </span>
-                      <b style={{ fontSize: '13.5px', color: '#15803d' }}>Commande passée</b>
+                      <b style={{ fontSize: '13.5px', color: '#065f46' }}>Commande passée</b>
                     </div>
                     <p style={{ margin: 0, fontSize: '12px', color: '#475569', lineHeight: 1.4 }}>
                       Votre commande a bien été enregistrée le {cagnotte.dateCommande}.
@@ -1406,8 +1506,8 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                   {/* Étape 2 */}
                   <div
                     style={{
-                      background: isArticleReceived ? '#f0fdf4' : '#eff6ff',
-                      border: isArticleReceived ? '1.5px solid #bbf7d0' : '1.5px solid #bfdbfe',
+                      background: isArticleReceived ? '#f2fbf7' : '#eff6ff',
+                      border: isArticleReceived ? '1.5px solid #a7f3d0' : '1.5px solid #bfdbfe',
                       borderRadius: '16px',
                       padding: '16px',
                     }}
@@ -1415,7 +1515,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
                       <span
                         style={{
-                          background: isArticleReceived ? '#16a34a' : '#2563eb',
+                          background: isArticleReceived ? '#065f46' : '#2563eb',
                           color: '#ffffff',
                           width: '24px',
                           height: '24px',
@@ -1428,7 +1528,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                       >
                         2
                       </span>
-                      <b style={{ fontSize: '13.5px', color: isArticleReceived ? '#15803d' : '#1d4ed8' }}>
+                      <b style={{ fontSize: '13.5px', color: isArticleReceived ? '#065f46' : '#1d4ed8' }}>
                         Confirmation stock
                       </b>
                     </div>
@@ -1442,8 +1542,8 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                   {/* Étape 3 */}
                   <div
                     style={{
-                      background: isArticleReceived ? '#f0fdf4' : '#faf6f3',
-                      border: isArticleReceived ? '1.5px solid #bbf7d0' : '1.5px solid #f0e8e0',
+                      background: isArticleReceived ? '#f2fbf7' : '#faf6f3',
+                      border: isArticleReceived ? '1.5px solid #a7f3d0' : '1.5px solid #f0e8e0',
                       borderRadius: '16px',
                       padding: '16px',
                     }}
@@ -1451,7 +1551,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
                       <span
                         style={{
-                          background: isArticleReceived ? '#16a34a' : '#706966',
+                          background: isArticleReceived ? '#065f46' : '#706966',
                           color: '#ffffff',
                           width: '24px',
                           height: '24px',
@@ -1464,7 +1564,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                       >
                         3
                       </span>
-                      <b style={{ fontSize: '13.5px', color: isArticleReceived ? '#15803d' : '#2b2624' }}>
+                      <b style={{ fontSize: '13.5px', color: isArticleReceived ? '#065f46' : '#2b2624' }}>
                         Acheminement
                       </b>
                     </div>
@@ -1478,8 +1578,8 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                   {/* Étape 4 */}
                   <div
                     style={{
-                      background: isArticleReceived ? '#f0fdf4' : '#faf6f3',
-                      border: isArticleReceived ? '1.5px solid #bbf7d0' : '1.5px solid #f0e8e0',
+                      background: isArticleReceived ? '#f2fbf7' : '#faf6f3',
+                      border: isArticleReceived ? '1.5px solid #a7f3d0' : '1.5px solid #f0e8e0',
                       borderRadius: '16px',
                       padding: '16px',
                     }}
@@ -1487,7 +1587,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
                       <span
                         style={{
-                          background: isArticleReceived ? '#16a34a' : '#706966',
+                          background: isArticleReceived ? '#065f46' : '#706966',
                           color: '#ffffff',
                           width: '24px',
                           height: '24px',
@@ -1500,7 +1600,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                       >
                         4
                       </span>
-                      <b style={{ fontSize: '13.5px', color: isArticleReceived ? '#15803d' : '#2b2624' }}>
+                      <b style={{ fontSize: '13.5px', color: isArticleReceived ? '#065f46' : '#2b2624' }}>
                         Réception & Cash
                       </b>
                     </div>
@@ -1526,7 +1626,9 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                 }}
               >
                 <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
-                  <span style={{ fontSize: '22px' }}>💵</span>
+                  <div style={{ width: '38px', height: '38px', borderRadius: '10px', background: '#e6f7f0', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+                    <Banknote size={20} color="#065f46" />
+                  </div>
                   <div>
                     <b style={{ fontSize: '13.5px', color: '#1e293b', display: 'block', marginBottom: '3px' }}>
                       Préparez la somme exacte
@@ -1538,7 +1640,9 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                 </div>
 
                 <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
-                  <span style={{ fontSize: '22px' }}>📞</span>
+                  <div style={{ width: '38px', height: '38px', borderRadius: '10px', background: '#e0f2fe', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+                    <Phone size={20} color="#0284c7" />
+                  </div>
                   <div>
                     <b style={{ fontSize: '13.5px', color: '#1e293b', display: 'block', marginBottom: '3px' }}>
                       Restez joignable au téléphone
@@ -1550,7 +1654,9 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                 </div>
 
                 <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
-                  <span style={{ fontSize: '22px' }}>🔍</span>
+                  <div style={{ width: '38px', height: '38px', borderRadius: '10px', background: '#f8fafc', border: '1px solid #e2e8f0', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+                    <Search size={20} color="#475569" />
+                  </div>
                   <div>
                     <b style={{ fontSize: '13.5px', color: '#1e293b', display: 'block', marginBottom: '3px' }}>
                       Vérifiez l’article à la remise
@@ -1732,8 +1838,16 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                     )}
                     <div>
                       <span style={{ color: '#706966' }}>Statut réception : </span>
-                      <b style={{ color: isArticleReceived ? '#15803d' : '#0369a1' }}>
-                        {isArticleReceived ? '✔ Article remis & reçu' : '⏳ En attente de livraison'}
+                      <b style={{ color: isArticleReceived ? '#065f46' : '#0369a1' }}>
+                        {isArticleReceived ? (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                            <CheckCircle2 size={13} /> Article remis & reçu
+                          </span>
+                        ) : (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                            <Truck size={13} /> En attente de livraison
+                          </span>
+                        )}
                       </b>
                     </div>
                   </div>
@@ -1750,12 +1864,12 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                     padding: '16px',
                     borderRadius: '16px',
                     border: 'none',
-                    background: '#16a34a',
+                    background: '#065f46',
                     color: '#ffffff',
                     fontWeight: 800,
                     fontSize: '15.5px',
                     cursor: 'pointer',
-                    boxShadow: '0 6px 20px rgba(22, 163, 74, 0.28)',
+                    boxShadow: '0 6px 20px rgba(6, 78, 59, 0.25)',
                     display: 'inline-flex',
                     alignItems: 'center',
                     justifyContent: 'center',
@@ -1764,13 +1878,13 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                     transition: 'background .15s',
                   }}
                   onMouseEnter={(e) => {
-                    e.currentTarget.style.background = '#15803d';
+                    e.currentTarget.style.background = '#044332';
                   }}
                   onMouseLeave={(e) => {
-                    e.currentTarget.style.background = '#16a34a';
+                    e.currentTarget.style.background = '#065f46';
                   }}
                 >
-                  <span className="material-symbols-outlined" style={{ fontSize: '20px' }}>check_circle</span>
+                  <CheckCircle2 size={18} />
                   Oui, article reçu
                 </button>
               )}
@@ -2501,7 +2615,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                   width: '32px',
                   height: '6px',
                   borderRadius: '99px',
-                  background: '#16a34a',
+                  background: '#065f46',
                 }}
               />
               <span
@@ -2509,7 +2623,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                   width: '32px',
                   height: '6px',
                   borderRadius: '99px',
-                  background: confirmReceiptStep === 2 ? '#16a34a' : '#e2e8f0',
+                  background: confirmReceiptStep === 2 ? '#065f46' : '#e2e8f0',
                   transition: 'background .2s ease',
                 }}
               />
@@ -2530,9 +2644,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                     margin: '0 auto 16px',
                   }}
                 >
-                  <span className="material-symbols-outlined" style={{ fontSize: '32px' }}>
-                    local_shipping
-                  </span>
+                  <Truck size={30} color="#0284c7" />
                 </div>
 
                 <div style={{ fontSize: '12px', fontWeight: 800, color: '#0369a1', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' }}>
@@ -2583,7 +2695,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                     <b style={{ fontSize: '14.5px', color: '#1b1716', display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {p.n}
                     </b>
-                    <span style={{ fontSize: '13px', color: '#15803d', fontWeight: 800 }}>
+                    <span style={{ fontSize: '13px', color: '#065f46', fontWeight: 800 }}>
                       Montant : {formatFCFA(cagnotte.prixTotal)}
                     </span>
                   </div>
@@ -2633,7 +2745,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                     }}
                   >
                     <span>Oui, continuer</span>
-                    <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>arrow_forward</span>
+                    <span style={{ fontSize: '15px' }}>→</span>
                   </button>
                 </div>
               </>
@@ -2645,19 +2757,17 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                     width: '60px',
                     height: '60px',
                     borderRadius: '50%',
-                    background: '#dcfce7',
-                    color: '#15803d',
+                    background: '#e6f7f0',
+                    color: '#065f46',
                     display: 'grid',
                     placeItems: 'center',
                     margin: '0 auto 16px',
                   }}
                 >
-                  <span className="material-symbols-outlined" style={{ fontSize: '32px' }}>
-                    verified
-                  </span>
+                  <CheckCircle2 size={32} color="#065f46" />
                 </div>
 
-                <div style={{ fontSize: '12px', fontWeight: 800, color: '#15803d', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' }}>
+                <div style={{ fontSize: '12px', fontWeight: 800, color: '#065f46', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' }}>
                   Étape 2 sur 2 · Reconfirmation définitive
                 </div>
 
@@ -2683,7 +2793,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                   }}
                 >
                   <div style={{ display: 'flex', gap: '8px', marginBottom: '6px', alignItems: 'center' }}>
-                    <span style={{ fontSize: '18px' }}>⚠️</span>
+                    <AlertTriangle size={18} color="#b45309" />
                     <b>Points à vérifier impérativement :</b>
                   </div>
                   <ul style={{ margin: 0, paddingLeft: '20px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -2713,7 +2823,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                     type="checkbox"
                     checked={receiptCheckbox}
                     onChange={(e) => setReceiptCheckbox(e.target.checked)}
-                    style={{ width: '18px', height: '18px', accentColor: '#16a34a', cursor: 'pointer' }}
+                    style={{ width: '18px', height: '18px', accentColor: '#065f46', cursor: 'pointer' }}
                   />
                   <span>
                     Je certifie avoir reçu l'article conforme et avoir réglé la totalité en espèces au livreur.
@@ -2749,12 +2859,12 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                       padding: '13px',
                       borderRadius: '12px',
                       border: 'none',
-                      background: !receiptCheckbox || isConfirmingReceipt ? '#a7f3d0' : '#16a34a',
+                      background: !receiptCheckbox || isConfirmingReceipt ? '#a7f3d0' : '#065f46',
                       color: '#ffffff',
                       fontWeight: 800,
                       fontSize: '13.5px',
                       cursor: !receiptCheckbox || isConfirmingReceipt ? 'not-allowed' : 'pointer',
-                      boxShadow: receiptCheckbox ? '0 4px 14px rgba(22,163,74,0.3)' : 'none',
+                      boxShadow: receiptCheckbox ? '0 4px 14px rgba(6, 78, 59, 0.25)' : 'none',
                       display: 'inline-flex',
                       alignItems: 'center',
                       justifyContent: 'center',
@@ -2762,7 +2872,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                       transition: 'all .15s ease',
                     }}
                   >
-                    <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>check_circle</span>
+                    <CheckCircle2 size={18} />
                     {isConfirmingReceipt ? 'Confirmation...' : 'Confirmer définitivement'}
                   </button>
                 </div>

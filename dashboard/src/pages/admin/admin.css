@@ -608,15 +608,17 @@
   text-align: left;
   color: var(--mut);
   font-weight: 700;
-  padding-bottom: 12px;
+  padding: 12px 10px;
   font-size: 13px;
   letter-spacing: 0.3px;
+  vertical-align: middle;
 }
 .admin-table td {
   padding: 14px 10px;
   border-top: 1px solid var(--line);
   color: var(--ink);
   font-size: 14px;
+  vertical-align: middle;
 }
 .admin-tr-anim {
   opacity: 0;
