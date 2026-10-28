@@ -723,7 +723,7 @@ export const mapBackendCagnotteToClient = (c) => {
     moisRestants: (isLibre || isCash) ? null : moisRestants,
     statut: articleRecu
       ? 'completed'
-      : (c.statut === 'annulee' || c.statut === 'cancelled'
+      : (c.statut === 'annulee' || c.statut === 'cancelled' || c.statut === 'annulation_demandee'
           ? 'cancelled'
           : (isCash
               ? (isCod ? 'active' : 'completed')

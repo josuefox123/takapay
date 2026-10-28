@@ -18,11 +18,11 @@ const EMPTY_STATS = {
 
 export const adminService = {
   getToken() {
-    return localStorage.getItem('takapay_admin_token');
+    return localStorage.getItem('takapay_admin_token') || localStorage.getItem('takapay_client_token');
   },
 
   getClientToken() {
-    return localStorage.getItem('takapay_client_token');
+    return localStorage.getItem('takapay_client_token') || localStorage.getItem('takapay_admin_token');
   },
 
   async initiatePayment(payload) {
@@ -96,6 +96,51 @@ export const adminService = {
     }
   },
 
+  async cancelCagnotte(cagnotteId, payload = {}) {
+    try {
+      const res = await fetch(`${API_BASE}/cagnottes/${cagnotteId}/annuler`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          ...(this.getToken() ? { Authorization: `Bearer ${this.getToken()}` } : {}),
+        },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || "Erreur lors de la demande d'annulation.");
+      }
+      return await res.json();
+    } catch (e) {
+      console.error('Erreur annulation cagnotte:', e);
+      throw e;
+    }
+  },
+
+  async rembourserCagnotteFeexpay(cagnotteId, payload = {}) {
+    try {
+      const token = this.getToken();
+      const res = await fetch(`${API_BASE}/admin/cagnottes/${cagnotteId}/rembourser-feexpay`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.message || 'Erreur lors du remboursement FeexPay.');
+      }
+      return data;
+    } catch (e) {
+      console.error('Erreur remboursement FeexPay:', e);
+      throw e;
+    }
+  },
+
   async getNotifications(userId = null) {
     try {
       const query = userId ? `?user_id=${userId}` : '';
@@ -148,7 +193,7 @@ export const adminService = {
 
   getUser() {
     try {
-      const u = localStorage.getItem('takapay_admin_user');
+      const u = localStorage.getItem('takapay_admin_user') || localStorage.getItem('takapay-client-user');
       return u ? JSON.parse(u) : null;
     } catch {
       return null;
@@ -633,11 +678,14 @@ export const adminService = {
 
   async createCategorie(payload) {
     const token = this.getToken();
+    if (!token) {
+      throw new Error("Session expirée. Veuillez vous reconnecter en tant qu'administrateur.");
+    }
     const res = await fetch(`${API_BASE}/categories`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        Authorization: `Bearer ${token}`,
         Accept: 'application/json',
       },
       body: JSON.stringify(payload),
@@ -681,11 +729,14 @@ export const adminService = {
 
   async createSousCategorie(payload) {
     const token = this.getToken();
+    if (!token) {
+      throw new Error("Session expirée. Veuillez vous reconnecter en tant qu'administrateur.");
+    }
     const res = await fetch(`${API_BASE}/sous-categories`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        Authorization: `Bearer ${token}`,
         Accept: 'application/json',
       },
       body: JSON.stringify(payload),

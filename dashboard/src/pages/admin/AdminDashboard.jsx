@@ -54,7 +54,7 @@ export default function AdminDashboard() {
     navigate(`/admin/${newTab}`);
   };
 
-  const [adminUser] = useState(() => adminService.getUser());
+  const [adminUser, setAdminUser] = useState(() => adminService.getUser());
   const [stats, setStats] = useState(null);
   const [kpis, setKpis] = useState({
     encaisse_ce_mois: 0,
@@ -62,6 +62,45 @@ export default function AdminDashboard() {
     documents_a_valider: 0,
     nouveaux_utilisateurs: 0,
   });
+
+  // Vérification de la session admin et mise à jour de l'utilisateur
+  useEffect(() => {
+    const token = adminService.getToken();
+    if (!token) {
+      navigate('/admin/connexion', { replace: true });
+      return;
+    }
+
+    fetch('/api/me', {
+      headers: {
+        Accept: 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    })
+      .then((res) => {
+        if (res.status === 401 || res.status === 403) {
+          adminService.logout();
+          navigate('/admin/connexion', { replace: true });
+          return null;
+        }
+        return res.ok ? res.json() : null;
+      })
+      .then((data) => {
+        if (data) {
+          const user = data.user || data.data || data;
+          if (user?.role !== 'super_admin' && user?.role !== 'admin') {
+            adminService.logout();
+            navigate('/admin/connexion', { replace: true });
+            return;
+          }
+          setAdminUser(user);
+          try {
+            localStorage.setItem('takapay_admin_user', JSON.stringify(user));
+          } catch {}
+        }
+      })
+      .catch(() => {});
+  }, [navigate]);
 
   // Toast flottant
   const [toastMessage, setToastMessage] = useState('');
@@ -126,7 +165,7 @@ export default function AdminDashboard() {
     showToast(isApproved ? 'Document validé' : 'Document rejeté');
   };
 
-  const prenom = adminUser?.prenom || 'Aureliane';
+  const prenom = adminUser?.prenom || adminUser?.nom || 'Admin';
 
   return (
     <div className="admin-scope">

@@ -28,6 +28,10 @@ class CagnotteResource extends JsonResource
             'telephone_livraison' => $this->telephone_livraison,
             'note_livraison' => $this->note_livraison,
             'coordonnees_gps' => $this->coordonnees_gps,
+            'montant_remboursement' => $this->montant_remboursement,
+            'frais_annulation' => $this->frais_annulation,
+            'telephone_remboursement' => $this->telephone_remboursement,
+            'date_demande_annulation' => $this->date_demande_annulation,
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
         ];
