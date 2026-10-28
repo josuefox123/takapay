@@ -50,6 +50,8 @@ Route::get('produits/{produit}', [ProduitController::class, 'show'])->name('prod
 Route::get('promotions', [PromotionController::class, 'index'])->name('promotions.index');
 Route::get('cagnottes', [CagnotteController::class, 'index'])->name('cagnottes.index');
 Route::post('cagnottes/{cagnotte}/confirmer-reception', [CagnotteController::class, 'confirmerReception'])->name('cagnottes.confirmer-reception');
+Route::post('cagnottes/{cagnotte}/annuler', [CagnotteController::class, 'demanderAnnulation'])->name('cagnottes.annuler');
+Route::post('cagnottes/{cagnotte}/rembourser-feexpay', [CagnotteController::class, 'validerRemboursementFeexpay'])->name('cagnottes.rembourser-feexpay');
 Route::get('notifications', [NotificationController::class, 'index'])->name('notifications.index');
 Route::put('notifications/{notification}/lire', [NotificationController::class, 'marquerCommeLu'])->name('notifications.marquer-lu');
 Route::post('notifications/tout-lire', [NotificationController::class, 'toutMarquerCommeLu'])->name('notifications.tout-lire');
@@ -110,6 +112,9 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
             Route::get('/support/conversations/{id}', [SupportChatController::class, 'adminGetConversation']);
             Route::post('/support/conversations/{id}/reply', [SupportChatController::class, 'adminReply']);
             Route::patch('/support/conversations/{id}/close', [SupportChatController::class, 'adminCloseConversation']);
+
+            // Remboursements FeexPay
+            Route::post('/cagnottes/{cagnotte}/rembourser-feexpay', [CagnotteController::class, 'validerRemboursementFeexpay']);
         });
 
         // Gestion des comptes, du KYC, des audits et des livreurs

@@ -78,6 +78,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
   const [depositError, setDepositError] = useState('');
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
+  const [cancelPhone, setCancelPhone] = useState(user?.telephone || user?.phone || '');
   const [showConfirmReceiptModal, setShowConfirmReceiptModal] = useState(false);
   const [confirmReceiptStep, setConfirmReceiptStep] = useState(1);
   const [receiptCheckbox, setReceiptCheckbox] = useState(false);
@@ -229,6 +230,11 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
     setDepositError('');
   };
 
+  const openCancelModal = () => {
+    setCancelPhone(user?.telephone || user?.phone || activeCagnotte?.deliveryPhone || '');
+    setShowCancelModal(true);
+  };
+
   const handleCancelCagnotte = async () => {
     if (!activeCagnotte) return;
     setIsCancelling(true);
@@ -238,6 +244,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
     const penaltyPercent = 5;
     const penaltyAmount = Math.round((paidAmount * penaltyPercent) / 100);
     const refundAmount = Math.max(0, paidAmount - penaltyAmount);
+    const effectivePhone = (cancelPhone || '').trim() || user?.telephone || user?.phone || activeCagnotte.deliveryPhone || 'Mobile Money';
 
     const now = new Date();
     const dateFormatted =
@@ -248,11 +255,11 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
     const cancelTx = {
       id: `tx-cancel-${Date.now()}`,
       reference: `TK-ANNUL-${Date.now()}`,
-      titre: 'Annulation cagnotte (Retenue 5% CGU)',
+      titre: 'Demande d’annulation (-5% de retenue)',
       methode: activeCagnotte.moyenPaiement || 'Mobile Money',
       date: dateFormatted,
       montant: refundAmount,
-      statut: 'Remboursement en cours',
+      statut: 'Remboursement sous 24H',
       type: 'annulation',
       periode: 'aujourdhui',
       client: clientName,
@@ -261,6 +268,9 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
     const updatedCagnotte = {
       ...activeCagnotte,
       statut: 'cancelled',
+      montantRemboursement: refundAmount,
+      fraisAnnulation: penaltyAmount,
+      telephoneRemboursement: effectivePhone,
       transactions: [cancelTx, ...(activeCagnotte.transactions || [])],
     };
 
@@ -277,20 +287,14 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
       // Ignorer
     }
 
-    if (activeCagnotte.backendId) {
+    const backendCagnotteId = activeCagnotte.backendId || (String(activeCagnotte.id).startsWith('cag-') ? String(activeCagnotte.id).replace('cag-', '') : activeCagnotte.id);
+    if (backendCagnotteId) {
       try {
-        const token = adminService.getClientToken() || adminService.getToken();
-        fetch(`/api/cagnottes/${activeCagnotte.backendId}`, {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-            Accept: 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          },
-          body: JSON.stringify({ statut: 'annulee' }),
-        }).catch(() => {});
-      } catch {
-        // Ignorer
+        await adminService.cancelCagnotte(backendCagnotteId, {
+          telephone: effectivePhone,
+        });
+      } catch (err) {
+        console.warn('Erreur API annulation:', err);
       }
     }
 
@@ -299,7 +303,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
 
     onShowToast?.(
       paidAmount > 0
-        ? `Cagnotte annulée. Frais de gestion de 5% déduits (${formatFCFA(penaltyAmount)}). Remboursement net : ${formatFCFA(refundAmount)}.`
+        ? `Demande d'annulation prise en compte. Un virement de ${formatFCFA(refundAmount)} (déduit de 5% de frais) vous sera renvoyé dans un délai de 24H sur le ${effectivePhone}.`
         : 'Cagnotte annulée avec succès.'
     );
   };
@@ -933,7 +937,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
               {!isCash && !isFinished && !isCancelled && (
                 <button
                   type="button"
-                  onClick={() => setShowCancelModal(true)}
+                  onClick={openCancelModal}
                   style={{
                     padding: '10px 18px',
                     borderRadius: '12px',
@@ -1044,14 +1048,28 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
               }}
             >
               <div>
-                <h3 style={{ margin: '0 0 4px', fontSize: '18px', fontWeight: 800 }}>
-                  Cagnotte clôturée et annulée
+                <h3 style={{ margin: '0 0 4px', fontSize: '18px', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '22px', color: '#dc2626' }}>cancel</span>
+                  <span>Cagnotte annulée · Remboursement sous 24H</span>
                 </h3>
-                <p style={{ margin: 0, fontSize: '13.5px', opacity: 0.95 }}>
-                  Cette cagnotte est annulée. Conformément aux conditions d'utilisation, une retenue forfaitaire de 5% a été appliquée sur vos versements pour frais de gestion. Le remboursement est en cours de traitement.
+                <p style={{ margin: 0, fontSize: '13.5px', opacity: 0.95, lineHeight: 1.5 }}>
+                  Cette cagnotte fait l'objet d'une demande d'annulation. Conformément aux CGU, une retenue forfaitaire de 5% est déduite pour frais de gestion. Le montant restant (95%) vous sera renvoyé dans un délai maximal de <b>24 heures</b> sur votre numéro Mobile Money.
                 </p>
               </div>
-              <span style={{ fontSize: '32px' }}>🚫</span>
+              <div
+                style={{
+                  width: '44px',
+                  height: '44px',
+                  borderRadius: '50%',
+                  background: '#fee2e2',
+                  display: 'grid',
+                  placeItems: 'center',
+                  color: '#dc2626',
+                  flexShrink: 0,
+                }}
+              >
+                <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '24px' }}>history_toggle_off</span>
+              </div>
             </div>
           )}
 
@@ -2394,11 +2412,11 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
               }}
             >
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
-                <span style={{ fontSize: '18px' }}>⚠️</span>
+                <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '20px', color: '#d97706', flexShrink: 0 }}>warning</span>
                 <div style={{ fontSize: '12.5px', color: '#92400e', lineHeight: 1.5 }}>
-                  <b>Conformément aux conditions générales d’utilisation :</b>
+                  <b>Conditions d’annulation :</b>
                   <br />
-                  Une retenue forfaitaire de <b>5%</b> à titre de frais de dossier et de gestion sera déduite du montant total cotisé. Le reste vous sera reversé.
+                  Une retenue forfaitaire de <b>5%</b> sera déduite du montant total cotisé au titre des frais de dossier et de gestion. Les <b>95% restants</b> vous seront renvoyés sous <b>24 heures</b> par virement Mobile Money.
                 </div>
               </div>
             </div>
@@ -2410,7 +2428,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                 border: '1px solid #eee7e0',
                 borderRadius: '14px',
                 padding: '14px 16px',
-                marginBottom: '22px',
+                marginBottom: '18px',
                 display: 'flex',
                 flexDirection: 'column',
                 gap: '8px',
@@ -2422,7 +2440,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                 <b style={{ color: '#1b1716' }}>{formatFCFA(cagnotte.montantVerse || 0)}</b>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: '#b91c1c' }}>Frais déduits (5% selon CGU) :</span>
+                <span style={{ color: '#b91c1c' }}>Frais retenus (5%) :</span>
                 <b style={{ color: '#b91c1c' }}>
                   - {formatFCFA(Math.round(((cagnotte.montantVerse || 0) * 5) / 100))}
                 </b>
@@ -2436,7 +2454,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                   fontSize: '14px',
                 }}
               >
-                <span style={{ fontWeight: 800, color: '#15803d' }}>Montant net remboursable :</span>
+                <span style={{ fontWeight: 800, color: '#15803d' }}>Montant net remboursé (95%) :</span>
                 <b style={{ fontWeight: 800, color: '#15803d' }}>
                   {formatFCFA(
                     Math.max(
@@ -2447,6 +2465,32 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                   )}
                 </b>
               </div>
+            </div>
+
+            {/* Numéro pour le remboursement */}
+            <div style={{ marginBottom: '20px' }}>
+              <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 700, marginBottom: '6px', color: '#1b1716' }}>
+                Numéro Mobile Money pour recevoir le remboursement *
+              </label>
+              <input
+                type="tel"
+                required
+                value={cancelPhone}
+                onChange={(e) => setCancelPhone(e.target.value)}
+                placeholder="Ex: 97000000 ou 61000000"
+                style={{
+                  width: '100%',
+                  padding: '11px 14px',
+                  borderRadius: '10px',
+                  border: '1.5px solid #ded6cd',
+                  fontSize: '13.5px',
+                  boxSizing: 'border-box',
+                }}
+              />
+              <small style={{ color: '#706966', fontSize: '11.5px', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '14px', color: '#16a34a' }}>schedule</span>
+                <span>Remboursement garanti dans un délai maximal de <b>24 heures</b>.</span>
+              </small>
             </div>
 
             <div style={{ display: 'flex', gap: '10px' }}>
@@ -2487,7 +2531,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                   opacity: isCancelling ? 0.7 : 1,
                 }}
               >
-                {isCancelling ? 'Annulation...' : 'Oui, confirmer l’annulation'}
+                {isCancelling ? 'Traitement...' : 'Oui, confirmer l’annulation'}
               </button>
             </div>
           </div>

@@ -25,14 +25,21 @@ class Cagnotte extends Model
         'telephone_livraison',
         'note_livraison',
         'coordonnees_gps',
+        'montant_remboursement',
+        'frais_annulation',
+        'telephone_remboursement',
+        'date_demande_annulation',
     ];
 
     protected function casts(): array
     {
         return [
-            'prix_unitaire'    => 'decimal:2',
-            'montant_verse'    => 'decimal:2',
-            'montant_objectif' => 'decimal:2',
+            'prix_unitaire'           => 'decimal:2',
+            'montant_verse'           => 'decimal:2',
+            'montant_objectif'        => 'decimal:2',
+            'montant_remboursement'   => 'decimal:2',
+            'frais_annulation'        => 'decimal:2',
+            'date_demande_annulation' => 'datetime',
         ];
     }
 
