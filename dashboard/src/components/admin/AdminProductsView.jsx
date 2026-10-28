@@ -22,10 +22,15 @@ export default function AdminProductsView({ onShowToast }) {
   const [catErrors, setCatErrors] = useState({});
   const [subCatErrors, setSubCatErrors] = useState({});
 
-  // Modals pour la suppression de produit
+  // Modals pour la suppression
   const [productToDelete, setProductToDelete] = useState(null);
   const [blockedProduct, setBlockedProduct] = useState(null);
+  const [categoryToDelete, setCategoryToDelete] = useState(null);
+  const [subCategoryToDelete, setSubCategoryToDelete] = useState(null);
+  const [blockedCategoryOrSub, setBlockedCategoryOrSub] = useState(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isDeletingCategory, setIsDeletingCategory] = useState(false);
+  const [isDeletingSubCategory, setIsDeletingSubCategory] = useState(false);
 
   // Formulaire Produit
   const [form, setForm] = useState({
@@ -629,8 +634,12 @@ export default function AdminProductsView({ onShowToast }) {
         setNewCatImageName('');
         onShowToast(`Catégorie "${res.data.nom}" créée avec succès !`);
       }
-    } catch {
-      alert('Erreur lors de la création de la catégorie.');
+    } catch (err) {
+      const errMsg = err?.message || 'Erreur lors de la création de la catégorie.';
+      if (err?.errors?.nom) {
+        setCatErrors({ nom: err.errors.nom[0] });
+      }
+      if (onShowToast) onShowToast(errMsg);
     } finally {
       setCatSubmitting(false);
     }
@@ -671,20 +680,23 @@ export default function AdminProductsView({ onShowToast }) {
         setNewSubCatImageName('');
         onShowToast(`Sous-catégorie "${res.data.nom}" créée avec succès !`);
       }
-    } catch {
-      alert('Erreur lors de la création de la sous-catégorie.');
+    } catch (err) {
+      const errMsg = err?.message || 'Erreur lors de la création de la sous-catégorie.';
+      if (err?.errors?.nom) {
+        setSubCatErrors((prev) => ({ ...prev, nom: err.errors.nom[0] }));
+      }
+      if (onShowToast) onShowToast(errMsg);
     } finally {
       setCatSubmitting(false);
     }
   };
 
-  // Suppression d'une catégorie avec vérification préalable
-  const handleDeleteCategory = async (cat) => {
+  // Déclenchement de la suppression d'une catégorie avec vérification préalable
+  const handleDeleteCategory = (cat) => {
     const subIds = sousCategories
       .filter((s) => String(s.categorie_id) === String(cat.id) || String(s.categorie?.id) === String(cat.id))
       .map((s) => String(s.id));
 
-    // Vérification préalable : un seul message d'alerte direct sans demander confirmation inutilement
     const hasActive = produits.some(
       (p) =>
         (String(p.categorie_id) === String(cat.id) || subIds.includes(String(p.sous_categorie_id)) || subIds.includes(String(p.sous_categorie?.id))) &&
@@ -692,19 +704,24 @@ export default function AdminProductsView({ onShowToast }) {
     );
 
     if (hasActive) {
-      alert('Impossible de supprimer cette catégorie car un achat est actuellement en cours sur un de ses produits.');
+      setBlockedCategoryOrSub({
+        type: 'catégorie',
+        nom: cat.nom,
+      });
       return;
     }
 
     const subs = sousCategories.filter(
       (s) => String(s.categorie_id) === String(cat.id) || String(s.categorie?.id) === String(cat.id)
     );
-    const msg = subs.length > 0
-      ? `Êtes-vous sûr de vouloir supprimer la catégorie "${cat.nom}" ?\n\nAttention : cela supprimera également ses ${subs.length} sous-catégorie(s) et les produits associés.`
-      : `Êtes-vous sûr de vouloir supprimer la catégorie "${cat.nom}" ?`;
 
-    if (!window.confirm(msg)) return;
+    setCategoryToDelete({ cat, subsCount: subs.length });
+  };
 
+  const handleConfirmDeleteCategory = async () => {
+    if (!categoryToDelete) return;
+    const { cat } = categoryToDelete;
+    setIsDeletingCategory(true);
     try {
       await adminService.deleteCategorie(cat.id);
       setCategories((prev) => prev.filter((c) => String(c.id) !== String(cat.id)));
@@ -714,14 +731,30 @@ export default function AdminProductsView({ onShowToast }) {
       if (onShowToast) {
         onShowToast(`Catégorie "${cat.nom}" supprimée avec succès.`);
       }
+      setCategoryToDelete(null);
     } catch (err) {
-      alert(err.message || 'Erreur lors de la suppression de la catégorie.');
+      setCategoryToDelete(null);
+      if (
+        err?.status === 422 ||
+        err?.message?.includes('cagnotte') ||
+        err?.message?.includes('achat') ||
+        err?.data?.message?.includes('cagnotte') ||
+        err?.data?.message?.includes('achat')
+      ) {
+        setBlockedCategoryOrSub({
+          type: 'catégorie',
+          nom: cat.nom,
+        });
+      } else if (onShowToast) {
+        onShowToast(err.message || 'Erreur lors de la suppression de la catégorie.');
+      }
+    } finally {
+      setIsDeletingCategory(false);
     }
   };
 
-  // Suppression d'une sous-catégorie avec vérification préalable
-  const handleDeleteSousCategory = async (sub) => {
-    // Vérification préalable : un seul message d'alerte direct sans demander confirmation inutilement
+  // Déclenchement de la suppression d'une sous-catégorie avec vérification préalable
+  const handleDeleteSousCategory = (sub) => {
     const hasActive = produits.some(
       (p) =>
         (String(p.sous_categorie_id) === String(sub.id) || String(p.sous_categorie?.id) === String(sub.id)) &&
@@ -729,20 +762,45 @@ export default function AdminProductsView({ onShowToast }) {
     );
 
     if (hasActive) {
-      alert('Impossible de supprimer cette sous-catégorie car un achat est actuellement en cours sur un de ses produits.');
+      setBlockedCategoryOrSub({
+        type: 'sous-catégorie',
+        nom: sub.nom,
+      });
       return;
     }
 
-    if (!window.confirm(`Supprimer la sous-catégorie "${sub.nom}" ?\n\nAttention : les produits associés à cette sous-catégorie seront également supprimés.`)) return;
+    setSubCategoryToDelete(sub);
+  };
 
+  const handleConfirmDeleteSousCategory = async () => {
+    if (!subCategoryToDelete) return;
+    const sub = subCategoryToDelete;
+    setIsDeletingSubCategory(true);
     try {
       await adminService.deleteSousCategorie(sub.id);
       setSousCategories((prev) => prev.filter((s) => String(s.id) !== String(sub.id)));
       if (onShowToast) {
         onShowToast(`Sous-catégorie "${sub.nom}" supprimée.`);
       }
+      setSubCategoryToDelete(null);
     } catch (err) {
-      alert(err.message || 'Erreur lors de la suppression de la sous-catégorie.');
+      setSubCategoryToDelete(null);
+      if (
+        err?.status === 422 ||
+        err?.message?.includes('cagnotte') ||
+        err?.message?.includes('achat') ||
+        err?.data?.message?.includes('cagnotte') ||
+        err?.data?.message?.includes('achat')
+      ) {
+        setBlockedCategoryOrSub({
+          type: 'sous-catégorie',
+          nom: sub.nom,
+        });
+      } else if (onShowToast) {
+        onShowToast(err.message || 'Erreur lors de la suppression de la sous-catégorie.');
+      }
+    } finally {
+      setIsDeletingSubCategory(false);
     }
   };
 
@@ -1096,6 +1154,333 @@ export default function AdminProductsView({ onShowToast }) {
             })}
           </div>
         </div>
+
+        {/* Modal : Signalement que la catégorie ou sous-catégorie ne peut pas être supprimée */}
+        {blockedCategoryOrSub && (
+          <div
+            role="dialog"
+            aria-modal="true"
+            style={{
+              position: 'fixed',
+              inset: 0,
+              background: 'rgba(15, 23, 42, 0.65)',
+              zIndex: 9999,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '20px',
+              backdropFilter: 'blur(4px)',
+            }}
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setBlockedCategoryOrSub(null);
+            }}
+          >
+            <div
+              style={{
+                background: 'var(--card, #ffffff)',
+                borderRadius: '20px',
+                maxWidth: '480px',
+                width: '100%',
+                padding: '28px',
+                border: '1px solid var(--line, #e2e8f0)',
+                boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+              }}
+            >
+              <div
+                style={{
+                  width: '52px',
+                  height: '52px',
+                  borderRadius: '14px',
+                  background: '#fef3c7',
+                  color: '#d97706',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  marginBottom: '16px',
+                }}
+              >
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="10" />
+                  <line x1="12" y1="8" x2="12" y2="12" />
+                  <line x1="12" y1="16" x2="12.01" y2="16" />
+                </svg>
+              </div>
+
+              <h3 style={{ fontSize: '18px', fontWeight: 800, marginBottom: '8px', color: 'var(--ink, #0f172a)' }}>
+                Suppression impossible
+              </h3>
+
+              <p style={{ color: 'var(--ink, #334155)', fontSize: '14px', lineHeight: 1.5, marginBottom: '14px' }}>
+                {blockedCategoryOrSub.type === 'catégorie' ? 'La catégorie' : 'La sous-catégorie'} <strong>« {blockedCategoryOrSub.nom} »</strong> ne peut pas être supprimée car <strong>une cagnotte est actuellement en cours</strong> sur l'un de ses produits.
+              </p>
+
+              <div
+                style={{
+                  background: '#fffbeb',
+                  border: '1px solid #fef3c7',
+                  borderRadius: '12px',
+                  padding: '12px 14px',
+                  marginBottom: '20px',
+                  fontSize: '13px',
+                  color: '#92400e',
+                  lineHeight: 1.5,
+                }}
+              >
+                Pour garantir la sécurité des paiements déjà engagés, un élément associé à une cagnotte active ne peut pas être retiré de la base de données.
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                <button
+                  type="button"
+                  onClick={() => setBlockedCategoryOrSub(null)}
+                  style={{
+                    padding: '10px 22px',
+                    borderRadius: '10px',
+                    background: '#ffffff',
+                    color: '#0f172a',
+                    border: '1px solid #cbd5e1',
+                    fontSize: '14px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
+                  }}
+                >
+                  J'ai compris
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Modal : Confirmation de suppression d'une catégorie */}
+        {categoryToDelete && (
+          <div
+            role="dialog"
+            aria-modal="true"
+            style={{
+              position: 'fixed',
+              inset: 0,
+              background: 'rgba(15, 23, 42, 0.65)',
+              zIndex: 9999,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '20px',
+              backdropFilter: 'blur(4px)',
+            }}
+            onClick={(e) => {
+              if (e.target === e.currentTarget && !isDeletingCategory) setCategoryToDelete(null);
+            }}
+          >
+            <div
+              style={{
+                background: 'var(--card, #ffffff)',
+                borderRadius: '20px',
+                maxWidth: '480px',
+                width: '100%',
+                padding: '28px',
+                border: '1px solid var(--line, #e2e8f0)',
+                boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+              }}
+            >
+              <div
+                style={{
+                  width: '52px',
+                  height: '52px',
+                  borderRadius: '14px',
+                  background: '#fee2e2',
+                  color: '#dc2626',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  marginBottom: '16px',
+                }}
+              >
+                <AdminIcon name="trash" size={26} />
+              </div>
+
+              <h3 style={{ fontSize: '18px', fontWeight: 800, marginBottom: '8px', color: 'var(--ink, #0f172a)' }}>
+                Confirmer la suppression
+              </h3>
+
+              <p style={{ color: 'var(--ink, #334155)', fontSize: '14px', lineHeight: 1.5, marginBottom: '14px' }}>
+                Êtes-vous sûr de vouloir supprimer la catégorie <strong>« {categoryToDelete.cat.nom} »</strong> ?
+              </p>
+
+              <div
+                style={{
+                  background: '#fef2f2',
+                  border: '1px solid #fee2e2',
+                  borderRadius: '12px',
+                  padding: '12px 14px',
+                  marginBottom: '20px',
+                  fontSize: '13px',
+                  color: '#991b1b',
+                  lineHeight: 1.5,
+                }}
+              >
+                {categoryToDelete.subsCount > 0
+                  ? `Attention : cela supprimera également ses ${categoryToDelete.subsCount} sous-catégorie(s) et les produits associés. Cette action est irréversible.`
+                  : 'Attention : cette action est irréversible. Les produits associés à cette catégorie seront également supprimés.'}
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                <button
+                  type="button"
+                  disabled={isDeletingCategory}
+                  onClick={() => setCategoryToDelete(null)}
+                  style={{
+                    padding: '10px 18px',
+                    borderRadius: '10px',
+                    background: 'var(--soft, #f1f5f9)',
+                    color: 'var(--ink, #0f172a)',
+                    border: '1px solid var(--line, #e2e8f0)',
+                    fontSize: '14px',
+                    fontWeight: 600,
+                    cursor: isDeletingCategory ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  Annuler
+                </button>
+                <button
+                  type="button"
+                  disabled={isDeletingCategory}
+                  onClick={handleConfirmDeleteCategory}
+                  style={{
+                    padding: '10px 18px',
+                    borderRadius: '10px',
+                    background: '#dc2626',
+                    color: '#ffffff',
+                    border: 'none',
+                    fontSize: '14px',
+                    fontWeight: 600,
+                    cursor: isDeletingCategory ? 'not-allowed' : 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    opacity: isDeletingCategory ? 0.7 : 1,
+                  }}
+                >
+                  {isDeletingCategory ? 'Suppression...' : 'Supprimer définitivement'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Modal : Confirmation de suppression d'une sous-catégorie */}
+        {subCategoryToDelete && (
+          <div
+            role="dialog"
+            aria-modal="true"
+            style={{
+              position: 'fixed',
+              inset: 0,
+              background: 'rgba(15, 23, 42, 0.65)',
+              zIndex: 9999,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '20px',
+              backdropFilter: 'blur(4px)',
+            }}
+            onClick={(e) => {
+              if (e.target === e.currentTarget && !isDeletingSubCategory) setSubCategoryToDelete(null);
+            }}
+          >
+            <div
+              style={{
+                background: 'var(--card, #ffffff)',
+                borderRadius: '20px',
+                maxWidth: '480px',
+                width: '100%',
+                padding: '28px',
+                border: '1px solid var(--line, #e2e8f0)',
+                boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+              }}
+            >
+              <div
+                style={{
+                  width: '52px',
+                  height: '52px',
+                  borderRadius: '14px',
+                  background: '#fee2e2',
+                  color: '#dc2626',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  marginBottom: '16px',
+                }}
+              >
+                <AdminIcon name="trash" size={26} />
+              </div>
+
+              <h3 style={{ fontSize: '18px', fontWeight: 800, marginBottom: '8px', color: 'var(--ink, #0f172a)' }}>
+                Confirmer la suppression
+              </h3>
+
+              <p style={{ color: 'var(--ink, #334155)', fontSize: '14px', lineHeight: 1.5, marginBottom: '14px' }}>
+                Êtes-vous sûr de vouloir supprimer la sous-catégorie <strong>« {subCategoryToDelete.nom} »</strong> ?
+              </p>
+
+              <div
+                style={{
+                  background: '#fef2f2',
+                  border: '1px solid #fee2e2',
+                  borderRadius: '12px',
+                  padding: '12px 14px',
+                  marginBottom: '20px',
+                  fontSize: '13px',
+                  color: '#991b1b',
+                  lineHeight: 1.5,
+                }}
+              >
+                Attention : les produits associés à cette sous-catégorie seront également supprimés. Cette action est irréversible.
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                <button
+                  type="button"
+                  disabled={isDeletingSubCategory}
+                  onClick={() => setSubCategoryToDelete(null)}
+                  style={{
+                    padding: '10px 18px',
+                    borderRadius: '10px',
+                    background: 'var(--soft, #f1f5f9)',
+                    color: 'var(--ink, #0f172a)',
+                    border: '1px solid var(--line, #e2e8f0)',
+                    fontSize: '14px',
+                    fontWeight: 600,
+                    cursor: isDeletingSubCategory ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  Annuler
+                </button>
+                <button
+                  type="button"
+                  disabled={isDeletingSubCategory}
+                  onClick={handleConfirmDeleteSousCategory}
+                  style={{
+                    padding: '10px 18px',
+                    borderRadius: '10px',
+                    background: '#dc2626',
+                    color: '#ffffff',
+                    border: 'none',
+                    fontSize: '14px',
+                    fontWeight: 600,
+                    cursor: isDeletingSubCategory ? 'not-allowed' : 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    opacity: isDeletingSubCategory ? 0.7 : 1,
+                  }}
+                >
+                  {isDeletingSubCategory ? 'Suppression...' : 'Supprimer définitivement'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -2534,6 +2919,8 @@ export default function AdminProductsView({ onShowToast }) {
           </div>
         </div>
       )}
+
+
     </div>
   );
 }

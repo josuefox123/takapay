@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import ClientProductCard from './ClientProductCard';
 import { PRODUCTS } from '../../data/clientStore';
 
@@ -6,9 +7,27 @@ export default function ClientSubcategoryView({
   subcategory,
   products = [],
   isPromoOnly,
+  isFavoritesOnly,
   onBack,
   onSelectProduct,
 }) {
+  const [favIds, setFavIds] = useState(() => {
+    try {
+      const stored = localStorage.getItem('takapay_user_favorites');
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    const handleFavUpdate = (e) => {
+      setFavIds(e.detail || []);
+    };
+    window.addEventListener('takapay_favorites_updated', handleFavUpdate);
+    return () => window.removeEventListener('takapay_favorites_updated', handleFavUpdate);
+  }, []);
+
   const norm = (str) =>
     String(str || '')
       .toLowerCase()
@@ -39,14 +58,24 @@ export default function ClientSubcategoryView({
 
   const sourceProducts = Array.isArray(products) && products.length > 0 ? products : PRODUCTS;
   const list = sourceProducts.filter((p) => {
+    if (isFavoritesOnly) return favIds.includes(p.id);
     if (isPromoOnly) return Boolean(p.o);
     const catOk = !category || category === 'Tous' || matchCategory(p.c, category);
     const subOk = !subcategory || matchSubcategory(p.subcategory, subcategory);
     return catOk && subOk;
   });
 
-  const title = isPromoOnly ? 'Offres en Promotion' : subcategory || category;
-  const subtitle = isPromoOnly ? 'Sélection spéciale TakaPay' : category;
+  const title = isFavoritesOnly
+    ? 'Mes Favoris'
+    : isPromoOnly
+    ? 'Offres en Promotion'
+    : subcategory || category;
+
+  const subtitle = isFavoritesOnly
+    ? 'Vos coups de cœur Takapay'
+    : isPromoOnly
+    ? 'Sélection spéciale TakaPay'
+    : category;
 
   return (
     <div className="page-shell">
@@ -89,12 +118,18 @@ export default function ClientSubcategoryView({
             margin: '20px 0',
           }}
         >
-          <div style={{ fontSize: '40px', marginBottom: '8px' }}>📦</div>
+          <div style={{ fontSize: '40px', marginBottom: '8px' }}>
+            {isFavoritesOnly ? '❤️' : '📦'}
+          </div>
           <strong style={{ fontSize: '16px', display: 'block', color: 'var(--tx)' }}>
-            Aucun article disponible pour le moment dans {subcategory || category}
+            {isFavoritesOnly
+              ? "Vous n'avez pas encore d'article en favoris"
+              : `Aucun article disponible pour le moment dans ${subcategory || category}`}
           </strong>
           <p style={{ margin: '6px 0 16px', fontSize: '13px' }}>
-            Les nouveaux articles créés dans cette catégorie apparaîtront automatiquement ici.
+            {isFavoritesOnly
+              ? "Cliquez sur l'icône cœur sur n'importe quel article du catalogue pour le retrouver ici facilement."
+              : 'Les nouveaux articles créés dans cette catégorie apparaîtront automatiquement ici.'}
           </p>
           <button
             type="button"
@@ -102,36 +137,11 @@ export default function ClientSubcategoryView({
             onClick={onBack}
             style={{ padding: '8px 20px', fontSize: '13px', borderRadius: '99px' }}
           >
-            Explorer d'autres catégories
+            {isFavoritesOnly ? 'Explorer les articles' : "Explorer d'autres catégories"}
           </button>
         </div>
       )}
 
-      {/* Bouton inférieur pour revenir au catalogue */}
-      <div style={{ marginTop: '40px', marginBottom: '24px', textAlign: 'center', display: 'flex', justifyContent: 'center' }}>
-        <button
-          type="button"
-          className="client-btn client-btn-secondary"
-          onClick={onBack}
-          style={{
-            padding: '13px 32px',
-            fontSize: '15px',
-            borderRadius: '99px',
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '10px',
-            background: 'var(--cd)',
-            border: '1.5px solid var(--bd)',
-            color: 'var(--tx)',
-            fontWeight: 700,
-            cursor: 'pointer',
-            boxShadow: '0 4px 12px rgba(0,0,0,0.04)',
-          }}
-        >
-          <span>←</span>
-          <span>Retour au catalogue</span>
-        </button>
-      </div>
     </div>
   );
 }

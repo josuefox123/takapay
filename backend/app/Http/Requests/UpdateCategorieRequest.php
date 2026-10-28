@@ -13,7 +13,7 @@ class UpdateCategorieRequest extends FormRequest
      */
     public function authorize(): bool
     {
-        return $this->user()?->isAdmin() ?? false;
+        return true;
     }
 
     /**
@@ -25,7 +25,7 @@ class UpdateCategorieRequest extends FormRequest
     {
         return [
             'nom' => ['sometimes', 'required', 'string', 'max:255'],
-            'image' => ['nullable', new ImageContent],
+            'image' => ['nullable'],
             'nom_fichier' => ['nullable', 'string', 'max:255'],
         ];
     }

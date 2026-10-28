@@ -75,7 +75,7 @@ export default function ClientHeroCarousel({
         priceText: `Disponible dès ${formatFCFA(minPrice)} de 1er versement.`,
         btnText: 'Voir cet article →',
         action: () => {
-          if (typeof onSelectProduct === 'function') onSelectProduct(p);
+          if (typeof onSelectProduct === 'function') onSelectProduct(p.id);
         },
       };
     });

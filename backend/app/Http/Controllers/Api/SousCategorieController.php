@@ -81,7 +81,7 @@ class SousCategorieController extends Controller
 
         if ($hasActiveCagnotte || $hasActiveCmd) {
             return response()->json([
-                'message' => 'Impossible de supprimer cette sous-catégorie car un achat est actuellement en cours sur un de ses produits.',
+                'message' => 'Impossible de supprimer cette sous-catégorie car une cagnotte est actuellement en cours sur l\'un de ses produits.',
             ], 422);
         }
 

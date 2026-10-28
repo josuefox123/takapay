@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import Icon from './Icon';
 import heroImg from '../../assets/imagetakapay.webp';
 import { heroData } from '../../data/homeData';
@@ -23,10 +24,22 @@ export default function Hero() {
 
         <p className="hero-lede">{heroData.description}</p>
 
-        <div className="hero-actions">
-          <a className="button button-red" href={heroData.ctaButton.href}>
-            <span>{heroData.ctaButton.label}</span>
+        <div className="hero-actions" style={{ display: 'flex', gap: '14px', flexWrap: 'wrap', alignItems: 'center' }}>
+          <Link to="/splash" className="button button-red" id="hero-commencer-btn">
+            <span>Commencer</span>
             <Icon name="arrow" size={18} />
+          </Link>
+          <a
+            className="button"
+            href={heroData.ctaButton.href}
+            style={{
+              background: '#ffffff',
+              color: '#1b1716',
+              border: '1.5px solid #ded6ce',
+              fontWeight: 700,
+            }}
+          >
+            <span>{heroData.ctaButton.label}</span>
           </a>
         </div>
 

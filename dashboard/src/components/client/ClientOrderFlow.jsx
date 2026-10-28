@@ -9,6 +9,7 @@ export default function ClientOrderFlow({
   selectedColor,
   initialOrderType = 'cagnotte',
   initialQuantity = 1,
+  initialDeposit = null,
   user,
   onUserAuthSuccess,
   onCompleteOrder,
@@ -177,12 +178,14 @@ export default function ClientOrderFlow({
   const cashPrice = Number(product?.prix_cash || product?.payment?.prixCash || effectivePrice);
   const basePrice = product?.p && product.p > 0 ? product.p : effectivePrice;
   const priceRatio = basePrice > 0 ? effectivePrice / basePrice : 1;
-  const minDeposit = Math.max(
-    100,
-    product?.payment?.minimumStart
-      ? Math.round(product.payment.minimumStart * priceRatio)
-      : Math.round(effectivePrice * 0.1)
-  );
+  const minDeposit = (initialDeposit && Number(initialDeposit) > 0)
+    ? Number(initialDeposit)
+    : Math.max(
+        100,
+        product?.payment?.minimumStart
+          ? Math.round(product.payment.minimumStart * priceRatio)
+          : Math.round(effectivePrice * 0.1)
+      );
   const effectiveQuantity = orderType === 'cash' ? Math.max(1, quantity) : 1;
   const paymentAmount = orderType === 'cash' ? (cashPrice * effectiveQuantity) : minDeposit;
 
@@ -193,20 +196,49 @@ export default function ClientOrderFlow({
       return;
     }
     setIsLocating(true);
+    setError('');
     navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setIsLocating(false);
-        const lat = pos.coords.latitude.toFixed(5);
-        const lng = pos.coords.longitude.toFixed(5);
+      async (pos) => {
+        const lat = pos.coords.latitude.toFixed(6);
+        const lng = pos.coords.longitude.toFixed(6);
         setDeliveryCoords(`${lat}, ${lng}`);
-        const gpsLabel = `Position GPS (${lat}, ${lng})`;
-        setDeliveryAddress((prev) => (prev ? `${prev} · ${gpsLabel}` : gpsLabel));
+
+        // Nettoyer si le champ contenait déjà un ancien libellé GPS brut
+        setDeliveryAddress((prev) => (prev && prev.startsWith('Position GPS') ? '' : prev));
+
+        try {
+          const res = await fetch(
+            `https://api-bdc.net/data/reverse-geocode-client?latitude=${pos.coords.latitude}&longitude=${pos.coords.longitude}&localityLanguage=fr`
+          );
+          if (res.ok) {
+            const data = await res.json();
+            const parts = [];
+            const admin = data.localityInfo?.administrative || [];
+            const subDistrict = admin.find((a) => a.adminLevel === 7 || a.adminLevel === 8)?.name;
+            if (subDistrict && subDistrict !== data.city) parts.push(subDistrict);
+            if (data.locality && data.locality !== data.city && !parts.includes(data.locality)) parts.push(data.locality);
+            if (data.city) parts.push(data.city);
+            else if (data.principalSubdivision) parts.push(data.principalSubdivision);
+            const readableAddress = parts.join(', ');
+
+            if (readableAddress) {
+              setDeliveryAddress((prev) => {
+                if (!prev || prev.startsWith('Position GPS')) return readableAddress;
+                return prev.includes(readableAddress) ? prev : `${prev} (${readableAddress})`;
+              });
+            }
+          }
+        } catch {
+          // Si le géocodage inverse échoue, les coordonnées restent enregistrées dans deliveryCoords sans polluer le champ d'adresse
+        } finally {
+          setIsLocating(false);
+        }
       },
       () => {
         setIsLocating(false);
         setError('Impossible d’accéder à votre position GPS. Veuillez renseigner l’adresse manuellement.');
       },
-      { timeout: 8000 }
+      { timeout: 10000, enableHighAccuracy: true }
     );
   };
 
@@ -730,7 +762,9 @@ export default function ClientOrderFlow({
                       🎯 Mode Cagnotte Takapay
                     </div>
                     <div style={{ fontSize: '11px', color: 'var(--mu)', marginTop: '3px' }}>
-                      Cotisations échelonnées sécurisées
+                      {product?.payment?.mode === 'libre'
+                        ? "Cotisations libres · Récupération dès 100% de la cagnotte atteinte"
+                        : "Cotisations échelonnées sécurisées"}
                     </div>
                   </div>
                   <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--r)', background: 'rgba(220, 38, 38, 0.1)', padding: '4px 10px', borderRadius: '6px' }}>
@@ -924,6 +958,37 @@ export default function ClientOrderFlow({
                     value={deliveryAddress}
                     onChange={(e) => setDeliveryAddress(e.target.value)}
                   />
+                  {deliveryCoords && (
+                    <div style={{ marginTop: '8px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px', flexWrap: 'wrap', gap: '4px' }}>
+                        <small style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#16a34a', fontSize: '11px', fontWeight: 600 }}>
+                          <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '13px' }}>check_circle</span>
+                          <span>Position enregistrée avec succès pour la livraison</span>
+                        </small>
+                        <a
+                          href={`https://www.google.com/maps?q=${deliveryCoords.replace(/\s+/g, '')}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{ fontSize: '11px', color: '#2563eb', textDecoration: 'none', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '3px' }}
+                        >
+                          <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '13px' }}>open_in_new</span>
+                          <span>Google Maps</span>
+                        </a>
+                      </div>
+                      <iframe
+                        title="Aperçu Google Maps de livraison"
+                        width="100%"
+                        height="130"
+                        style={{
+                          border: '1px solid var(--bd, #e2e8f0)',
+                          borderRadius: '8px',
+                          display: 'block',
+                        }}
+                        loading="lazy"
+                        src={`https://maps.google.com/maps?q=${deliveryCoords.replace(/\s+/g, '')}&hl=fr&z=15&output=embed`}
+                      />
+                    </div>
+                  )}
                 </div>
 
                 {/* Numéro pour le livreur */}

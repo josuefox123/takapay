@@ -51,9 +51,28 @@ export default function ClientHeader({
 
     window.location.reload();
   };
+  const [favCount, setFavCount] = useState(() => {
+    try {
+      const favs = localStorage.getItem('takapay_user_favorites');
+      return favs ? JSON.parse(favs).length : 0;
+    } catch {
+      return 0;
+    }
+  });
   const [favoriteToast, setFavoriteToast] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [, setCatTick] = useState(0);
+
+  useEffect(() => {
+    const handleFavUpdate = () => {
+      try {
+        const favs = localStorage.getItem('takapay_user_favorites');
+        setFavCount(favs ? JSON.parse(favs).length : 0);
+      } catch { /* ignore */ }
+    };
+    window.addEventListener('takapay_favorites_updated', handleFavUpdate);
+    return () => window.removeEventListener('takapay_favorites_updated', handleFavUpdate);
+  }, []);
 
   useEffect(() => {
     const handleUpdate = () => setCatTick((t) => t + 1);
@@ -73,8 +92,9 @@ export default function ClientHeader({
   };
 
   const handleFavoritesClick = () => {
-    setFavoriteToast(true);
-    setTimeout(() => setFavoriteToast(false), 2400);
+    if (onSelectTab) {
+      onSelectTab('fav');
+    }
   };
 
   return (
@@ -164,10 +184,16 @@ export default function ClientHeader({
                 onClick={handleFavoritesClick}
                 title="Mes Favoris"
                 aria-label="Favoris"
+                style={{ position: 'relative' }}
               >
                 <span className="material-symbols-outlined" style={{ fontSize: '20px' }}>
                   favorite
                 </span>
+                {favCount > 0 && (
+                  <span className="sec1-badge-count">
+                    {favCount}
+                  </span>
+                )}
               </button>
 
               <button
@@ -307,6 +333,20 @@ export default function ClientHeader({
           </div>
 
           <div className="client-mobile-actions">
+            {/* Favoris */}
+            <button
+              type="button"
+              className="client-mobile-icon-btn"
+              onClick={handleFavoritesClick}
+              title="Mes Favoris"
+              aria-label="Favoris"
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: '22px' }}>
+                favorite
+              </span>
+              {favCount > 0 && <span className="client-mobile-badge">{favCount}</span>}
+            </button>
+
             {/* Chariot pour la cagnotte */}
             <button
               type="button"
@@ -500,6 +540,7 @@ export default function ClientHeader({
               >
                 <span className="material-symbols-outlined">favorite</span>
                 <span>Mes Favoris</span>
+                {favCount > 0 && <span className="sec1-badge-count" style={{ marginLeft: 'auto' }}>{favCount}</span>}
               </button>
             </div>
 

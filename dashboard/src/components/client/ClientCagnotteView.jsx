@@ -1635,7 +1635,9 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                 }}
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                  <span style={{ fontSize: '14px', fontWeight: 700, color: '#2b2624' }}>Progression de remboursement</span>
+                  <span style={{ fontSize: '14px', fontWeight: 700, color: '#2b2624' }}>
+                    {isLibre ? 'Progression de la cagnotte (Objectif 100% pour la récupération)' : 'Progression de remboursement'}
+                  </span>
                   <span style={{ fontSize: '16px', fontWeight: 800, color: '#dc2626' }}>{pct}%</span>
                 </div>
 
@@ -1669,6 +1671,27 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                   </div>
                 </div>
               </div>
+
+              {/* Information Cagnotte Libre : récupération à 100% */}
+              {!isFinished && isLibre && (
+                <div
+                  style={{
+                    background: '#fef2f2',
+                    border: '1.5px solid #fecaca',
+                    borderRadius: '16px',
+                    padding: '14px 16px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '12px',
+                    marginTop: '12px',
+                  }}
+                >
+                  <span style={{ fontSize: '24px' }}>🎯</span>
+                  <div style={{ fontSize: '12.5px', color: '#991b1b', lineHeight: 1.4 }}>
+                    <b>Modalité Cagnotte Libre :</b> Vous cotisez à votre rythme. Votre article est débloqué et expédié dès que votre jauge atteint <b>100%</b> ({formatFCFA(cagnotte.montantTotal || cagnotte.product?.p)}).
+                  </div>
+                </div>
+              )}
 
               {/* Échéances (masquées en mode libre OU une fois la cagnotte financée) */}
               {!isFinished && !isLibre && (

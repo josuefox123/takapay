@@ -37,6 +37,7 @@ export default function AppHome({ initialTab = 'home' }) {
   const [selectedCat, setSelectedCat] = useState('Tous');
   const [selectedSubCat, setSelectedSubCat] = useState('');
   const [isPromoOnly, setIsPromoOnly] = useState(false);
+  const [isFavoritesOnly, setIsFavoritesOnly] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
   // Produit actif pour la vue détaillée
@@ -104,14 +105,24 @@ export default function AppHome({ initialTab = 'home' }) {
   useEffect(() => {
     const p = location.pathname;
     if (p === '/app/produits' || p === '/app/categories' || p === '/catalogue') {
+      setIsFavoritesOnly(false);
       setView('shop');
+    } else if (p === '/app/favoris') {
+      setIsFavoritesOnly(true);
+      setIsPromoOnly(false);
+      setSelectedSubCat('Mes Favoris');
+      setView('subcat');
     } else if (p === '/app/cagnotte') {
+      setIsFavoritesOnly(false);
       setView('cag');
     } else if (p === '/app/profil') {
+      setIsFavoritesOnly(false);
       setView('pro');
     } else if (p === '/app/notifications') {
+      setIsFavoritesOnly(false);
       setView('notif');
     } else if (p === '/app') {
+      setIsFavoritesOnly(false);
       setView('home');
     }
   }, [location.pathname]);
@@ -246,24 +257,37 @@ export default function AppHome({ initialTab = 'home' }) {
     setPreviousView(view);
     if (tab === 'home') {
       setIsPromoOnly(false);
+      setIsFavoritesOnly(false);
       setView('home');
       navigate('/app');
     } else if (tab === 'shop') {
+      setIsPromoOnly(false);
+      setIsFavoritesOnly(false);
       setView('shop');
       navigate('/app/produits');
+    } else if (tab === 'fav') {
+      setIsFavoritesOnly(true);
+      setIsPromoOnly(false);
+      setSelectedSubCat('Mes Favoris');
+      setView('subcat');
+      navigate('/app/favoris');
     } else if (tab === 'cag') {
+      setIsFavoritesOnly(false);
       setView('cag');
       navigate('/app/cagnotte');
     } else if (tab === 'pro') {
+      setIsFavoritesOnly(false);
       setView('pro');
       navigate('/app/profil');
     } else if (tab === 'notif') {
+      setIsFavoritesOnly(false);
       setView('notif');
       navigate('/app/notifications');
     }
   };
 
-  const handleOpenProduct = (id) => {
+  const handleOpenProduct = (idOrProduct) => {
+    const id = typeof idOrProduct === 'object' && idOrProduct !== null ? idOrProduct.id : idOrProduct;
     setPreviousView(view);
     setActiveProductId(id);
     setView('product');
@@ -271,6 +295,7 @@ export default function AppHome({ initialTab = 'home' }) {
 
   const handleSelectCategory = (catId) => {
     setIsPromoOnly(false);
+    setIsFavoritesOnly(false);
     setSelectedCat(catId);
     setSelectedSubCat('');
     setView('shop');
@@ -282,11 +307,13 @@ export default function AppHome({ initialTab = 'home' }) {
     }
     setSelectedSubCat(subName);
     setIsPromoOnly(false);
+    setIsFavoritesOnly(false);
     setView('subcat');
   };
 
   const handleSelectPromo = () => {
     setIsPromoOnly(true);
+    setIsFavoritesOnly(false);
     setSelectedSubCat('Promotions');
     setView('subcat');
   };
@@ -296,6 +323,7 @@ export default function AppHome({ initialTab = 'home' }) {
     setOrderOptions({
       mode: options.mode || 'cagnotte',
       quantity: options.quantity || 1,
+      initialDeposit: options.firstDeposit || options.deposit || options.initialDeposit || null,
     });
     setView('order');
   };
@@ -370,14 +398,8 @@ export default function AppHome({ initialTab = 'home' }) {
         activeTab={view}
         onSelectTab={handleSelectTab}
         user={user}
-        onOpenProfile={() => {
-          setPreviousView(view);
-          setView('pro');
-        }}
-        onOpenNotifications={() => {
-          setPreviousView(view);
-          setView('notif');
-        }}
+        onOpenProfile={() => handleSelectTab('pro')}
+        onOpenNotifications={() => handleSelectTab('notif')}
         onToggleTheme={handleToggleTheme}
         onSelectCategory={handleSelectCategory}
         onSelectSubcategory={handleSelectSubcategory}
@@ -423,10 +445,11 @@ export default function AppHome({ initialTab = 'home' }) {
 
           {view === 'subcat' && (
             <ClientSubcategoryView
-              category={selectedCat}
-              subcategory={selectedSubCat}
+              category={isFavoritesOnly ? 'Mes Favoris' : selectedCat}
+              subcategory={isFavoritesOnly ? 'Mes Favoris' : selectedSubCat}
               products={productsList}
               isPromoOnly={isPromoOnly}
+              isFavoritesOnly={isFavoritesOnly}
               onBack={() => setView('shop')}
               onSelectProduct={handleOpenProduct}
             />
@@ -450,6 +473,7 @@ export default function AppHome({ initialTab = 'home' }) {
               selectedColor={selectedColorForOrder}
               initialOrderType={orderOptions.mode}
               initialQuantity={orderOptions.quantity}
+              initialDeposit={orderOptions.initialDeposit}
               user={user}
               onUserAuthSuccess={handleUserAuthSuccess}
               onCompleteOrder={handleCompleteOrder}

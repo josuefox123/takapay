@@ -493,7 +493,12 @@ export const adminService = {
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      throw new Error(err.message || 'Erreur lors de la création de la catégorie.');
+      const msg = (err.errors && Object.values(err.errors).flat().join(' ')) || err.message || 'Erreur lors de la création de la catégorie.';
+      const error = new Error(msg);
+      error.status = res.status;
+      error.errors = err.errors;
+      error.data = err;
+      throw error;
     }
 
     const json = await res.json();
@@ -536,9 +541,12 @@ export const adminService = {
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      throw new Error(
-        err.message || 'Erreur lors de la création de la sous-catégorie.'
-      );
+      const msg = (err.errors && Object.values(err.errors).flat().join(' ')) || err.message || 'Erreur lors de la création de la sous-catégorie.';
+      const error = new Error(msg);
+      error.status = res.status;
+      error.errors = err.errors;
+      error.data = err;
+      throw error;
     }
 
     const json = await res.json();
@@ -561,7 +569,10 @@ export const adminService = {
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      throw new Error(err.message || 'Erreur lors de la suppression de la catégorie.');
+      const error = new Error(err.message || 'Erreur lors de la suppression de la catégorie.');
+      error.status = res.status;
+      error.data = err;
+      throw error;
     }
 
     const json = await res.json().catch(() => ({}));
@@ -581,7 +592,10 @@ export const adminService = {
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      throw new Error(err.message || 'Erreur lors de la suppression de la sous-catégorie.');
+      const error = new Error(err.message || 'Erreur lors de la suppression de la sous-catégorie.');
+      error.status = res.status;
+      error.data = err;
+      throw error;
     }
 
     const json = await res.json().catch(() => ({}));

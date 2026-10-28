@@ -350,7 +350,11 @@ if (typeof window !== 'undefined') {
   } catch { /* ignore */ }
   syncCategoriesFromDb();
   window.addEventListener('takapay_categories_updated', (e) => {
-    rebuildCategories(e.detail ? [e.detail] : []);
+    if (Array.isArray(e.detail)) {
+      rebuildCategories(e.detail);
+    } else {
+      syncCategoriesFromDb();
+    }
   });
 }
 

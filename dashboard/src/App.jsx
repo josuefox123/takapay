@@ -17,6 +17,8 @@ export default function App() {
         <Route path="/app/cagnotte" element={<AppHome initialTab="cag" />} />
         <Route path="/app/profil" element={<AppHome initialTab="pro" />} />
         <Route path="/app/notifications" element={<AppHome initialTab="notif" />} />
+        <Route path="/app/favoris" element={<AppHome initialTab="subcat" />} />
+        <Route path="/app/*" element={<AppHome initialTab="home" />} />
         <Route path="/catalogue" element={<Navigate to="/app/produits" replace />} />
         <Route path="/connexion" element={<AppHome initialTab="order" />} />
 
