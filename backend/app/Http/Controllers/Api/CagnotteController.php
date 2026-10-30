@@ -22,26 +22,26 @@ class CagnotteController extends Controller
      */
     public function index(Request $request): AnonymousResourceCollection
     {
-        $user = $request->user('sanctum');
-        $userId = $request->query('user_id') ?? $user?->id;
+        $user = $request->user('sanctum') ?? $request->user();
 
         $query = Cagnotte::has('produit')
             ->with(['utilisateur', 'produit.imageProduits', 'produit.parametreProduit', 'produit.sousCategorie.categorie', 'transactions'])
             ->latest();
 
-        // Si l'utilisateur est authentifié avec un rôle administrateur
+        // 1. Administrateurs / super_admin / gestionnaires : accès à toutes les cagnottes
         if ($user && $user->role !== 'client') {
-            if ($userId) {
-                $query->where('utilisateur_id', $userId);
+            if ($request->filled('user_id')) {
+                $query->where('utilisateur_id', $request->query('user_id'));
             }
+        } elseif ($request->filled('user_id')) {
+            // 2. Requête filtrée par identifiant client
+            $query->where('utilisateur_id', $request->query('user_id'));
+        } elseif ($user) {
+            // 3. Client authentifié : ses propres cagnottes
+            $query->where('utilisateur_id', $user->id);
         } else {
-            // Espace client ou visiteur : filtrer strictement par son user_id
-            if (! empty($userId)) {
-                $query->where('utilisateur_id', $userId);
-            } else {
-                // Aucun utilisateur identifié : renvoyer une liste vide (0 cagnotte pour les visiteurs)
-                $query->whereRaw('1 = 0');
-            }
+            // 4. Visiteur non authentifié sans paramètre : liste vide
+            $query->whereRaw('1 = 0');
         }
 
         return CagnotteResource::collection($query->get());
