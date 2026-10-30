@@ -11,9 +11,22 @@ export default function ClientHomeView({
   onSelectPromo,
   onGoCatalog,
 }) {
-  const [categories, setCategories] = useState(() => (
-    Array.isArray(TAKAPAY_CATEGORIES) && TAKAPAY_CATEGORIES.length > 0 ? [...TAKAPAY_CATEGORIES] : []
-  ));
+  const [categories, setCategories] = useState(() => {
+    if (Array.isArray(TAKAPAY_CATEGORIES) && TAKAPAY_CATEGORIES.length > 0) {
+      return [...TAKAPAY_CATEGORIES];
+    }
+    try {
+      const saved = localStorage.getItem('takapay_backend_categories');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          rebuildCategories(parsed);
+          return [...TAKAPAY_CATEGORIES];
+        }
+      }
+    } catch { /* ignore */ }
+    return [];
+  });
 
   useEffect(() => {
     let isMounted = true;
@@ -21,6 +34,9 @@ export default function ClientHomeView({
       if (!isMounted) return;
       if (Array.isArray(cats) && cats.length > 0) {
         rebuildCategories(cats);
+        try {
+          localStorage.setItem('takapay_backend_categories', JSON.stringify(cats));
+        } catch { /* ignore */ }
         setCategories([...TAKAPAY_CATEGORIES]);
       }
     }).catch(() => {});
