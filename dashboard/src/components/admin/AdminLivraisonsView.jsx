@@ -89,8 +89,12 @@ export default function AdminLivraisonsView({ onShowToast }) {
                       <span className="admin-sub-text">Prévue: {liv.date_prevue || 'À définir'}</span>
                     </td>
                     <td>
-                      <span style={{ fontWeight: 600 }}>{liv.cagnotte?.produit_nom || 'Article Takapay'}</span>
-                      <span className="admin-sub-text">Cagnotte: {liv.cagnotte?.code || 'CG-00'}</span>
+                      <span style={{ fontWeight: 600 }}>
+                        {liv.commande?.produit_nom || liv.commande?.articles?.[0]?.produit || liv.cagnotte?.produit_nom || 'Article Takapay'}
+                      </span>
+                      <span className="admin-sub-text">
+                        {liv.commande ? `Commande Cash: ${liv.commande.reference || `CMD-${liv.commande.id}`}` : `Cagnotte: ${liv.cagnotte?.code || `CG-${liv.cagnotte_id || liv.id}`}`}
+                      </span>
                     </td>
                     <td>
                       <strong>{liv.client?.nom || 'Client Takapay'}</strong>

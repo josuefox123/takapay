@@ -1,8 +1,8 @@
 export default function AdminWatchlist({ items = [] }) {
   const defaultItems = [
-    { label: 'Versements en retard', valeur: 0, pulse: false },
     { label: 'Cagnottes prêtes à livrer', valeur: 0, pulse: false },
-    { label: 'Produits en rupture', valeur: 0, pulse: false },
+    { label: 'Commandes Cash à préparer', valeur: 0, pulse: false },
+    { label: 'Demandes d’annulation / remb.', valeur: 0, pulse: false },
   ];
 
   const list = items.length > 0 ? items : defaultItems;
@@ -14,7 +14,7 @@ export default function AdminWatchlist({ items = [] }) {
         {list.map((item, index) => (
           <li key={item.label || index}>
             <span>{item.label}</span>
-            <b>{item.valeur}</b>
+            <b style={{ color: Number(item.valeur) > 0 ? 'var(--r)' : 'inherit' }}>{item.valeur}</b>
           </li>
         ))}
       </ul>

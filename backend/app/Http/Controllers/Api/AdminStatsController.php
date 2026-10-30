@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Cagnotte;
+use App\Models\Commande;
 use App\Models\Document;
 use App\Models\Echeance;
 use App\Models\Transaction;
@@ -29,30 +30,89 @@ class AdminStatsController extends Controller
 
         $nouveauxUtilisateurs = (int) User::where('created_at', '>=', $startOfMonth)->count();
 
-        // ---- Recouvrement hebdomadaire ----
-        $semaines = collect(range(1, 4))->map(function ($n) use ($now) {
-            $start = $now->copy()->startOfMonth()->addWeeks($n - 1);
-            $end   = $start->copy()->endOfWeek();
+        // ---- 1. Flux Réel : Les 7 jours de CETTE SEMAINE (Lundi à Dimanche) ----
+        $startOfWeek = $now->copy()->startOfWeek();
+        $cetteSemaineJours = collect(range(0, 6))->map(function ($i) use ($startOfWeek) {
+            $day = $startOfWeek->copy()->addDays($i);
+            $start = $day->copy()->startOfDay();
+            $end = $day->copy()->endOfDay();
 
-            $attendu = (float) Echeance::whereBetween('date_prevue', [$start, $end])
-                ->sum('montant_attendu');
-
-            $encaisse = (float) Transaction::whereIn('statut', ['succes', 'reussi'])
+            $cash = (float) Transaction::whereIn('statut', ['succes', 'reussi'])
                 ->whereBetween('date', [$start, $end])
+                ->where(function ($q) {
+                    $q->where('type', 'paiement_livraison')
+                      ->orWhere('type', 'commande_cash')
+                      ->orWhere('moyen_paiement', 'livraison')
+                      ->orWhereNull('cagnotte_id');
+                })
                 ->sum('montant');
 
+            $cagnotte = (float) Transaction::whereIn('statut', ['succes', 'reussi'])
+                ->whereBetween('date', [$start, $end])
+                ->whereNotNull('cagnotte_id')
+                ->whereNotIn('type', ['paiement_livraison', 'commande_cash'])
+                ->sum('montant');
+
+            $nomsJours = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
+
             return [
-                'semaine'  => "S{$n}",
-                'attendu'  => $attendu,
-                'encaisse' => $encaisse,
+                'jour'     => $nomsJours[$i],
+                'label'    => $nomsJours[$i] . ' ' . $day->format('d/m'),
+                'date'     => $day->toDateString(),
+                'cash'     => $cash,
+                'cagnotte' => $cagnotte,
+                'total'    => $cash + $cagnotte,
+                'attendu'  => $cash,
+                'encaisse' => $cagnotte,
             ];
         });
 
-        $totalAttendu  = (float) $semaines->sum('attendu');
-        $totalEncaisse = (float) $semaines->sum('encaisse');
-        $tauxRecouvrement = $totalAttendu > 0
-            ? (int) round(($totalEncaisse / $totalAttendu) * 100)
-            : 0;
+        // ---- 2. Flux Réel : Les semaines du mois en cours ----
+        $endOfMonth = $now->copy()->endOfMonth();
+        $semaines = collect();
+        $current = $startOfMonth->copy()->startOfWeek();
+        $numSemaine = 1;
+
+        while ($current->lte($endOfMonth)) {
+            $weekStart = $current->copy();
+            $weekEnd = $current->copy()->endOfWeek();
+
+            $cash = (float) Transaction::whereIn('statut', ['succes', 'reussi'])
+                ->whereBetween('date', [$weekStart, $weekEnd])
+                ->where(function ($q) {
+                    $q->where('type', 'paiement_livraison')
+                      ->orWhere('type', 'commande_cash')
+                      ->orWhere('moyen_paiement', 'livraison')
+                      ->orWhereNull('cagnotte_id');
+                })
+                ->sum('montant');
+
+            $cagnotte = (float) Transaction::whereIn('statut', ['succes', 'reussi'])
+                ->whereBetween('date', [$weekStart, $weekEnd])
+                ->whereNotNull('cagnotte_id')
+                ->whereNotIn('type', ['paiement_livraison', 'commande_cash'])
+                ->sum('montant');
+
+            $isCurrent = $now->between($weekStart, $weekEnd);
+
+            $semaines->push([
+                'semaine'    => $isCurrent ? 'Cette sem.' : "S{$numSemaine}",
+                'label'      => $isCurrent ? 'Cette semaine' : "Semaine {$numSemaine}",
+                'periode'    => $weekStart->format('d/m') . ' au ' . $weekEnd->format('d/m'),
+                'is_current' => $isCurrent,
+                'cash'       => $cash,
+                'cagnotte'   => $cagnotte,
+                'total'      => $cash + $cagnotte,
+                'attendu'    => $cash,
+                'encaisse'   => $cagnotte,
+            ]);
+
+            $current->addWeek();
+            $numSemaine++;
+        }
+
+        $totalEncaisse = (float) $semaines->sum('total');
+        $tauxRecouvrement = $totalEncaisse > 0 ? 100 : 0;
 
         // ---- Documents à valider ----
         $documents = Document::where('statut', 'en_attente')
@@ -122,21 +182,29 @@ class AdminStatsController extends Controller
                 ];
             });
 
-        // ---- À surveiller ----
-        $aSurveiller = Cagnotte::with(['produit', 'transactions.commande'])
-            ->latest()
-            ->take(10)
-            ->get()
-            ->filter(fn ($c) => $c->progression < 25)
-            ->take(5)
-            ->values()
-            ->map(fn ($c) => [
-                'id'            => $c->id,
-                'nom'           => $c->nom,
-                'montant_verse' => (float) $c->montant_verse,
-                'objectif'      => $c->objectif_effectif,
-                'progression'   => $c->progression,
-            ]);
+        // ---- Indicateurs Réels à surveiller ----
+        $cagnottesPretesALivrer = Cagnotte::where('statut', 'terminee')
+            ->orWhere(function ($q) {
+                $q->where('montant_verse', '>=', DB::raw('COALESCE(montant_objectif, prix_unitaire, 0)'))
+                  ->where('montant_verse', '>', 0)
+                  ->where('statut', '!=', 'livree')
+                  ->where('statut', '!=', 'annulee');
+            })->count();
+
+        $commandesCashEnAttente = Commande::where(function ($q) {
+                $q->where('type_commande', 'cash')
+                  ->orWhere('mode_paiement', 'livraison');
+            })
+            ->whereNotIn('statut', ['terminee', 'livree', 'annulee'])
+            ->count();
+
+        $cagnottesAnnulation = Cagnotte::where('statut', 'annulation_demandee')->count();
+
+        $aSurveiller = [
+            ['label' => 'Cagnottes prêtes à livrer', 'valeur' => $cagnottesPretesALivrer, 'pulse' => $cagnottesPretesALivrer > 0],
+            ['label' => 'Commandes Cash à préparer', 'valeur' => $commandesCashEnAttente, 'pulse' => $commandesCashEnAttente > 0],
+            ['label' => 'Demandes d’annulation / remb.', 'valeur' => $cagnottesAnnulation, 'pulse' => $cagnottesAnnulation > 0],
+        ];
 
         return response()->json([
             'kpis' => [
@@ -146,8 +214,11 @@ class AdminStatsController extends Controller
                 'nouveaux_utilisateurs' => $nouveauxUtilisateurs,
             ],
             'recouvrement' => [
-                'taux'     => $tauxRecouvrement,
-                'semaines' => $semaines->toArray(),
+                'taux'          => $tauxRecouvrement,
+                'semaines'      => $semaines->toArray(),
+                'cette_semaine' => $cetteSemaineJours->toArray(),
+                'total_semaine' => (float) $cetteSemaineJours->sum('total'),
+                'total_mois'    => $totalEncaisse,
             ],
             'documents'           => $documents,
             'derniers_versements' => $derniersVersements,

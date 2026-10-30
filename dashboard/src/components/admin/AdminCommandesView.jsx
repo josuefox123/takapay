@@ -56,8 +56,8 @@ export default function AdminCommandesView({ onShowToast }) {
     const isRecu = cmd.statut_reception === 'recu' || String(cmd.statut || '').toLowerCase() === 'terminee' || String(cmd.statut || '').toLowerCase() === 'livree';
     if (isRecu) return { label: 'Terminée (Article reçu)', cls: 's1' };
     const s = String(cmd.statut || '').toLowerCase();
-    if (s === 'annulee') return { label: 'Annulée', cls: 's3' };
-    return { label: 'En cours (En attente réception)', cls: 's2' };
+    if (s === 'annulee' || s === 'cancelled') return { label: 'Annulée', cls: 's3' };
+    return { label: 'En cours', cls: 's2' };
   };
 
   const computeProgress = (cmd) => {
