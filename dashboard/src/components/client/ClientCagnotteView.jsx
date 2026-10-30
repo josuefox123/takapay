@@ -217,7 +217,36 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
   const isCod = Boolean(cagnotte.isCod || cagnotte.mode === 'cash_cod');
   const isArticleReceived = Boolean(cagnotte.articleRecu || cagnotte.statut === 'recu');
   const isFinished = pct >= 100 || cagnotte.statut === 'completed' || isArticleReceived;
-  const isCancelled = cagnotte.statut === 'cancelled' || cagnotte.statut === 'annulee';
+  const isCancelled =
+    cagnotte.statut === 'cancelled' ||
+    cagnotte.statut === 'annulee' ||
+    cagnotte.statut === 'annulation_demandee' ||
+    cagnotte.rawStatut === 'annulee' ||
+    cagnotte.rawStatut === 'annulation_demandee';
+
+  const isRefundCompleted =
+    isCancelled &&
+    (cagnotte.rawStatut === 'annulee' ||
+      cagnotte.statut === 'annulee' ||
+      (cagnotte.transactions || []).some(
+        (t) =>
+          (t.type === 'remboursement' ||
+            t.type === 'annulation' ||
+            t.titre?.toLowerCase().includes('renvoyé') ||
+            t.titre?.toLowerCase().includes('remboursement')) &&
+          (t.statut === 'succes' ||
+            t.statut === 'reussi' ||
+            t.statut === 'Argent renvoyé' ||
+            t.statut === 'Réussi' ||
+            t.statut === 'effectue')
+      ) ||
+      (cagnotte.statut !== 'annulation_demandee' &&
+        cagnotte.rawStatut !== 'annulation_demandee' &&
+        !(cagnotte.transactions || []).some(
+          (t) =>
+            (t.type === 'remboursement' || t.type === 'annulation') &&
+            (t.statut === 'en_attente' || t.statut === 'En attente')
+        )));
   const isLibre =
     cagnotte.mode === 'libre' ||
     cagnotte.product?.payment?.mode === 'libre' ||
@@ -735,7 +764,35 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                 const isItemCod = Boolean(item.isCod || item.mode === 'cash_cod');
                 const isItemReceived = Boolean(item.articleRecu || item.statut === 'recu');
                 const isItemFinished = itemPct >= 100 || item.statut === 'completed' || isItemReceived;
-                const isItemCancelled = item.statut === 'cancelled' || item.statut === 'annulee';
+                const isItemCancelled =
+                  item.statut === 'cancelled' ||
+                  item.statut === 'annulee' ||
+                  item.statut === 'annulation_demandee' ||
+                  item.rawStatut === 'annulee' ||
+                  item.rawStatut === 'annulation_demandee';
+
+                const isItemRefundCompleted =
+                  isItemCancelled &&
+                  (item.rawStatut === 'annulee' ||
+                    item.statut === 'annulee' ||
+                    (item.transactions || []).some(
+                      (t) =>
+                        (t.type === 'remboursement' ||
+                          t.type === 'annulation' ||
+                          t.titre?.toLowerCase().includes('renvoyé') ||
+                          t.titre?.toLowerCase().includes('remboursement')) &&
+                        (t.statut === 'succes' ||
+                          t.statut === 'reussi' ||
+                          t.statut === 'Argent renvoyé' ||
+                          t.statut === 'Réussi')
+                    ) ||
+                    (item.statut !== 'annulation_demandee' &&
+                      item.rawStatut !== 'annulation_demandee' &&
+                      !(item.transactions || []).some(
+                        (t) =>
+                          (t.type === 'remboursement' || t.type === 'annulation') &&
+                          (t.statut === 'en_attente' || t.statut === 'En attente')
+                      )));
                 return (
                   <div
                     key={item.id}
@@ -878,7 +935,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                                 {isItemCod
                                   ? '0 FCFA (Sans frais)'
                                   : Number(item.montantVerse) > 0
-                                  ? `${formatFCFA(item.montantVerse)} (Remboursement sous 24H)`
+                                  ? `${formatFCFA(item.montantVerse)} (${isItemRefundCompleted ? 'Argent renvoyé' : 'Remboursement sous 24H'})`
                                   : '0 FCFA'}
                               </b>
                             </div>
@@ -1150,8 +1207,8 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
             </div>
           )}
 
-          {/* Bannière d'annulation si annulée */}
-          {isCancelled && !dismissCancelledBanner && (
+          {/* Bannière d'annulation : uniquement tant que le remboursement n'a pas encore été retourné */}
+          {isCancelled && !isRefundCompleted && !dismissCancelledBanner && (
             <div
               style={{
                 background: '#fff1f2',
@@ -2026,8 +2083,8 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                 </div>
               )}
 
-              {/* Échéances (masquées en mode libre OU une fois la cagnotte financée) */}
-              {!isFinished && !isLibre && (
+              {/* Échéances (masquées en mode libre, une fois financée OU si cagnotte annulée) */}
+              {!isFinished && !isLibre && !isCancelled && (
                 <div className="cagnotte-detail-schedule-grid">
                   <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
                     <span style={{ fontSize: '22px', marginTop: '1px' }}>📅</span>

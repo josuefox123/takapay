@@ -761,10 +761,11 @@ export const mapBackendCagnotteToClient = (c) => {
     },
     dateFinEstimee: (isLibre || isCash) ? null : estimatedEndFormatted,
     moisRestants: (isLibre || isCash) ? null : moisRestants,
+    rawStatut: c.statut,
     statut: articleRecu
       ? 'completed'
       : (c.statut === 'annulee' || c.statut === 'cancelled' || c.statut === 'annulation_demandee'
-          ? 'cancelled'
+          ? (c.statut === 'annulation_demandee' ? 'annulation_demandee' : 'cancelled')
           : (isCash
               ? (isCod ? 'active' : 'completed')
               : (c.statut === 'terminee' || percent >= 100 ? 'completed' : 'active'))),
