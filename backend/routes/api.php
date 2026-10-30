@@ -34,6 +34,9 @@ use Illuminate\Support\Facades\Route;
 Route::post('/register', [AuthController::class, 'register'])->middleware('throttle:10,1');
 Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:5,1')->name('login');
 Route::post('/auth/google', [AuthController::class, 'googleAuth'])->middleware('throttle:10,1');
+Route::post('/forgot-pin', [AuthController::class, 'forgotPin'])->middleware('throttle:5,1');
+Route::post('/verify-pin-code', [AuthController::class, 'verifyPinCode'])->middleware('throttle:5,1');
+Route::post('/reset-pin', [AuthController::class, 'resetPin'])->middleware('throttle:5,1');
 
 /*
 |--------------------------------------------------------------------------
@@ -49,6 +52,20 @@ Route::get('sous-categories/{sous_category}/produits', [SousCategorieController:
 Route::get('produits', [ProduitController::class, 'index'])->name('produits.index');
 Route::get('produits/{produit}', [ProduitController::class, 'show'])->name('produits.show');
 Route::get('promotions', [PromotionController::class, 'index'])->name('promotions.index');
+Route::get('videos/{filename}', function ($filename) {
+    $clean = basename($filename);
+    $path = storage_path('app/public/produits/' . $clean);
+    if (!file_exists($path)) {
+        $path = storage_path('app/public/' . $clean);
+    }
+    if (!file_exists($path)) {
+        abort(404, 'Vidéo non trouvée');
+    }
+    return response()->file($path, [
+        'Content-Type' => 'video/mp4',
+        'Accept-Ranges' => 'bytes',
+    ]);
+})->name('videos.stream');
 Route::get('cagnottes', [CagnotteController::class, 'index'])->name('cagnottes.index');
 Route::get('commandes', [CommandeController::class, 'index'])->name('commandes.index');
 Route::get('carousels', [CarouselController::class, 'index'])->name('carousels.index');

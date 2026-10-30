@@ -45,7 +45,7 @@ export default function AdminProductsView({ onShowToast }) {
     prix_cash: '',
     prix_minimum: '',
     prix_echelonne: '',
-    mode_paiement: 'echelonne', // 'echelonne' | 'libre'
+    mode_paiement: 'libre', // 'libre' (mode actif) | 'echelonne'
     frequence: 'mensuelle',
     seuil_livraison: '',
     promotion_id: '',
@@ -269,8 +269,9 @@ export default function AdminProductsView({ onShowToast }) {
       nom_fichier: file.name,
       taille: (file.size / (1024 * 1024)).toFixed(1) + ' Mo',
       file: file,
+      isUploading: true,
     });
-    onShowToast('Vidéo importée ! Téléversement en cours...');
+    onShowToast('Téléversement de la vidéo en cours...');
 
     adminService.uploadVideo(file).then((res) => {
       if (res && (res.chemin || res.url)) {
@@ -278,11 +279,17 @@ export default function AdminProductsView({ onShowToast }) {
           chemin: res.chemin || res.url,
           nom_fichier: file.name,
           taille: (file.size / (1024 * 1024)).toFixed(1) + ' Mo',
+          isUploading: false,
         });
         onShowToast('Vidéo enregistrée sur le serveur avec succès !');
+      } else {
+        setVideo(null);
+        onShowToast("Échec : La vidéo n'a pas pu être enregistrée sur le serveur (vérifiez le format ou la taille).");
       }
     }).catch((err) => {
+      setVideo(null);
       console.warn('Erreur téléversement vidéo direct:', err);
+      onShowToast('Erreur lors du téléversement de la vidéo.');
     });
     e.target.value = '';
   };
@@ -345,7 +352,7 @@ export default function AdminProductsView({ onShowToast }) {
       prix_cash: '',
       prix_minimum: '',
       prix_echelonne: '',
-      mode_paiement: 'echelonne',
+      mode_paiement: 'libre',
       frequence: 'mensuelle',
       seuil_livraison: '',
       promotion_id: '',
@@ -545,18 +552,25 @@ export default function AdminProductsView({ onShowToast }) {
     setSubmitting(true);
     try {
       let finalVideo = video;
-      if (video && video.file && (!video.chemin || video.chemin.startsWith('blob:') || video.chemin.startsWith('data:'))) {
-        try {
-          const uploadRes = await adminService.uploadVideo(video.file);
-          if (uploadRes && (uploadRes.chemin || uploadRes.url)) {
-            finalVideo = {
-              chemin: uploadRes.chemin || uploadRes.url,
-              nom_fichier: video.nom_fichier,
-              taille: video.taille,
-            };
+      if (video && video.chemin && video.chemin.startsWith('blob:')) {
+        if (video.file) {
+          try {
+            const uploadRes = await adminService.uploadVideo(video.file);
+            if (uploadRes && (uploadRes.chemin || uploadRes.url)) {
+              finalVideo = {
+                chemin: uploadRes.chemin || uploadRes.url,
+                nom_fichier: video.nom_fichier,
+                taille: video.taille,
+              };
+            } else {
+              finalVideo = null;
+              onShowToast?.("Attention : La vidéo n'a pas pu être envoyée sur le serveur et ne sera pas enregistrée.");
+            }
+          } catch {
+            finalVideo = null;
           }
-        } catch (e) {
-          console.warn('Erreur téléversement vidéo avant soumission:', e);
+        } else {
+          finalVideo = null;
         }
       }
 
@@ -1930,279 +1944,86 @@ export default function AdminProductsView({ onShowToast }) {
               </div>
           </div>
 
-          {/* SECTION 2 : TARIFICATION & PARAMÈTRES FINANCIERS */}
+          {/* SECTION 2 : TARIFICATION */}
           <div className="admin-panel" style={{ padding: '32px', marginBottom: '24px' }}>
             <h2 style={{ fontSize: '18px', fontWeight: 800, margin: '0 0 20px', display: 'flex', alignItems: 'center', gap: '10px' }}>
               <span style={{ width: '12px', height: '12px', borderRadius: '50%', background: 'var(--y)' }} />
-              2. Tarification & Modalités Financières
+              2. Tarification
             </h2>
 
-            {/* SÉLECTEUR DE MODE DE PAIEMENT (2 MODES UNIQUEMENT : ÉCHELONNÉ OU LIBRE) */}
-            <div style={{ marginBottom: '22px' }}>
-              <label style={{ fontSize: '14px', fontWeight: 700, marginBottom: '6px', display: 'block' }}>
-                Mode de Versement / Cotisation *
-              </label>
-              <select
-                value={form.mode_paiement === 'libre' ? 'libre' : 'echelonne'}
-                onChange={(e) => setForm({ ...form, mode_paiement: e.target.value })}
-                style={{
-                  width: '100%',
-                  padding: '13px 16px',
-                  borderRadius: '12px',
-                  border: '1.5px solid var(--line)',
-                  fontSize: '15px',
-                  fontWeight: 600,
-                  background: 'var(--card)',
-                  color: 'var(--ink)',
-                }}
-              >
-                <option value="echelonne">Paiement échelonné (versements périodiques planifiés)</option>
-                <option value="libre">Cotisation libre (à son rythme, sans durée finale imposée)</option>
-              </select>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px' }}>
+              <div className="admin-field" style={{ margin: 0 }}>
+                <label style={{ fontSize: '14px', fontWeight: 700, marginBottom: '6px', display: 'block' }}>
+                  Prix Total de Vente (Cagnotte) FCFA *
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  placeholder="Ex: 450000"
+                  value={form.prix_total}
+                  onChange={(e) => {
+                    setForm({ ...form, prix_total: e.target.value });
+                    if (errors.prix_total) setErrors((prev) => ({ ...prev, prix_total: null }));
+                  }}
+                  style={{
+                    width: '100%',
+                    padding: '13px 16px',
+                    borderRadius: '12px',
+                    border: errors.prix_total ? '2px solid #dc2626' : '1.5px solid var(--line)',
+                    fontSize: '15px',
+                    fontWeight: 700,
+                  }}
+                />
+                {errors.prix_total && (
+                  <span style={{ color: '#dc2626', fontSize: '13px', fontWeight: 600, marginTop: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    ⚠ {errors.prix_total}
+                  </span>
+                )}
+              </div>
+
+              <div className="admin-field" style={{ margin: 0 }}>
+                <label style={{ fontSize: '14px', fontWeight: 700, marginBottom: '6px', display: 'block' }}>
+                  Prix d'Achat Comptant / Cash (FCFA)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  placeholder={`Ex: ${form.prix_total ? Math.round(Number(form.prix_total) * 0.95) : 400000} (Si différent du prix total)`}
+                  value={form.prix_cash}
+                  onChange={(e) => setForm({ ...form, prix_cash: e.target.value })}
+                  style={{
+                    width: '100%',
+                    padding: '13px 16px',
+                    borderRadius: '12px',
+                    border: '1.5px solid var(--line)',
+                    fontSize: '15px',
+                    fontWeight: 700,
+                    color: '#16a34a',
+                  }}
+                />
+                <span style={{ fontSize: '12px', color: 'var(--mut)', marginTop: '4px', display: 'block' }}>
+                  Tarif appliqué si le client choisit de payer comptant (Cash direct ou livraison).
+                </span>
+              </div>
+
+              <div className="admin-field" style={{ margin: 0 }}>
+                <label style={{ fontSize: '14px', fontWeight: 700, marginBottom: '6px', display: 'block' }}>
+                  Promotion Associée
+                </label>
+                <select
+                  value={form.promotion_id}
+                  onChange={(e) => setForm({ ...form, promotion_id: e.target.value })}
+                  style={{ width: '100%', padding: '13px 16px', borderRadius: '12px', border: '1.5px solid var(--line)', fontSize: '15px' }}
+                >
+                  <option value="">Aucune promotion</option>
+                  {promotions.map((pr) => (
+                    <option key={pr.id} value={pr.id}>
+                      {pr.titre} (-{pr.pourcentage_promo}%)
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
-
-            {/* SI MODE LIBRE : PARAMÈTRES ADAPTÉS */}
-            {form.mode_paiement === 'libre' ? (
-              <>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px', marginBottom: '20px' }}>
-                  <div className="admin-field" style={{ margin: 0 }}>
-                    <label style={{ fontSize: '14px', fontWeight: 700, marginBottom: '6px', display: 'block' }}>
-                      Prix Total de Vente (FCFA) *
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      placeholder="Ex: 450000"
-                      value={form.prix_total}
-                      onChange={(e) => {
-                        setForm({ ...form, prix_total: e.target.value });
-                        if (errors.prix_total) setErrors((prev) => ({ ...prev, prix_total: null }));
-                      }}
-                      style={{
-                        width: '100%',
-                        padding: '13px 16px',
-                        borderRadius: '12px',
-                        border: errors.prix_total ? '2px solid #dc2626' : '1.5px solid var(--line)',
-                        fontSize: '15px',
-                        fontWeight: 700,
-                      }}
-                    />
-                    {errors.prix_total && (
-                      <span style={{ color: '#dc2626', fontSize: '13px', fontWeight: 600, marginTop: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                        ⚠ {errors.prix_total}
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="admin-field" style={{ margin: 0 }}>
-                    <label style={{ fontSize: '14px', fontWeight: 700, marginBottom: '6px', display: 'block' }}>
-                      Prix d'Achat Comptant / Cash (FCFA)
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      placeholder={`Ex: ${form.prix_total ? Math.round(Number(form.prix_total) * 0.95) : 400000} (Si différent du prix total)`}
-                      value={form.prix_cash}
-                      onChange={(e) => setForm({ ...form, prix_cash: e.target.value })}
-                      style={{
-                        width: '100%',
-                        padding: '13px 16px',
-                        borderRadius: '12px',
-                        border: '1.5px solid var(--line)',
-                        fontSize: '15px',
-                        fontWeight: 700,
-                        color: '#16a34a',
-                      }}
-                    />
-                    <span style={{ fontSize: '12px', color: 'var(--mut)', marginTop: '4px', display: 'block' }}>
-                      Tarif appliqué si le client choisit de payer comptant (Cash direct).
-                    </span>
-                  </div>
-
-                  <div className="admin-field" style={{ margin: 0 }}>
-                    <label style={{ fontSize: '14px', fontWeight: 700, marginBottom: '6px', display: 'block' }}>
-                      1 er versement minimum pour ouvrir la cagnotte (FCFA)
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      placeholder={`Suggéré: ${autoMinStart} FCFA`}
-                      value={form.prix_minimum}
-                      onChange={(e) => setForm({ ...form, prix_minimum: e.target.value })}
-                      style={{ width: '100%', padding: '13px 16px', borderRadius: '12px', border: '1.5px solid var(--line)', fontSize: '15px' }}
-                    />
-                  </div>
-
-                  <div className="admin-field" style={{ margin: 0, background: '#f8fafc', padding: '14px 16px', borderRadius: '12px', border: '1.5px dashed #cbd5e1' }}>
-                    <label style={{ fontSize: '14px', fontWeight: 700, marginBottom: '4px', display: 'block', color: '#334155' }}>
-                      Seuil de Récupération du Produit
-                    </label>
-                    <span style={{ fontSize: '13px', color: '#64748b', lineHeight: 1.5, display: 'block' }}>
-                      ✓ Mode cotisation libre : Aucun seuil à atteindre pour récupérer le produit. Le client verse à son rythme en toute liberté.
-                    </span>
-                  </div>
-
-                  <div className="admin-field" style={{ margin: 0 }}>
-                    <label style={{ fontSize: '14px', fontWeight: 700, marginBottom: '6px', display: 'block' }}>
-                      Promotion Associée
-                    </label>
-                    <select
-                      value={form.promotion_id}
-                      onChange={(e) => setForm({ ...form, promotion_id: e.target.value })}
-                      style={{ width: '100%', padding: '13px 16px', borderRadius: '12px', border: '1.5px solid var(--line)', fontSize: '15px' }}
-                    >
-                      <option value="">Aucune promotion</option>
-                      {promotions.map((pr) => (
-                        <option key={pr.id} value={pr.id}>
-                          {pr.titre} (-{pr.pourcentage_promo}%)
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-              </>
-            ) : (
-              /* SI MODE ÉCHELONNÉ : PARAMÈTRES COMPLETS AVEC DURÉE DE PAIEMENT CLIENT ESTIMÉE ET VERSEMENT PÉRIODIQUE */
-              <>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px', marginBottom: '20px' }}>
-                  <div className="admin-field" style={{ margin: 0 }}>
-                    <label style={{ fontSize: '14px', fontWeight: 700, marginBottom: '6px', display: 'block' }}>
-                      Prix Total de Vente (FCFA) *
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      placeholder="Ex: 450000"
-                      value={form.prix_total}
-                      onChange={(e) => {
-                        setForm({ ...form, prix_total: e.target.value });
-                        if (errors.prix_total) setErrors((prev) => ({ ...prev, prix_total: null }));
-                      }}
-                      style={{
-                        width: '100%',
-                        padding: '13px 16px',
-                        borderRadius: '12px',
-                        border: errors.prix_total ? '2px solid #dc2626' : '1.5px solid var(--line)',
-                        fontSize: '15px',
-                        fontWeight: 700,
-                      }}
-                    />
-                    {errors.prix_total && (
-                      <span style={{ color: '#dc2626', fontSize: '13px', fontWeight: 600, marginTop: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                        ⚠ {errors.prix_total}
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="admin-field" style={{ margin: 0 }}>
-                    <label style={{ fontSize: '14px', fontWeight: 700, marginBottom: '6px', display: 'block' }}>
-                      Prix d'Achat Comptant / Cash (FCFA)
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      placeholder={`Ex: ${form.prix_total ? Math.round(Number(form.prix_total) * 0.95) : 400000} (Si différent du prix total)`}
-                      value={form.prix_cash}
-                      onChange={(e) => setForm({ ...form, prix_cash: e.target.value })}
-                      style={{
-                        width: '100%',
-                        padding: '13px 16px',
-                        borderRadius: '12px',
-                        border: '1.5px solid var(--line)',
-                        fontSize: '15px',
-                        fontWeight: 700,
-                        color: '#16a34a',
-                      }}
-                    />
-                    <span style={{ fontSize: '12px', color: 'var(--mut)', marginTop: '4px', display: 'block' }}>
-                      Tarif appliqué si le client choisit de payer comptant (Cash direct).
-                    </span>
-                  </div>
-
-                  <div className="admin-field" style={{ margin: 0 }}>
-                    <label style={{ fontSize: '14px', fontWeight: 700, marginBottom: '6px', display: 'block' }}>
-                      1 er versement minimum (FCFA)
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      placeholder={`Suggéré: ${autoMinStart} FCFA`}
-                      value={form.prix_minimum}
-                      onChange={(e) => setForm({ ...form, prix_minimum: e.target.value })}
-                      style={{ width: '100%', padding: '13px 16px', borderRadius: '12px', border: '1.5px solid var(--line)', fontSize: '15px' }}
-                    />
-                  </div>
-
-                  <div className="admin-field" style={{ margin: 0 }}>
-                    <label style={{ fontSize: '14px', fontWeight: 700, marginBottom: '6px', display: 'block' }}>
-                      Versement Périodique Échelonné (FCFA)
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      placeholder={`Suggéré: ${autoEch} FCFA`}
-                      value={form.prix_echelonne}
-                      onChange={(e) => setForm({ ...form, prix_echelonne: e.target.value })}
-                      style={{ width: '100%', padding: '13px 16px', borderRadius: '12px', border: '1.5px solid var(--line)', fontSize: '15px', fontWeight: 600 }}
-                    />
-                    <span style={{ fontSize: '12px', color: 'var(--mut)', marginTop: '4px', display: 'block' }}>
-                      💡 Fin estimée calculée mathématiquement : <strong>~{autoDureeEstimeeMois} {form.frequence === 'hebdomadaire' ? 'semaines' : form.frequence === 'journaliere' ? 'jours' : 'mois'}</strong> pour solder l'article selon le versement périodique saisi.
-                    </span>
-                  </div>
-
-                  <div className="admin-field" style={{ margin: 0 }}>
-                    <label style={{ fontSize: '14px', fontWeight: 700, marginBottom: '6px', display: 'block' }}>
-                      Fréquence de Versement
-                    </label>
-                    <select
-                      value={form.frequence}
-                      onChange={(e) => setForm({ ...form, frequence: e.target.value })}
-                      style={{ width: '100%', padding: '13px 16px', borderRadius: '12px', border: '1.5px solid var(--line)', fontSize: '15px' }}
-                    >
-                      <option value="mensuelle">Mensuelle</option>
-                      <option value="bimensuelle">Bimensuelle (tous les 15 jours)</option>
-                      <option value="hebdomadaire">Hebdomadaire</option>
-                      <option value="journaliere">Journalière</option>
-                    </select>
-                  </div>
-
-                  <div className="admin-field" style={{ margin: 0 }}>
-                    <label style={{ fontSize: '14px', fontWeight: 700, marginBottom: '6px', display: 'block' }}>
-                      Seuil de Livraison Anticipée (FCFA)
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      placeholder={`Suggéré: ${autoSeuil} FCFA (Dès 40%)`}
-                      value={form.seuil_livraison}
-                      onChange={(e) => setForm({ ...form, seuil_livraison: e.target.value })}
-                      style={{ width: '100%', padding: '13px 16px', borderRadius: '12px', border: '1.5px solid var(--line)', fontSize: '15px', fontWeight: 600 }}
-                    />
-                    <span style={{ fontSize: '12px', color: 'var(--mut)', marginTop: '4px', display: 'block' }}>
-                      Montant à partir duquel le client est éligible pour récupérer son produit.
-                    </span>
-                  </div>
-
-                  <div className="admin-field" style={{ margin: 0 }}>
-                    <label style={{ fontSize: '14px', fontWeight: 700, marginBottom: '6px', display: 'block' }}>
-                      Promotion Associée
-                    </label>
-                    <select
-                      value={form.promotion_id}
-                      onChange={(e) => setForm({ ...form, promotion_id: e.target.value })}
-                      style={{ width: '100%', padding: '13px 16px', borderRadius: '12px', border: '1.5px solid var(--line)', fontSize: '15px' }}
-                    >
-                      <option value="">Aucune promotion</option>
-                      {promotions.map((pr) => (
-                        <option key={pr.id} value={pr.id}>
-                          {pr.titre} (-{pr.pourcentage_promo}%)
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-              </>
-            )}
           </div>
 
           {/* SECTION 3 : GALERIE PHOTOS (FICHIERS UNIQUEMENT) */}
@@ -2402,8 +2223,10 @@ export default function AdminProductsView({ onShowToast }) {
                 </div>
 
                 <video
-                  src={video.chemin}
+                  src={resolveImageUrl(video.chemin)}
                   controls
+                  playsInline
+                  preload="metadata"
                   style={{
                     width: '100%',
                     maxHeight: '260px',
@@ -2598,9 +2421,9 @@ export default function AdminProductsView({ onShowToast }) {
                   <th>Article / Référence</th>
                   <th>Sous-Catégorie</th>
                   <th>Stock</th>
-                  <th>Prix Total</th>
-                  <th>Modalités de versement</th>
-                  <th>Seuil Livr.</th>
+                  <th>Prix Cagnotte</th>
+                  <th>Prix Cash</th>
+                  <th>Modalités</th>
                   <th>Promotion</th>
                   <th style={{ textAlign: 'right' }}>Actions</th>
                 </tr>
@@ -2609,8 +2432,7 @@ export default function AdminProductsView({ onShowToast }) {
                 {filtered.map((item) => {
                   const param = item.parametre_produit || {};
                   const prixTotal = param.prix_total || 0;
-                  const prixEch = param.prix_echelonne || 0;
-                  const seuil = param.seuil_livraison || 0;
+                  const prixCash = param.prix_cash || prixTotal;
                   const promo = param.promotion;
 
                   const rawImgs = Array.isArray(item.image_produits) && item.image_produits.length > 0
@@ -2689,39 +2511,20 @@ export default function AdminProductsView({ onShowToast }) {
                       <td style={{ fontWeight: 700, fontSize: '15px' }}>
                         {prixTotal.toLocaleString('fr-FR')} F
                       </td>
-                      <td>
-                        {param.mode_paiement === 'libre' ? (
-                          <>
-                            <span
-                              className="admin-badge"
-                              style={{
-                                fontSize: '12px',
-                                display: 'inline-block',
-                                marginBottom: '4px',
-                                background: '#e0f2fe',
-                                color: '#0369a1',
-                              }}
-                            >
-                              Cotisation Libre
-                            </span>
-                            <span className="admin-sub-text">
-                              Dispo: {item.duree || 6} mois (sans fin imposée)
-                            </span>
-                          </>
-                        ) : (
-                          <>
-                            <span style={{ fontSize: '13px', fontWeight: 600 }}>
-                              {prixEch.toLocaleString('fr-FR')} F / {param.frequence || 'mois'}
-                            </span>
-                            <span className="admin-sub-text">
-                              Dispo: {item.duree || 6} mois · Échéancier
-                            </span>
-                          </>
-                        )}
+                      <td style={{ fontWeight: 700, fontSize: '15px', color: '#16a34a' }}>
+                        {Number(prixCash).toLocaleString('fr-FR')} F
                       </td>
                       <td>
-                        <span style={{ fontSize: '13px', fontWeight: 600 }}>
-                          {seuil > 0 ? `${seuil.toLocaleString('fr-FR')} F` : 'Dès 40%'}
+                        <span
+                          className="admin-badge"
+                          style={{
+                            fontSize: '12px',
+                            display: 'inline-block',
+                            background: '#e0f2fe',
+                            color: '#0369a1',
+                          }}
+                        >
+                          Cash & Cotisation Libre
                         </span>
                       </td>
                       <td>

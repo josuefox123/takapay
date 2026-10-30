@@ -12,7 +12,24 @@ export default function AdminSupportView({ onShowToast, onUnreadCountChange }) {
   const [filter, setFilter] = useState('all'); // 'all', 'unread'
   const [search, setSearch] = useState('');
 
-  const chatEndRef = useRef(null);
+  const messagesContainerRef = useRef(null);
+  const userScrolledUpRef = useRef(false);
+
+  const scrollToBottom = (smooth = false) => {
+    if (!messagesContainerRef.current) return;
+    messagesContainerRef.current.scrollTo({
+      top: messagesContainerRef.current.scrollHeight,
+      behavior: smooth ? 'smooth' : 'auto',
+    });
+  };
+
+  const handleMessagesScroll = () => {
+    if (!messagesContainerRef.current) return;
+    const { scrollTop, scrollHeight, clientHeight } = messagesContainerRef.current;
+    // Si l'utilisateur est remonté de plus de 80px au-dessus du bas, il consulte l'historique
+    const isAtBottom = scrollHeight - scrollTop - clientHeight < 80;
+    userScrolledUpRef.current = !isAtBottom;
+  };
 
   // Charger la liste des conversations
   const loadConversations = async () => {
@@ -41,9 +58,15 @@ export default function AdminSupportView({ onShowToast, onUnreadCountChange }) {
         setActiveConversation(data.conversation);
         setMessages(data.messages || []);
 
-        // Si c'était un clic manuel (pas un polling background), rafraîchir la liste pour mettre à zéro le badge
         if (!isBackground) {
+          userScrolledUpRef.current = false;
+          setTimeout(() => scrollToBottom(false), 50);
           loadConversations();
+        } else {
+          // En arrière-plan : ne pas scroller si l'admin lit les anciens messages
+          if (!userScrolledUpRef.current) {
+            scrollToBottom(false);
+          }
         }
       }
     } catch (err) {
@@ -59,6 +82,7 @@ export default function AdminSupportView({ onShowToast, onUnreadCountChange }) {
   // Sélection manuelle d'une conversation
   const handleSelectConversation = (id) => {
     setSelectedConvId(id);
+    userScrolledUpRef.current = false;
     loadActiveConversation(id, false);
   };
 
@@ -76,11 +100,6 @@ export default function AdminSupportView({ onShowToast, onUnreadCountChange }) {
     return () => clearInterval(interval);
   }, [selectedConvId]);
 
-  // Défilement automatique vers le bas
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
-
   // Envoyer une réponse admin
   const handleSendReply = async (e) => {
     if (e) e.preventDefault();
@@ -93,6 +112,8 @@ export default function AdminSupportView({ onShowToast, onUnreadCountChange }) {
       if (res?.message) {
         setMessages((prev) => [...prev, res.message]);
         setReplyText('');
+        userScrolledUpRef.current = false;
+        setTimeout(() => scrollToBottom(true), 50);
         loadConversations();
         if (onShowToast) onShowToast('Réponse envoyée au client');
       }
@@ -188,6 +209,9 @@ export default function AdminSupportView({ onShowToast, onUnreadCountChange }) {
             display: 'flex',
             flexDirection: 'column',
             background: '#fafbfc',
+            height: '100%',
+            minHeight: 0,
+            overflow: 'hidden',
           }}
         >
           {/* Barre de recherche et filtres */}
@@ -273,7 +297,7 @@ export default function AdminSupportView({ onShowToast, onUnreadCountChange }) {
                       transition: 'background 0.15s',
                     }}
                   >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
                       <span style={{ fontWeight: unreadCount > 0 || isSelected ? 700 : 600, fontSize: '13px', color: '#1e293b' }}>
                         {getClientTitle(c)}
                       </span>
@@ -281,6 +305,12 @@ export default function AdminSupportView({ onShowToast, onUnreadCountChange }) {
                         {formatTime(c.last_message_at)}
                       </span>
                     </div>
+
+                    {c.user?.telephone && (
+                      <div style={{ fontSize: '11px', color: '#0284c7', marginBottom: '4px', fontWeight: 500 }}>
+                        📞 {c.user.telephone}
+                      </div>
+                    )}
 
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
                       <p
@@ -322,7 +352,7 @@ export default function AdminSupportView({ onShowToast, onUnreadCountChange }) {
         </div>
 
         {/* COLONNE DROITE : Fil de discussion et réponse */}
-        <div style={{ display: 'flex', flexDirection: 'column', background: '#ffffff' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', background: '#ffffff', height: '100%', minHeight: 0, overflow: 'hidden' }}>
           {!selectedConvId ? (
             <div
               style={{
@@ -355,7 +385,7 @@ export default function AdminSupportView({ onShowToast, onUnreadCountChange }) {
             </div>
           ) : (
             <>
-              {/* En-tête de la conversation active */}
+              {/* En-tête de la conversation active avec identité claire */}
               <div
                 style={{
                   padding: '14px 20px',
@@ -366,16 +396,73 @@ export default function AdminSupportView({ onShowToast, onUnreadCountChange }) {
                   background: '#ffffff',
                 }}
               >
-                <div>
-                  <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700, color: '#1e293b' }}>
-                    {activeConversation ? getClientTitle(activeConversation) : 'Discussion'}
-                  </h3>
-                  {activeConversation?.user && (
-                    <div style={{ display: 'flex', gap: '12px', fontSize: '12px', color: '#64748b', marginTop: '2px' }}>
-                      {activeConversation.user.email && <span>📧 {activeConversation.user.email}</span>}
-                      {activeConversation.user.telephone && <span>📞 {activeConversation.user.telephone}</span>}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <div
+                    style={{
+                      width: '42px',
+                      height: '42px',
+                      borderRadius: '50%',
+                      background: activeConversation?.user ? 'linear-gradient(135deg, #fee2e2 0%, #fecaca 100%)' : '#f1f5f9',
+                      color: activeConversation?.user ? '#dc2626' : '#64748b',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontWeight: 700,
+                      fontSize: '14px',
+                      boxShadow: '0 2px 6px rgba(0,0,0,0.06)',
+                    }}
+                  >
+                    {activeConversation?.user
+                      ? `${(activeConversation.user.nom || '')[0] || ''}${(activeConversation.user.prenom || '')[0] || ''}`.toUpperCase() || 'U'
+                      : 'V'}
+                  </div>
+
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700, color: '#1e293b' }}>
+                        {activeConversation ? getClientTitle(activeConversation) : 'Discussion'}
+                      </h3>
+                      {activeConversation?.user ? (
+                        <span
+                          style={{
+                            fontSize: '11px',
+                            fontWeight: 600,
+                            background: '#eff6ff',
+                            color: '#1d4ed8',
+                            border: '1px solid #bfdbfe',
+                            padding: '1px 7px',
+                            borderRadius: '10px',
+                          }}
+                        >
+                          Client #{activeConversation.user.id}
+                        </span>
+                      ) : (
+                        <span
+                          style={{
+                            fontSize: '11px',
+                            fontWeight: 600,
+                            background: '#f8fafc',
+                            color: '#64748b',
+                            border: '1px solid #e2e8f0',
+                            padding: '1px 7px',
+                            borderRadius: '10px',
+                          }}
+                        >
+                          Visiteur
+                        </span>
+                      )}
                     </div>
-                  )}
+
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', fontSize: '12px', color: '#64748b', marginTop: '3px' }}>
+                      {activeConversation?.user?.telephone && (
+                        <span>📞 <strong>{activeConversation.user.telephone}</strong></span>
+                      )}
+                      {activeConversation?.user?.email && (
+                        <span>📧 {activeConversation.user.email}</span>
+                      )}
+                      <span style={{ color: '#94a3b8' }}>💬 Discussion #{activeConversation?.id}</span>
+                    </div>
+                  </div>
                 </div>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -383,7 +470,7 @@ export default function AdminSupportView({ onShowToast, onUnreadCountChange }) {
                     style={{
                       fontSize: '11.5px',
                       fontWeight: 600,
-                      padding: '4px 8px',
+                      padding: '4px 10px',
                       borderRadius: '6px',
                       background: activeConversation?.status === 'closed' ? '#f1f5f9' : '#dcfce7',
                       color: activeConversation?.status === 'closed' ? '#64748b' : '#15803d',
@@ -413,10 +500,13 @@ export default function AdminSupportView({ onShowToast, onUnreadCountChange }) {
                 </div>
               </div>
 
-              {/* Zone des messages */}
+              {/* Zone des messages avec défilement complet de l'historique */}
               <div
+                ref={messagesContainerRef}
+                onScroll={handleMessagesScroll}
                 style={{
                   flex: 1,
+                  minHeight: 0,
                   overflowY: 'auto',
                   padding: '18px 20px',
                   background: '#f8fafc',
@@ -432,6 +522,10 @@ export default function AdminSupportView({ onShowToast, onUnreadCountChange }) {
                 ) : (
                   messages.map((m) => {
                     const isAdmin = m.sender_type === 'admin';
+                    const clientName = activeConversation?.user
+                      ? `${activeConversation.user.nom || ''} ${activeConversation.user.prenom || ''}`.trim()
+                      : 'Client (Visiteur)';
+
                     return (
                       <div
                         key={m.id}
@@ -443,7 +537,7 @@ export default function AdminSupportView({ onShowToast, onUnreadCountChange }) {
                         }}
                       >
                         <span style={{ fontSize: '11px', color: '#64748b', marginBottom: '3px', fontWeight: 600 }}>
-                          {isAdmin ? 'Vous (Admin)' : 'Client'}
+                          {isAdmin ? '🛡️ Vous (Support Takapay)' : `👤 ${clientName}`}
                         </span>
                         <div
                           style={{
@@ -469,7 +563,6 @@ export default function AdminSupportView({ onShowToast, onUnreadCountChange }) {
                     );
                   })
                 )}
-                <div ref={chatEndRef} />
               </div>
 
               {/* Formulaire de réponse */}

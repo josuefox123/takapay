@@ -140,6 +140,36 @@ export const adminService = {
     }
   },
 
+  async reactivateCagnotte(cagnotteId, payload = {}) {
+    try {
+      const token = this.getClientToken() || this.getToken();
+      const res = await fetch(`${API_BASE}/cagnottes/${cagnotteId}/reactiver`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        await fetch(`${API_BASE}/cagnottes/${cagnotteId}`, {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({ statut: payload.statut || 'en_cours' }),
+        }).catch(() => {});
+      }
+      return true;
+    } catch (e) {
+      console.warn('Erreur réactivation cagnotte:', e);
+      return false;
+    }
+  },
+
   async rembourserCagnotteFeexpay(cagnotteId, payload = {}) {
     try {
       const token = this.getToken();
@@ -287,6 +317,73 @@ export const adminService = {
         data.message ||
         Object.values(data.errors || {})?.[0]?.[0] ||
         'Identifiant ou code PIN incorrect.';
+      throw new Error(msg);
+    }
+
+    if (data.access_token) {
+      localStorage.setItem('takapay_client_token', data.access_token);
+    }
+    return data;
+  },
+
+  async forgotPin(identifiant) {
+    const res = await fetch(`${API_BASE}/forgot-pin`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify({ identifiant }),
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const msg =
+        data.message ||
+        Object.values(data.errors || {})?.[0]?.[0] ||
+        "Impossible d'envoyer le code de réinitialisation.";
+      throw new Error(msg);
+    }
+    return data;
+  },
+
+  async verifyPinCode(identifiant, code) {
+    const res = await fetch(`${API_BASE}/verify-pin-code`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify({ identifiant, code }),
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const msg =
+        data.message ||
+        Object.values(data.errors || {})?.[0]?.[0] ||
+        'Code de vérification incorrect ou expiré.';
+      throw new Error(msg);
+    }
+    return data;
+  },
+
+  async resetPin(identifiant, code, new_pin, confirm_pin) {
+    const res = await fetch(`${API_BASE}/reset-pin`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify({ identifiant, code, new_pin, confirm_pin }),
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const msg =
+        data.message ||
+        Object.values(data.errors || {})?.[0]?.[0] ||
+        'Échec de la réinitialisation du code PIN.';
       throw new Error(msg);
     }
 

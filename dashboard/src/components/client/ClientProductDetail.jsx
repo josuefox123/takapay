@@ -10,10 +10,29 @@ export default function ClientProductDetail({
   onBack,
   onStartOrder,
   onSelectProduct,
+  onGoHome,
+  onSelectCategory,
+  onSelectSubcategory,
 }) {
   const product = propProduct || PRODUCTS.find((p) => p.id === Number(productId)) || PRODUCTS[0];
-  const [selectedGallery, setSelectedGallery] = useState(0);
+  const [selectedGallery, setSelectedGallery] = useState(() => {
+    const hasImgs = ((Array.isArray(product?.images) && product.images.length > 0) ? product.images : (product?.im ? [product.im] : [])).filter(Boolean).length > 0;
+    return (!hasImgs && product?.video) ? 'video' : 0;
+  });
   const [selectedColor, setSelectedColor] = useState(0);
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [product?.id]);
+
+  useEffect(() => {
+    const hasImgs = ((Array.isArray(product?.images) && product.images.length > 0) ? product.images : (product?.im ? [product.im] : [])).filter(Boolean).length > 0;
+    if (!hasImgs && product?.video) {
+      setSelectedGallery('video');
+    } else {
+      setSelectedGallery(0);
+    }
+  }, [product?.id, product?.video]);
 
   // Utilisateur connecté
   const user = propUser || (() => {
@@ -223,8 +242,13 @@ export default function ClientProductDetail({
     setDeliveryError('');
   };
 
-  const images = (product.images && product.images.length > 0) ? product.images : [product.im];
-  const currentImage = images[Math.min(selectedGallery, images.length - 1)];
+  const rawImages = (Array.isArray(product?.images) && product.images.length > 0) ? product.images : (product?.im ? [product.im] : []);
+  const images = rawImages.filter(Boolean);
+  const hasImages = images.length > 0;
+  const rawVideo = typeof product?.video === 'string' ? product.video : product?.video?.chemin;
+  const videoUrl = rawVideo ? resolveImageUrl(rawVideo) : '';
+  const hasVideo = Boolean(videoUrl);
+  const currentImage = hasImages ? images[Math.min(typeof selectedGallery === 'number' ? selectedGallery : 0, images.length - 1)] : '';
 
   // Suggestions d'articles après la zone inférieure (même catégorie ou catalogue complémentaire)
   const categoryArticles = PRODUCTS.filter(
@@ -238,36 +262,57 @@ export default function ClientProductDetail({
   const colors = product.colors || [];
   const chosenColor = colors[selectedColor] || colors[0];
 
+  // Paramètres & promotion éventuelle sur le produit
+  const param = product.parametre_produit || {};
+  const promo = param.promotion || product.promotion;
+  const promoPercent = promo ? Number(promo.pourcentage_promo || 0) : 0;
+
+  const rawProductPrice = Number(param.prix_total || product.prix_total || product.prix || product.p || 0);
+  const rawCashPrice = Number(param.prix_cash || product.prix_cash || rawProductPrice);
+
+  // Prix de base garanti avec application de la promotion si non encore appliquée
+  const resolvedBasePrice = (promoPercent > 0 && !product.o && rawProductPrice > 0)
+    ? Math.round(rawProductPrice * (1 - promoPercent / 100))
+    : Number(product.p || rawProductPrice || 0);
+
+  const resolvedCashPrice = (promoPercent > 0 && !product.o && rawCashPrice > 0)
+    ? Math.round(rawCashPrice * (1 - promoPercent / 100))
+    : Number(product.prix_cash || product.payment?.prixCash || resolvedBasePrice);
+
+  const resolvedOldPrice = (promoPercent > 0 && !product.o && rawProductPrice > 0)
+    ? rawProductPrice
+    : product.o;
+
   // Calcul du prix dynamique selon la couleur sélectionnée
   const hasCustomPrice = Boolean(chosenColor?.hasCustomPrice && chosenColor?.price);
-  const currentPrice = hasCustomPrice ? Number(chosenColor.price) : Number(product.p || 0);
+  const currentPrice = hasCustomPrice ? Number(chosenColor.price) : resolvedBasePrice;
   const currentOldPrice = chosenColor?.oldPrice !== undefined && chosenColor?.oldPrice !== null
     ? chosenColor.oldPrice
-    : (!hasCustomPrice ? product.o : null);
+    : (!hasCustomPrice ? resolvedOldPrice : null);
 
   const discount = currentOldPrice && currentOldPrice > currentPrice
     ? Math.round((1 - currentPrice / currentOldPrice) * 100)
-    : 0;
+    : (promoPercent > 0 ? promoPercent : 0);
 
   // Modalités financières dynamiquement recalculées selon le prix de la couleur choisie
   const pay = product.payment || {};
   const isCash = pay.mode === 'cash';
   const isLibre = pay.mode === 'libre' || true; // Par défaut sur Takapay : option Cash ou Cagnotte Libre
-  const cashPrice = Number(product.prix_cash || pay.prixCash || 0);
-  const effectiveCashPrice = cashPrice > 0 ? cashPrice : currentPrice;
+  const effectiveCashPrice = resolvedCashPrice > 0 ? resolvedCashPrice : currentPrice;
 
   // Choix du mode de commande : 'cash' ou 'cagnotte'
   const [orderMode, setOrderMode] = useState(isCash ? 'cash' : 'cagnotte');
   // Quantité en option cash (ajustable et libre, min 1) ; en cagnotte cela reste 1 article
   const [cashQuantity, setCashQuantity] = useState(1);
 
-  // Cagnotte Libre : 3 choix avec différentes propositions
+  // Cagnotte Libre : 3 choix avec différentes propositions respectant scrupuleusement les pourcentages des offres
   // 'offer_10' (1er versement 10%), 'offer_15' (1er versement 15%), 'custom' (montant personnalisé selon le budget)
   const [cagnotteOption, setCagnotteOption] = useState('offer_10');
   const [customCagnotteAmount, setCustomCagnotteAmount] = useState('');
 
-  const deposit10 = Math.max(500, Math.round(currentPrice * 0.10));
-  const deposit15 = Math.max(500, Math.round(currentPrice * 0.15));
+  const deposit10 = Math.max(1, Math.floor((currentPrice * 10) / 100));
+  const deposit15 = Math.max(1, Math.floor((currentPrice * 15) / 100));
+  const minAllowedDeposit = Math.min(100, deposit10);
   const parsedCustomAmount = Number(customCagnotteAmount) > 0 ? Number(customCagnotteAmount) : 0;
   const effectiveFirstDeposit = cagnotteOption === 'offer_10'
     ? deposit10
@@ -383,13 +428,42 @@ export default function ClientProductDetail({
         </button>
 
         <nav aria-label="Fil d'Ariane" style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', fontWeight: 600 }}>
-          <span style={{ color: 'var(--tx)', opacity: 0.75 }}>Accueil</span>
+          <button
+            type="button"
+            onClick={onGoHome || onBack}
+            style={{ background: 'none', border: 'none', padding: 0, color: 'var(--tx)', opacity: 0.75, cursor: 'pointer', font: 'inherit' }}
+            onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--r)'; e.currentTarget.style.opacity = '1'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--tx)'; e.currentTarget.style.opacity = '0.75'; }}
+          >
+            Accueil
+          </button>
           <span style={{ color: 'var(--mu)', opacity: 0.5 }}>/</span>
-          <span style={{ color: 'var(--tx)', opacity: 0.85 }}>{categoryName}</span>
+          <button
+            type="button"
+            onClick={() => (onSelectCategory ? onSelectCategory(categoryName) : onBack?.())}
+            style={{ background: 'none', border: 'none', padding: 0, color: 'var(--tx)', opacity: 0.85, cursor: 'pointer', font: 'inherit' }}
+            onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--r)'; e.currentTarget.style.opacity = '1'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--tx)'; e.currentTarget.style.opacity = '0.85'; }}
+          >
+            {categoryName}
+          </button>
           <span style={{ color: 'var(--mu)', opacity: 0.5 }}>/</span>
-          <span style={{ color: 'var(--r)', background: 'rgba(220, 38, 38, 0.08)', padding: '3px 10px', borderRadius: '8px', fontWeight: 700 }}>
+          <button
+            type="button"
+            onClick={() => (onSelectSubcategory ? onSelectSubcategory(subcategoryName, categoryName) : onBack?.())}
+            style={{
+              background: 'rgba(220, 38, 38, 0.08)',
+              border: 'none',
+              padding: '3px 10px',
+              borderRadius: '8px',
+              color: 'var(--r)',
+              fontWeight: 700,
+              cursor: 'pointer',
+              font: 'inherit',
+            }}
+          >
             {subcategoryName}
-          </span>
+          </button>
         </nav>
       </div>
 
@@ -420,27 +494,47 @@ export default function ClientProductDetail({
             </span>
 
             <div className="product-gallery-box">
-              {selectedGallery === 'video' && product.video ? (
+              {((selectedGallery === 'video' || !hasImages) && hasVideo) ? (
                 <video
-                  src={resolveImageUrl(typeof product.video === 'string' ? product.video : product.video?.chemin)}
+                  key={videoUrl}
+                  src={videoUrl}
                   controls
+                  playsInline
                   autoPlay
-                />
-              ) : (
+                  muted
+                  loop
+                  preload="metadata"
+                  style={{
+                    width: '100%',
+                    height: '100%',
+                    objectFit: 'contain',
+                    borderRadius: '14px',
+                    background: '#000',
+                  }}
+                >
+                  <source src={videoUrl} type="video/mp4" />
+                  Votre navigateur ne prend pas en charge la lecture de cette vidéo.
+                </video>
+              ) : hasImages ? (
                 <img
                   src={currentImage}
-                  alt={product.n}
+                  alt={product?.n || ''}
                   onError={(e) => {
                     e.target.style.opacity = '0';
                   }}
                 />
+              ) : (
+                <div style={{ display: 'grid', placeItems: 'center', height: '100%', color: 'var(--mut, #888)' }}>
+                  <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '48px', opacity: 0.5 }}>image_not_supported</span>
+                  <span style={{ fontSize: '13px', marginTop: '4px' }}>Aucun visuel disponible</span>
+                </div>
               )}
             </div>
           </div>
 
           {/* Vignettes de la galerie */}
-          <div className="gallery-thumbs" style={{ marginTop: '12px' }}>
-            {images.map((im, idx) => (
+          <div className="gallery-thumbs" style={{ marginTop: '12px', display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+            {hasImages && images.map((im, idx) => (
               <button
                 key={idx}
                 type="button"
@@ -452,25 +546,36 @@ export default function ClientProductDetail({
               </button>
             ))}
 
-            {product.video && (
+            {hasVideo && (
               <button
                 type="button"
                 className={`gallery-thumb ${selectedGallery === 'video' ? 'on' : ''}`}
                 onClick={() => setSelectedGallery('video')}
                 title="Lire la vidéo du produit"
                 style={{
-                  display: 'grid',
-                  placeItems: 'center',
-                  background: '#1c1b22',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                  background: selectedGallery === 'video' ? '#0f172a' : '#1e293b',
                   color: '#fff',
-                  fontSize: '18px',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  padding: '6px 14px',
+                  borderRadius: '10px',
+                  border: selectedGallery === 'video' ? '2px solid var(--r, #dc2626)' : '1px solid rgba(255,255,255,0.2)',
+                  minWidth: '78px',
+                  height: '56px',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
                 }}
               >
-                ▶
+                <span style={{ fontSize: '16px', color: '#ef4444' }}>▶</span>
+                <span>Vidéo</span>
               </button>
             )}
 
-            {images.length < 2 && !product.video && (
+            {images.length < 2 && !hasVideo && (
               <div className="gallery-more">
                 <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '17px' }}>photo_camera</span>
                 <span>Visuel vérifié Takapay</span>
@@ -928,7 +1033,7 @@ export default function ClientProductDetail({
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <input
                         type="number"
-                        min={500}
+                        min={minAllowedDeposit}
                         max={currentPrice}
                         value={customCagnotteAmount}
                         onChange={(e) => setCustomCagnotteAmount(e.target.value)}
@@ -948,7 +1053,7 @@ export default function ClientProductDetail({
                       <span style={{ fontSize: '12px', fontWeight: 800, color: 'var(--mu)' }}>FCFA</span>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px', fontSize: '11px', color: 'var(--mu)' }}>
-                      <span>Minimum : {formatFCFA(500)}</span>
+                      <span>Minimum : {formatFCFA(minAllowedDeposit)}</span>
                       {parsedCustomAmount > 0 && (
                         <span>
                           Solde restant : <strong style={{ color: 'var(--tx)' }}>{formatFCFA(Math.max(0, currentPrice - parsedCustomAmount))}</strong>
@@ -983,15 +1088,15 @@ export default function ClientProductDetail({
           </div>
 
           {/* ACTIONS D'ACHAT DIRECT (PAS DE PANIER) */}
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            {/* Bouton d'action principal CTA rouge compact */}
+          <div>
+            {/* Bouton d'action principal CTA rouge compact prenant toute la largeur */}
             <button
               type="button"
               className="client-btn"
               style={{
-                flex: 1,
-                fontSize: '14px',
-                padding: '11px 16px',
+                width: '100%',
+                fontSize: '15px',
+                padding: '12px 16px',
                 borderRadius: '12px',
                 fontWeight: 800,
                 background: 'var(--r)',
@@ -1001,7 +1106,7 @@ export default function ClientProductDetail({
                 justifyContent: 'center',
                 gap: '8px',
                 cursor: 'pointer',
-                height: '44px',
+                height: '46px',
               }}
               onClick={() => {
                 if (orderMode === 'cash') {
@@ -1018,59 +1123,6 @@ export default function ClientProductDetail({
               }}
             >
               <span>Passer ma commande</span>
-            </button>
-
-            {/* Bouton vert avec logo WhatsApp */}
-            <a
-              href={whatsappUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{
-                width: '44px',
-                height: '44px',
-                borderRadius: '12px',
-                background: '#25D366',
-                color: '#ffffff',
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                textDecoration: 'none',
-                boxShadow: '0 4px 12px rgba(37, 211, 102, 0.25)',
-                transition: 'transform 0.15s ease',
-                flexShrink: 0,
-              }}
-              title="Commander sur WhatsApp"
-              aria-label="WhatsApp"
-            >
-              <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
-                <path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.39 1.26 4.81L2 22l5.42-1.42a9.9 9.9 0 0 0 4.62 1.17h.01c5.46 0 9.9-4.45 9.9-9.91C21.95 6.45 17.5 2 12.04 2Z" />
-              </svg>
-            </a>
-
-            {/* Bouton Favoris inline */}
-            <button
-              type="button"
-              onClick={toggleFavorite}
-              style={{
-                width: '44px',
-                height: '44px',
-                borderRadius: '12px',
-                border: isFavorite ? '2px solid var(--r)' : '1.5px solid var(--bd)',
-                background: isFavorite ? 'rgba(220, 38, 38, 0.08)' : 'var(--cd)',
-                color: isFavorite ? 'var(--r)' : 'var(--tx)',
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: 'pointer',
-                transition: 'all 0.18s ease',
-                flexShrink: 0,
-              }}
-              title={isFavorite ? 'Retirer des favoris' : 'Ajouter aux favoris'}
-              aria-label="Favoris"
-            >
-              <svg viewBox="0 0 24 24" width="20" height="20" fill={isFavorite ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z" />
-              </svg>
             </button>
           </div>
 
@@ -1161,16 +1213,27 @@ export default function ClientProductDetail({
                 target="_blank"
                 rel="noopener noreferrer"
                 className="aside-share-btn"
+                title="Partager sur WhatsApp"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
               >
-                WhatsApp
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" style={{ flexShrink: 0 }}>
+                  <path fill="#25D366" d="M12.04 2c-5.46 0-9.91 4.45-9.91 9.91 0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38c1.45.79 3.08 1.21 4.74 1.21 5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.82 9.82 0 0 0 12.04 2z" />
+                  <path fill="#ffffff" fillRule="evenodd" clipRule="evenodd" d="M17.51 14.38c-.3-.15-1.77-.87-2.04-.97-.28-.1-.48-.15-.68.15-.2.3-.77.97-.95 1.17-.17.2-.35.22-.65.07-.3-.15-1.26-.46-2.4-1.48-.89-.79-1.49-1.77-1.66-2.07-.18-.3-.02-.46.13-.61.13-.14.3-.35.45-.52.15-.18.2-.3.3-.5.1-.2.05-.38-.02-.53-.08-.15-.68-1.64-.93-2.24-.25-.6-.5-.52-.68-.53-.18-.01-.38-.01-.58-.01-.2 0-.53.07-.81.38-.28.3-1.07 1.05-1.07 2.56 0 1.51 1.1 2.97 1.25 3.17.15.2 2.16 3.3 5.23 4.63.73.32 1.3.51 1.74.65.73.23 1.4.2 1.93.12.59-.09 1.77-.72 2.02-1.42.25-.7.25-1.3.17-1.42-.07-.13-.27-.2-.57-.35z" />
+                </svg>
+                <span>WhatsApp</span>
               </a>
               <a
                 href={`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(window.location.href)}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="aside-share-btn"
+                title="Partager sur Facebook"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
               >
-                Facebook
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="#1877F2" style={{ flexShrink: 0 }}>
+                  <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
+                </svg>
+                <span>Facebook</span>
               </a>
             </div>
           </div>
@@ -1496,12 +1559,21 @@ export default function ClientProductDetail({
                 <div
                   key={item.id}
                   className="proposal-item-card"
-                  onClick={() => onSelectProduct(item.id)}
+                  onClick={() => {
+                    if (typeof onSelectProduct === 'function') {
+                      onSelectProduct(item.id);
+                    }
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                  }}
                   role="button"
                   tabIndex={0}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') onSelectProduct(item.id);
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      if (typeof onSelectProduct === 'function') onSelectProduct(item.id);
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }
                   }}
+                  style={{ cursor: 'pointer' }}
                 >
                   <div className="proposal-img-box">
                     <img
@@ -1527,20 +1599,6 @@ export default function ClientProductDetail({
                       {item.n}
                     </div>
 
-                    <div style={{ fontSize: '11.5px', color: '#16a34a', fontWeight: 700, margin: '4px 0 6px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      {item.payment?.mode === 'cash' ? (
-                        <>
-                          <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '15px' }}>payments</span>
-                          <span>Paiement Cash</span>
-                        </>
-                      ) : (
-                        <>
-                          <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '15px' }}>savings</span>
-                          <span>Option Cagnotte Libre</span>
-                        </>
-                      )}
-                    </div>
-
                     <div className="proposal-price">
                       {formatFCFA(item.p)}
                       {item.o && item.o > item.p && (
@@ -1562,91 +1620,7 @@ export default function ClientProductDetail({
         </section>
       )}
 
-      {/* =========================================================================
-          BARRE D'ACTION MOBILE STICKY EN BAS
-          ========================================================================= */}
-      <div className="product-sticky-mobile-bar" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-        <button
-          type="button"
-          className="client-btn"
-          style={{
-            flex: 1,
-            padding: '11px 14px',
-            fontSize: '13.5px',
-            fontWeight: 800,
-            borderRadius: '12px',
-            background: 'var(--r)',
-            cursor: 'pointer',
-            height: '42px',
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-          onClick={() => {
-            if (orderMode === 'cash') {
-              setShowPaymentModal(true);
-              setPaymentModalStep('choice');
-            } else {
-              onStartOrder(product, chosenColor, {
-                mode: 'cagnotte',
-                quantity: 1,
-                firstDeposit: effectiveFirstDeposit,
-                cagnotteOption,
-              });
-            }
-          }}
-        >
-          <span>Passer ma commande</span>
-        </button>
 
-        {/* Bouton vert avec logo WhatsApp */}
-        <a
-          href={whatsappUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{
-            width: '42px',
-            height: '42px',
-            borderRadius: '12px',
-            background: '#25D366',
-            color: '#ffffff',
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            textDecoration: 'none',
-            flexShrink: 0,
-          }}
-          title="Commander sur WhatsApp"
-          aria-label="WhatsApp"
-        >
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
-            <path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.39 1.26 4.81L2 22l5.42-1.42a9.9 9.9 0 0 0 4.62 1.17h.01c5.46 0 9.9-4.45 9.9-9.91C21.95 6.45 17.5 2 12.04 2Z" />
-          </svg>
-        </a>
-
-        <button
-          type="button"
-          onClick={toggleFavorite}
-          style={{
-            width: '42px',
-            height: '42px',
-            borderRadius: '12px',
-            border: isFavorite ? '2px solid var(--r)' : '1.5px solid var(--bd)',
-            background: isFavorite ? 'rgba(220, 38, 38, 0.08)' : 'var(--cd)',
-            color: isFavorite ? 'var(--r)' : 'var(--tx)',
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            cursor: 'pointer',
-            flexShrink: 0,
-          }}
-          aria-label="Favoris"
-        >
-          <svg viewBox="0 0 24 24" width="19" height="19" fill={isFavorite ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2">
-            <path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z" />
-          </svg>
-        </button>
-      </div>
 
       {/* POPUP MODAL : CHOIX DU MODE DE RÈGLEMENT & LIVRAISON */}
       {showPaymentModal && (

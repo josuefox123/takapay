@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { formatFCFA, discountPercentage } from '../../data/clientStore';
+import { formatFCFA, discountPercentage, resolveImageUrl } from '../../data/clientStore';
 
 export default function ClientProductCard({ product, onSelect }) {
   const discount = discountPercentage(product);
@@ -91,14 +91,59 @@ export default function ClientProductCard({ product, onSelect }) {
           </svg>
         </button>
 
-        <img
-          src={product.im}
-          alt={product.n}
-          loading="lazy"
-          onError={(e) => {
-            e.target.style.opacity = '0';
-          }}
-        />
+        {product.video && (
+          <span
+            style={{
+              position: 'absolute',
+              bottom: '8px',
+              left: '8px',
+              zIndex: 3,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px',
+              background: 'rgba(15, 23, 42, 0.85)',
+              color: '#fff',
+              fontSize: '11px',
+              fontWeight: 600,
+              padding: '3px 8px',
+              borderRadius: '6px',
+              backdropFilter: 'blur(4px)',
+            }}
+          >
+            <span style={{ color: '#ef4444', fontSize: '10px' }}>▶</span> Vidéo
+          </span>
+        )}
+
+        {product.im ? (
+          <img
+            src={product.im}
+            alt={product.n}
+            decoding="async"
+            onError={(e) => {
+              e.target.style.opacity = '0';
+            }}
+          />
+        ) : product.video ? (
+          <div style={{ width: '100%', height: '100%', position: 'relative', background: '#0f172a', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <video
+              src={resolveImageUrl(typeof product.video === 'string' ? product.video : product.video?.chemin)}
+              muted
+              playsInline
+              preload="metadata"
+              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+            />
+            <span style={{ position: 'absolute', display: 'flex', alignItems: 'center', justifyContent: 'center', width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(0,0,0,0.6)', color: '#fff', fontSize: '16px' }}>▶</span>
+          </div>
+        ) : (
+          <img
+            src={product.im}
+            alt={product.n}
+            decoding="async"
+            onError={(e) => {
+              e.target.style.opacity = '0';
+            }}
+          />
+        )}
       </div>
 
       <div className="in">

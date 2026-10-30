@@ -54,6 +54,24 @@ export default function AdminDashboard() {
     navigate(`/admin/${newTab}`);
   };
 
+  const [theme, setTheme] = useState(() => {
+    try {
+      const saved = localStorage.getItem('takapay_admin_theme');
+      if (saved === 'dark' || saved === 'light') return saved;
+      return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    } catch {
+      return 'light';
+    }
+  });
+
+  const toggleTheme = () => {
+    const next = theme === 'dark' ? 'light' : 'dark';
+    setTheme(next);
+    try {
+      localStorage.setItem('takapay_admin_theme', next);
+    } catch { /* ignore */ }
+  };
+
   const [adminUser, setAdminUser] = useState(() => adminService.getUser());
   const [stats, setStats] = useState(null);
   const [kpis, setKpis] = useState({
@@ -179,28 +197,57 @@ export default function AdminDashboard() {
   const prenom = adminUser?.prenom || adminUser?.nom || 'Admin';
 
   return (
-    <div className="admin-scope">
+    <div className="admin-scope" data-theme={theme}>
       <div className="admin-dashboard-layout">
         <AdminSidebar
           activeTab={activeTab}
           onSelectTab={handleSelectTab}
           onLogout={handleLogout}
           unreadSupportCount={unreadSupportCount}
+          theme={theme}
+          onToggleTheme={toggleTheme}
         />
 
         <main className="admin-main">
           <Suspense fallback={<div role="status" style={{ padding: 24 }}>Chargement de la page…</div>}>
           {activeTab === 'dashboard' && (
             <>
-              <h1 className="admin-header-title">Bonjour, {prenom}</h1>
-              <p className="admin-header-sub">
-                Voici l'état de la plateforme aujourd'hui
-              </p>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '16px', marginBottom: '8px' }}>
+                <div>
+                  <h1 className="admin-header-title">Bonjour, {prenom}</h1>
+                  <p className="admin-header-sub">
+                    Voici l'état de la plateforme aujourd'hui
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={toggleTheme}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    background: 'var(--card)',
+                    color: 'var(--ink)',
+                    border: '1.5px solid var(--line)',
+                    borderRadius: '12px',
+                    padding: '8px 16px',
+                    fontSize: '13px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
+                    transition: 'all 0.2s ease',
+                  }}
+                  title={theme === 'dark' ? 'Activer le fond clair' : 'Activer le fond sombre'}
+                >
+                  <span style={{ fontSize: '16px' }}>{theme === 'dark' ? '☀️' : '🌙'}</span>
+                  <span>{theme === 'dark' ? 'Fond Clair' : 'Fond Sombre'}</span>
+                </button>
+              </div>
 
               <AdminKpiCards kpis={kpis} />
 
               <div className="admin-row">
-                <AdminRecoveryChart recouvrement={stats?.recouvrement} />
+                <AdminRecoveryChart recouvrement={stats?.recouvrement} kpis={kpis} />
                 <AdminPendingDocuments
                   documents={stats?.documents || []}
                   onAction={handleDocumentAction}

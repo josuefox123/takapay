@@ -7,15 +7,20 @@ export { TAKAPAY_CATEGORIES };
  */
 export const resolveImageUrl = (path) => {
   if (!path || typeof path !== 'string') return '';
+  if (path.startsWith('blob:') || path.startsWith('data:') || path.startsWith('/assets/')) {
+    return path;
+  }
   if (path.startsWith('http://') || path.startsWith('https://')) {
     try {
       const url = new URL(path);
       const isLocalHost = ['localhost', '127.0.0.1'].includes(url.hostname);
       const currentHostIsLocal = typeof window !== 'undefined'
         && ['localhost', '127.0.0.1'].includes(window.location.hostname);
+      const isSameOrigin = typeof window !== 'undefined'
+        && url.origin === window.location.origin;
       if (
         url.pathname.startsWith('/storage/')
-        && (url.origin === window.location.origin || (isLocalHost && currentHostIsLocal))
+        && (isSameOrigin || (isLocalHost && currentHostIsLocal))
       ) {
         return `${url.pathname}${url.search}${url.hash}`;
       }
@@ -24,8 +29,13 @@ export const resolveImageUrl = (path) => {
     }
     return path;
   }
-  if (path.startsWith('data:') || path.startsWith('/assets/')) {
+  if (path.startsWith('/api/videos/')) {
     return path;
+  }
+  // Pour les fichiers vidéo, passer par l'API de streaming HTTP Range pour compatibilité totale iOS/Safari/Chrome
+  if (/\.(mp4|webm|ogg|mov)$/i.test(path)) {
+    const filename = path.split('/').pop();
+    return `/api/videos/${filename}`;
   }
   if (path.startsWith('/storage/')) {
     return path;
@@ -155,6 +165,7 @@ export const mapAdminProductToClient = (p) => {
     prix_total: discountedPrice,
     o: oldPrice,
     im: primaryImg,
+    images: imageList,
     video: p.video ? (typeof p.video === 'string' ? resolveImageUrl(p.video) : (p.video.chemin ? resolveImageUrl(p.video.chemin) : p.video)) : null,
     stockCount: p.stock !== undefined ? Number(p.stock) : 15,
     availabilityDuration: p.duree ? `${p.duree} mois de disponibilité` : 'Disponible',
@@ -355,14 +366,34 @@ export const syncCategoriesFromDb = async () => {
   return [];
 };
 
-if (typeof window !== 'undefined') {
+export const getCachedProducts = () => {
+  if (typeof window === 'undefined') return [];
   try {
     localStorage.removeItem('takapay_created_products');
     localStorage.removeItem('takapay_created_categories');
     localStorage.removeItem('takapay_created_subcategories');
     localStorage.removeItem('takapay-notifications');
     localStorage.removeItem('takapay-demo-cagnotte');
-  } catch { /* ignore */ }
+    const raw = localStorage.getItem('takapay_cached_products');
+    if (!raw) return [];
+    const list = JSON.parse(raw);
+    return Array.isArray(list) ? list : [];
+  } catch {
+    return [];
+  }
+};
+
+export const CAMPAIGNS = [];
+
+export const PRODUCTS = [];
+
+// Initialisation synchrone immédiate des produits depuis le cache persistant
+const initialCachedProducts = getCachedProducts();
+if (initialCachedProducts.length > 0) {
+  PRODUCTS.push(...initialCachedProducts);
+}
+
+if (typeof window !== 'undefined') {
   syncCategoriesFromDb();
   window.addEventListener('takapay_categories_updated', (e) => {
     if (Array.isArray(e.detail)) {
@@ -373,15 +404,15 @@ if (typeof window !== 'undefined') {
   });
 }
 
-export const CAMPAIGNS = [];
-
-export const PRODUCTS = [];
-
 export const getMergedProducts = () => {
-  const custom = getStoredCustomProducts();
-  const existingIds = new Set(custom.map((c) => c.id));
-  const remainingBase = BASE_PRODUCTS.filter((b) => !existingIds.has(b.id));
-  return [...custom, ...remainingBase];
+  if (PRODUCTS.length > 0) return [...PRODUCTS];
+  const cached = getCachedProducts();
+  if (cached.length > 0) {
+    PRODUCTS.length = 0;
+    PRODUCTS.push(...cached);
+    return cached;
+  }
+  return getStoredCustomProducts();
 };
 
 export const getCachedLiveProducts = () => {
@@ -596,28 +627,41 @@ export const mapBackendCagnotteToClient = (c) => {
   if (!primaryImg) primaryImg = '';
 
   const rawTransactions = Array.isArray(c.transactions) ? c.transactions : [];
-  const txs = rawTransactions.map((t) => ({
-    id: `tx-${t.id}`,
-    reference: t.reference_externe || `TK-${t.id}`,
-    titre: 'Versement cagnotte',
-    methode: t.moyen_paiement || c.moyen_paiement || 'MTN Mobile Money',
-    date: t.date ? new Date(t.date).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Récemment',
-    montant: Number(t.montant || 0),
-    statut: ['succes', 'reussi'].includes(String(t.statut).toLowerCase())
-      ? 'Réussi'
-      : (['echoue', 'échoué', 'failed', 'cancelled'].includes(String(t.statut).toLowerCase())
-          ? 'Échoué'
-          : (t.statut === 'en_attente' ? 'En attente' : (t.statut || 'En attente'))),
-    type: t.type || 'versement',
-    periode: 'aujourdhui',
-  }));
+  const isRefundTransaction = (t) =>
+      t.type === 'remboursement' ||
+      t.type === 'annulation' ||
+      (t.reference_externe && (t.reference_externe.startsWith('REM-') || t.reference_externe.includes('ANNUL')));
+  const txs = rawTransactions.map((t) => {
+    const isRefundTx = isRefundTransaction(t);
+    const normalizedStatus = String(t.statut || '').toLowerCase();
+    const isExecuted = ['succes', 'reussi', 'argent renvoyé', 'effectue'].includes(normalizedStatus);
+    const isFailed = ['echoue', 'échec', 'échoué', 'failed', 'cancelled'].includes(normalizedStatus);
+    const isPending = normalizedStatus === 'en_attente';
+
+    return {
+      id: `tx-${t.id}`,
+      reference: t.reference_externe || `TK-${t.id}`,
+      titre: isRefundTx
+        ? (isExecuted ? 'Argent renvoyé (Remboursement)' : 'Remboursement en attente')
+        : 'Versement cagnotte',
+      methode: t.moyen_paiement || c.moyen_paiement || 'MTN Mobile Money',
+      date: t.date ? new Date(t.date).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Récemment',
+      montant: Number(t.montant || 0),
+      statut: isRefundTx
+        ? (isExecuted ? 'Argent renvoyé' : (isPending ? 'En attente' : (t.statut || 'En attente')))
+        : (isExecuted ? 'Réussi' : (isFailed ? 'Échoué' : (isPending ? 'En attente' : (t.statut || 'En attente')))),
+      type: isRefundTx ? 'remboursement' : (t.type || 'versement'),
+      periode: 'aujourdhui',
+    };
+  });
   const hasConfirmedPayment = rawTransactions.some((t) =>
+    !isRefundTransaction(t) &&
     ['succes', 'reussi'].includes(String(t.statut).toLowerCase())
   );
   const isPaymentFailed = rawTransactions.some((t) =>
-    ['echoue', 'échoué', 'failed', 'cancelled'].includes(String(t.statut).toLowerCase())
+    !isRefundTransaction(t) &&
+    ['echoue', 'échec', 'échoué', 'failed', 'cancelled'].includes(String(t.statut || '').toLowerCase())
   ) || c.statut === 'echec_paiement';
-
   const subcategoryName =
     prod.sous_categorie?.nom ||
     prod.sous_categorie_nom ||
@@ -783,6 +827,11 @@ export const mapBackendCagnotteToClient = (c) => {
     isPaymentFailed,
     hasConfirmedPayment,
     canDelete,
+    rawStatut: c.statut,
+    montantRemboursement: c.montant_remboursement || c.montantRemboursement || null,
+    fraisAnnulation: c.frais_annulation || c.fraisAnnulation || null,
+    telephoneRemboursement: c.telephone_remboursement || c.telephoneRemboursement || null,
+    dateDemandeAnnulation: c.date_demande_annulation || c.dateDemandeAnnulation || null,
     transactions: txs.length > 0 ? txs : (isCod || paid > 0 ? [
       {
         id: `tx-init-${c.id}`,
@@ -806,6 +855,11 @@ export const getStoredCagnottes = (_user = null) => {
     localStorage.removeItem('takapay-client-cagnottes');
   } catch { /* ignore */ }
 
+  // Si l'utilisateur n'est pas connecté, il n'a aucune cagnotte
+  if (!_user || !_user.id) {
+    return [];
+  }
+
   // 1. Lire les cagnottes réelles synchronisées depuis le backend
   let backendList = [];
   try {
@@ -817,19 +871,12 @@ export const getStoredCagnottes = (_user = null) => {
   } catch { /* ignore */ }
 
   // Filtrer pour ne garder que les cagnottes avec un produit réel valide
-  let validList = backendList.filter(
+  const validList = backendList.filter(
     (c) => c && c.product && (c.product.n || c.product.nom) && (c.backendId || c.id)
   );
 
-  // Filtrer strictement par utilisateur connecté
-  if (_user && _user.id) {
-    validList = validList.filter((c) => {
-      if (!c.userId) return false;
-      return String(c.userId) === String(_user.id);
-    });
-  }
-
-  return validList;
+  // Filtrer strictement par l'utilisateur connecté
+  return validList.filter((c) => c && c.userId && String(c.userId) === String(_user.id));
 };
 
 

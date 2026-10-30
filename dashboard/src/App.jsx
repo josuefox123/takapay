@@ -16,14 +16,19 @@ export default function App() {
           <Route path="/splash" element={<Splash />} />
           <Route path="/app" element={<AppHome initialTab="home" />} />
           <Route path="/app/produits" element={<AppHome initialTab="shop" />} />
+          <Route path="/app/produits/:id" element={<AppHome initialTab="product" />} />
+          <Route path="/app/produit/:id" element={<AppHome initialTab="product" />} />
+          <Route path="/app/categories/:category" element={<AppHome initialTab="shop" />} />
           <Route path="/app/categories" element={<AppHome initialTab="shop" />} />
           <Route path="/app/cagnotte" element={<AppHome initialTab="cag" />} />
           <Route path="/app/profil" element={<AppHome initialTab="pro" />} />
           <Route path="/app/notifications" element={<AppHome initialTab="notif" />} />
           <Route path="/app/favoris" element={<AppHome initialTab="subcat" />} />
-          <Route path="/app/*" element={<AppHome initialTab="home" />} />
+          <Route path="/app/commande/:id" element={<AppHome initialTab="order" />} />
+          <Route path="/app/commande" element={<AppHome initialTab="order" />} />
           <Route path="/catalogue" element={<Navigate to="/app/produits" replace />} />
           <Route path="/connexion" element={<AppHome initialTab="order" />} />
+          <Route path="/app/*" element={<AppHome initialTab="home" />} />
 
           <Route path="/admin" element={<Navigate to="/admin/dashboard" replace />} />
           <Route path="/admin/connexion" element={<AdminLogin />} />

@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { FeexPayProvider, FeexPayButton } from '@feexpay/react-sdk';
 import '@feexpay/react-sdk/style.css';
 import { formatFCFA } from '../../data/clientStore';
 import { adminService } from '../../services/adminService';
+import ClientForgotPinModal from './ClientForgotPinModal';
 
 export default function ClientOrderFlow({
   product,
@@ -15,6 +16,7 @@ export default function ClientOrderFlow({
   onCompleteOrder,
   onBack,
 }) {
+  const [showForgotPinModal, setShowForgotPinModal] = useState(false);
   const [activeUser, setActiveUser] = useState(() => {
     if (user) return user;
     try {
@@ -36,7 +38,10 @@ export default function ClientOrderFlow({
   const [nom, setNom] = useState('');
   const [prenom, setPrenom] = useState('');
   const [phone, setPhone] = useState('+229 ');
-  const [email, setEmail] = useState(user?.email && !user.email.endsWith('@client.takapay.bj') ? user.email : '');
+  const [email, setEmail] = useState(() => {
+    const em = user?.email || activeUser?.email || '';
+    return em && !em.endsWith('@client.takapay.bj') ? em : '';
+  });
   const [terms, setTerms] = useState(true);
 
   // Formulaire connexion
@@ -50,19 +55,48 @@ export default function ClientOrderFlow({
   // Paiement
   const [provider, setProvider] = useState('MTN');
   const [error, setError] = useState('');
+  const [authNotice, setAuthNotice] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [paymentData, setPaymentData] = useState(null);
   const [orderType, setOrderType] = useState(initialOrderType || 'cagnotte'); // 'cagnotte' ou 'cash'
   const [quantity, setQuantity] = useState(initialQuantity || 1);
   const [successModalData, setSuccessModalData] = useState(null);
 
+  // Coordonnées de paiement pré-remplies (directement insérées et modifiables par le client)
+  const [paymentPhone, setPaymentPhone] = useState(() => {
+    return user?.telephone || user?.phone || activeUser?.telephone || activeUser?.phone || '';
+  });
+  const [paymentName, setPaymentName] = useState(() => {
+    const u = user || activeUser;
+    return `${u?.prenom || ''} ${u?.nom || ''}`.trim() || u?.nom || u?.n || '';
+  });
+
   // Mode Cash : Choix entre Paiement à la livraison et Mobile Money
   const [cashPaymentMode, setCashPaymentMode] = useState('delivery'); // 'delivery' ou 'online'
-  const [deliveryAddress, setDeliveryAddress] = useState(user?.adresse || '');
-  const [deliveryPhone, setDeliveryPhone] = useState(user?.telephone || user?.phone || '');
+  const [deliveryAddress, setDeliveryAddress] = useState(() => user?.adresse || activeUser?.adresse || '');
+  const [deliveryPhone, setDeliveryPhone] = useState(() => user?.telephone || user?.phone || activeUser?.telephone || activeUser?.phone || '');
   const [deliveryNote, setDeliveryNote] = useState('');
   const [deliveryCoords, setDeliveryCoords] = useState('');
   const [isLocating, setIsLocating] = useState(false);
+
+  // Synchronisation automatique des informations du client connecté ou inscrit
+  useEffect(() => {
+    const current = activeUser || user;
+    if (current) {
+      const full = `${current.prenom || ''} ${current.nom || ''}`.trim() || current.nom || current.n || '';
+      const p = current.telephone || current.phone || '';
+      const em = current.email && !current.email.endsWith('@client.takapay.bj') ? current.email : '';
+      const adr = current.adresse || '';
+
+      if (full) setPaymentName((prev) => prev || full);
+      if (p) {
+        setPaymentPhone((prev) => (prev && prev !== '+229 ' ? prev : p));
+        setDeliveryPhone((prev) => (prev && prev !== '+229 ' ? prev : p));
+      }
+      if (adr) setDeliveryAddress((prev) => prev || adr);
+      if (em) setEmail((prev) => prev || em);
+    }
+  }, [activeUser, user]);
 
   // Connexion Google
   const handleGoogleAuth = async () => {
@@ -122,6 +156,13 @@ export default function ClientOrderFlow({
         };
         onUserAuthSuccess(loggedUser, 'Connexion réussie.');
         setActiveUser(loggedUser);
+        setPaymentName(fullName);
+        setPaymentPhone(loggedUser.phone);
+        setDeliveryPhone(loggedUser.phone);
+        if (loggedUser.adresse) setDeliveryAddress(loggedUser.adresse);
+        if (loggedUser.email && !loggedUser.email.endsWith('@client.takapay.bj')) {
+          setEmail(loggedUser.email);
+        }
         setStep('payment');
       } catch (err) {
         setError(err.message || 'Identifiant ou code PIN incorrect.');
@@ -178,6 +219,12 @@ export default function ClientOrderFlow({
       };
       onUserAuthSuccess(newUser, result.message || 'Compte créé avec succès !');
       setActiveUser(newUser);
+      setPaymentName(fullName);
+      setPaymentPhone(newUser.phone);
+      setDeliveryPhone(newUser.phone);
+      if (newUser.email && !newUser.email.endsWith('@client.takapay.bj')) {
+        setEmail(newUser.email);
+      }
       setStep('payment');
     } catch (err) {
       setError(err.message || 'Erreur lors de l’enregistrement de votre compte.');
@@ -193,10 +240,10 @@ export default function ClientOrderFlow({
   const minDeposit = (initialDeposit && Number(initialDeposit) > 0)
     ? Number(initialDeposit)
     : Math.max(
-        100,
+        1,
         product?.payment?.minimumStart
-          ? Math.round(product.payment.minimumStart * priceRatio)
-          : Math.round(effectivePrice * 0.1)
+          ? Math.floor(product.payment.minimumStart * priceRatio)
+          : Math.floor((effectivePrice * 10) / 100)
       );
   const effectiveQuantity = orderType === 'cash' ? Math.max(1, quantity) : 1;
   const paymentAmount = orderType === 'cash' ? (cashPrice * effectiveQuantity) : minDeposit;
@@ -337,6 +384,10 @@ export default function ClientOrderFlow({
       setError('Veuillez choisir votre moyen de paiement.');
       return;
     }
+    if (!paymentPhone.trim()) {
+      setError('Veuillez renseigner votre numéro de téléphone Mobile Money.');
+      return;
+    }
     setError('');
     setSubmitting(true);
     try {
@@ -347,6 +398,9 @@ export default function ClientOrderFlow({
         quantite: effectiveQuantity,
         moyen_paiement: provider,
         user_id: activeUser?.id || user?.id,
+        telephone: paymentPhone.trim(),
+        client_nom: paymentName.trim(),
+        client_email: (email && email.trim()) || null,
       });
       setPaymentData(initRes);
     } catch (err) {
@@ -508,7 +562,24 @@ export default function ClientOrderFlow({
                       onChange={(e) => setLoginId(e.target.value)}
                     />
 
-                    <label className="fl" htmlFor="login-pin">Code PIN ou mot de passe</label>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '14px', marginBottom: '6px' }}>
+                      <label className="fl" htmlFor="login-pin" style={{ margin: 0 }}>Code PIN ou mot de passe</label>
+                      <button
+                        type="button"
+                        onClick={() => setShowForgotPinModal(true)}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: 'var(--r, #c62828)',
+                          fontSize: '12.5px',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          padding: 0,
+                        }}
+                      >
+                        Code oublié ?
+                      </button>
+                    </div>
                     <input
                       id="login-pin"
                       type="password"
@@ -519,6 +590,12 @@ export default function ClientOrderFlow({
                       onChange={(e) => setLoginPin(e.target.value)}
                     />
                   </>
+                )}
+
+                {authNotice && (
+                  <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#15803d', padding: '10px 14px', borderRadius: '10px', fontSize: '13px', margin: '8px 0', fontWeight: 600 }}>
+                    {authNotice}
+                  </div>
                 )}
 
                 {error && (
@@ -1065,8 +1142,13 @@ export default function ClientOrderFlow({
                     currency="XOF"
                     customId={paymentData.reference}
                     callback_info={{
-                      first_name: user?.prenom || user?.nom || prenom || nom || 'Client',
-                      email: (email && email.trim()) || user?.email || '',
+                      fullname: paymentName.trim() || `${activeUser?.prenom || user?.prenom || prenom || ''} ${activeUser?.nom || user?.nom || nom || ''}`.trim() || 'Client',
+                      first_name: (paymentName.trim().split(' ')[0]) || activeUser?.prenom || user?.prenom || prenom || 'Client',
+                      last_name: (paymentName.trim().split(' ').slice(1).join(' ')) || activeUser?.nom || user?.nom || nom || '',
+                      email: (email && email.trim()) || (activeUser?.email && !activeUser.email.endsWith('@client.takapay.bj') ? activeUser.email : '') || '',
+                      phone: paymentPhone.trim() || activeUser?.telephone || activeUser?.phone || user?.telephone || user?.phone || phone || '',
+                      phoneNumber: paymentPhone.trim() || activeUser?.telephone || activeUser?.phone || user?.telephone || user?.phone || phone || '',
+                      reseau: provider === 'Moov' ? 'MOOV' : 'MTN',
                     }}
                     callback={handleFeexpayCallback}
                     buttonText={`Payer ${formatFCFA(paymentAmount)} avec FeexPay`}
@@ -1130,21 +1212,53 @@ export default function ClientOrderFlow({
                   </button>
                 </div>
  
-                {(!user?.email || user.email.endsWith('@client.takapay.bj')) && (
-                  <div style={{ marginTop: '14px', marginBottom: '8px' }}>
-                    <label className="fl" htmlFor="client-receipt-email">
-                      Votre adresse email pour recevoir le reçu (recommandé)
-                    </label>
-                    <input
-                      id="client-receipt-email"
-                      type="email"
-                      className="fi"
-                      placeholder="Ex: votre.email@gmail.com"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                    />
-                  </div>
-                )}
+                {/* Coordonnées de paiement pré-remplies (directement insérées, modifiables) */}
+                <div style={{ marginTop: '16px', marginBottom: '14px' }}>
+                  <label className="fl" htmlFor="client-payment-phone">
+                    Numéro Mobile Money pour le débit *
+                  </label>
+                  <input
+                    id="client-payment-phone"
+                    type="tel"
+                    required
+                    className="fi"
+                    placeholder="+229 97 00 00 00"
+                    value={paymentPhone}
+                    onChange={(e) => setPaymentPhone(e.target.value)}
+                  />
+                  <small style={{ color: '#706966', fontSize: '11.5px', display: 'block', marginTop: '4px' }}>
+                    Numéro enregistré à l’inscription. Vous pouvez l’effacer et le remplacer si vous payez depuis un autre numéro.
+                  </small>
+                </div>
+
+                <div style={{ marginBottom: '14px' }}>
+                  <label className="fl" htmlFor="client-payment-name">
+                    Nom et prénom du client *
+                  </label>
+                  <input
+                    id="client-payment-name"
+                    type="text"
+                    required
+                    className="fi"
+                    placeholder="Ex: Jean DOSSOU"
+                    value={paymentName}
+                    onChange={(e) => setPaymentName(e.target.value)}
+                  />
+                </div>
+
+                <div style={{ marginBottom: '14px' }}>
+                  <label className="fl" htmlFor="client-receipt-email">
+                    Adresse email pour recevoir le reçu {(!email || email.endsWith('@client.takapay.bj')) ? '(facultatif)' : ''}
+                  </label>
+                  <input
+                    id="client-receipt-email"
+                    type="email"
+                    className="fi"
+                    placeholder="Ex: votre.email@gmail.com"
+                    value={email && !email.endsWith('@client.takapay.bj') ? email : ''}
+                    onChange={(e) => setEmail(e.target.value)}
+                  />
+                </div>
 
                 <div className="checkout-note">
                   🔒 Transaction sécurisée par notification push Mobile Money sur votre téléphone via FeexPay.
@@ -1286,6 +1400,24 @@ export default function ClientOrderFlow({
           </div>
         </div>
       )}
+
+      {/* Modale de réinitialisation sécurisée du code PIN (par Email ou SMS) */}
+      <ClientForgotPinModal
+        isOpen={showForgotPinModal}
+        onClose={() => setShowForgotPinModal(false)}
+        initialIdentifiant={loginId}
+        onSuccess={(resetId, successMsg) => {
+          setShowForgotPinModal(false);
+          setStep('auth');
+          setAuthMode('login');
+          if (resetId) {
+            setLoginId(resetId);
+          }
+          setLoginPin('');
+          setError('');
+          setAuthNotice(successMsg || 'Code PIN modifié avec succès ! Veuillez vous connecter avec votre nouveau code PIN.');
+        }}
+      />
     </div>
   );
 }

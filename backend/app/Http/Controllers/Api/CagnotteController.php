@@ -23,15 +23,32 @@ class CagnotteController extends Controller
      */
     public function index(Request $request): AnonymousResourceCollection
     {
-        $user = $request->user('sanctum');
-        $userId = $request->query('user_id') ?? $user?->id;
+        $user = $request->user('sanctum') ?? $request->user();
+        if (! $user && $request->bearerToken()) {
+            $accessToken = \Laravel\Sanctum\PersonalAccessToken::findToken($request->bearerToken());
+            if ($accessToken && $accessToken->tokenable) {
+                $user = $accessToken->tokenable;
+            }
+        }
 
         $query = Cagnotte::has('produit')
             ->with(['utilisateur', 'produit.imageProduits', 'produit.parametreProduit', 'produit.sousCategorie.categorie', 'transactions'])
             ->latest();
 
-        if ($userId && (!$user || $user->role === 'client')) {
-            $query->where('utilisateur_id', $userId);
+        // 1. Administrateurs / super_admin / gestionnaires : accès à toutes les cagnottes
+        if ($user && $user->role !== 'client') {
+            if ($request->filled('user_id')) {
+                $query->where('utilisateur_id', $request->query('user_id'));
+            }
+        } elseif ($request->filled('user_id')) {
+            // 2. Requête filtrée par identifiant client
+            $query->where('utilisateur_id', $request->query('user_id'));
+        } elseif ($user) {
+            // 3. Client authentifié : ses propres cagnottes
+            $query->where('utilisateur_id', $user->id);
+        } else {
+            // 4. Visiteur non authentifié sans paramètre : liste vide
+            $query->whereRaw('1 = 0');
         }
 
         return CagnotteResource::collection($query->get());
@@ -215,16 +232,11 @@ class CagnotteController extends Controller
             ]);
         }
 
-        if ($cagnotte->utilisateur_id) {
-            Notification::create([
-                'utilisateur_id' => $cagnotte->utilisateur_id,
-                'cagnotte_id' => $cagnotte->id,
-                'titre' => 'Demande d\'annulation enregistrée',
-                'message' => "Votre demande d'annulation pour l'article " . ($cagnotte->produit?->nom ?? '') . " a bien été enregistrée. Des frais de gestion de 5% (" . number_format($frais, 0, ',', ' ') . " FCFA) sont déduits. Le montant de " . number_format($remboursement, 0, ',', ' ') . " FCFA vous sera reversé sous 24H sur votre numéro " . $telephone . ".",
-                'type' => 'alerte',
-                'statut' => 'non_lu',
-            ]);
-        }
+        $clientEmail = $request->input('email')
+            ?? $cagnotte->utilisateur?->email
+            ?? $request->user('sanctum')?->email;
+
+        $cagnotte->sendCagnotteAnnuleeNotification($remboursement, $frais, $telephone, $clientEmail);
 
         return response()->json([
             'message' => 'Demande d\'annulation enregistrée avec succès. Votre remboursement de 95% sera envoyé sous 24H.',
