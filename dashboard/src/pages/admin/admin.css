@@ -19,24 +19,32 @@
   min-height: 100vh;
 }
 
-@media (prefers-color-scheme: dark) {
-  .admin-scope:not([data-theme="light"]) {
-    --bg: #141318;
-    --card: #1e1c24;
-    --ink: #f4f2ee;
-    --mut: #a09eaa;
-    --line: #2e2b36;
-    --soft: #33290f;
-  }
+/* Fond Clair explicite */
+.admin-scope[data-theme="light"] {
+  --bg: #fffdf8;
+  --card: #ffffff;
+  --ink: #1c1b22;
+  --mut: #6b6a75;
+  --line: #ebe6dc;
+  --soft: #fff2cc;
 }
 
+/* Fond Sombre explicite */
 .admin-scope[data-theme="dark"] {
-  --bg: #141318;
-  --card: #1e1c24;
+  --bg: #111015;
+  --card: #18171f;
   --ink: #f4f2ee;
-  --mut: #a09eaa;
-  --line: #2e2b36;
-  --soft: #33290f;
+  --mut: #9b98a6;
+  --line: #2b2834;
+  --soft: #2e2612;
+}
+
+.admin-scope[data-theme="dark"] input,
+.admin-scope[data-theme="dark"] select,
+.admin-scope[data-theme="dark"] textarea {
+  background-color: var(--card);
+  color: var(--ink);
+  border-color: var(--line);
 }
 
 /* Base elements */
