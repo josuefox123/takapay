@@ -2203,8 +2203,13 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                     currency="XOF"
                     customId={paymentData.reference}
                     callback_info={{
+                      fullname: `${user?.prenom || ''} ${user?.nom || ''}`.trim() || user?.nom || 'Client',
                       first_name: user?.prenom || user?.nom || 'Client',
-                      email: user?.email || '',
+                      last_name: user?.nom || '',
+                      email: (user?.email && !user.email.endsWith('@client.takapay.bj')) ? user.email : '',
+                      phone: user?.telephone || user?.phone || '',
+                      phoneNumber: user?.telephone || user?.phone || '',
+                      reseau: depositProvider === 'Moov' ? 'MOOV' : 'MTN',
                     }}
                     callback={handleFeexpayCallback}
                     buttonText={`Payer ${formatFCFA(Number(paymentData.amount))} avec FeexPay`}

@@ -39,8 +39,8 @@ class PaymentController extends Controller
         if (!$user && $request->filled('user_id')) {
             $user = User::find($request->input('user_id'));
         }
-        if (!$user && ($request->filled('telephone_livraison') || $request->filled('delivery_phone'))) {
-            $phone = preg_replace('/\D/', '', $request->input('telephone_livraison') ?? $request->input('delivery_phone'));
+        if (!$user && ($request->filled('telephone_livraison') || $request->filled('delivery_phone') || $request->filled('telephone'))) {
+            $phone = preg_replace('/\D/', '', $request->input('telephone_livraison') ?? $request->input('delivery_phone') ?? $request->input('telephone'));
             if (strlen($phone) >= 8) {
                 $user = User::where('telephone', 'like', "%{$phone}%")->first();
             }
