@@ -12,8 +12,20 @@ export default function ClientProductDetail({
   onSelectProduct,
 }) {
   const product = propProduct || PRODUCTS.find((p) => p.id === Number(productId)) || PRODUCTS[0];
-  const [selectedGallery, setSelectedGallery] = useState(0);
+  const [selectedGallery, setSelectedGallery] = useState(() => {
+    const hasImgs = ((Array.isArray(product?.images) && product.images.length > 0) ? product.images : (product?.im ? [product.im] : [])).filter(Boolean).length > 0;
+    return (!hasImgs && product?.video) ? 'video' : 0;
+  });
   const [selectedColor, setSelectedColor] = useState(0);
+
+  useEffect(() => {
+    const hasImgs = ((Array.isArray(product?.images) && product.images.length > 0) ? product.images : (product?.im ? [product.im] : [])).filter(Boolean).length > 0;
+    if (!hasImgs && product?.video) {
+      setSelectedGallery('video');
+    } else {
+      setSelectedGallery(0);
+    }
+  }, [product?.id, product?.video]);
 
   // Utilisateur connecté
   const user = propUser || (() => {
@@ -223,8 +235,13 @@ export default function ClientProductDetail({
     setDeliveryError('');
   };
 
-  const images = (product.images && product.images.length > 0) ? product.images : [product.im];
-  const currentImage = images[Math.min(selectedGallery, images.length - 1)];
+  const rawImages = (Array.isArray(product?.images) && product.images.length > 0) ? product.images : (product?.im ? [product.im] : []);
+  const images = rawImages.filter(Boolean);
+  const hasImages = images.length > 0;
+  const rawVideo = typeof product?.video === 'string' ? product.video : product?.video?.chemin;
+  const videoUrl = rawVideo ? resolveImageUrl(rawVideo) : '';
+  const hasVideo = Boolean(videoUrl);
+  const currentImage = hasImages ? images[Math.min(typeof selectedGallery === 'number' ? selectedGallery : 0, images.length - 1)] : '';
 
   // Suggestions d'articles après la zone inférieure (même catégorie ou catalogue complémentaire)
   const categoryArticles = PRODUCTS.filter(
@@ -441,27 +458,47 @@ export default function ClientProductDetail({
             </span>
 
             <div className="product-gallery-box">
-              {selectedGallery === 'video' && product.video ? (
+              {((selectedGallery === 'video' || !hasImages) && hasVideo) ? (
                 <video
-                  src={resolveImageUrl(typeof product.video === 'string' ? product.video : product.video?.chemin)}
+                  key={videoUrl}
+                  src={videoUrl}
                   controls
+                  playsInline
                   autoPlay
-                />
-              ) : (
+                  muted
+                  loop
+                  preload="metadata"
+                  style={{
+                    width: '100%',
+                    height: '100%',
+                    objectFit: 'contain',
+                    borderRadius: '14px',
+                    background: '#000',
+                  }}
+                >
+                  <source src={videoUrl} type="video/mp4" />
+                  Votre navigateur ne prend pas en charge la lecture de cette vidéo.
+                </video>
+              ) : hasImages ? (
                 <img
                   src={currentImage}
-                  alt={product.n}
+                  alt={product?.n || ''}
                   onError={(e) => {
                     e.target.style.opacity = '0';
                   }}
                 />
+              ) : (
+                <div style={{ display: 'grid', placeItems: 'center', height: '100%', color: 'var(--mut, #888)' }}>
+                  <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '48px', opacity: 0.5 }}>image_not_supported</span>
+                  <span style={{ fontSize: '13px', marginTop: '4px' }}>Aucun visuel disponible</span>
+                </div>
               )}
             </div>
           </div>
 
           {/* Vignettes de la galerie */}
-          <div className="gallery-thumbs" style={{ marginTop: '12px' }}>
-            {images.map((im, idx) => (
+          <div className="gallery-thumbs" style={{ marginTop: '12px', display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+            {hasImages && images.map((im, idx) => (
               <button
                 key={idx}
                 type="button"
@@ -473,25 +510,36 @@ export default function ClientProductDetail({
               </button>
             ))}
 
-            {product.video && (
+            {hasVideo && (
               <button
                 type="button"
                 className={`gallery-thumb ${selectedGallery === 'video' ? 'on' : ''}`}
                 onClick={() => setSelectedGallery('video')}
                 title="Lire la vidéo du produit"
                 style={{
-                  display: 'grid',
-                  placeItems: 'center',
-                  background: '#1c1b22',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                  background: selectedGallery === 'video' ? '#0f172a' : '#1e293b',
                   color: '#fff',
-                  fontSize: '18px',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  padding: '6px 14px',
+                  borderRadius: '10px',
+                  border: selectedGallery === 'video' ? '2px solid var(--r, #dc2626)' : '1px solid rgba(255,255,255,0.2)',
+                  minWidth: '78px',
+                  height: '56px',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
                 }}
               >
-                ▶
+                <span style={{ fontSize: '16px', color: '#ef4444' }}>▶</span>
+                <span>Vidéo</span>
               </button>
             )}
 
-            {images.length < 2 && !product.video && (
+            {images.length < 2 && !hasVideo && (
               <div className="gallery-more">
                 <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '17px' }}>photo_camera</span>
                 <span>Visuel vérifié Takapay</span>

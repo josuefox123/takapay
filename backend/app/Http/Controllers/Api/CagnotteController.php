@@ -23,6 +23,12 @@ class CagnotteController extends Controller
     public function index(Request $request): AnonymousResourceCollection
     {
         $user = $request->user('sanctum') ?? $request->user();
+        if (! $user && $request->bearerToken()) {
+            $accessToken = \Laravel\Sanctum\PersonalAccessToken::findToken($request->bearerToken());
+            if ($accessToken && $accessToken->tokenable) {
+                $user = $accessToken->tokenable;
+            }
+        }
 
         $query = Cagnotte::has('produit')
             ->with(['utilisateur', 'produit.imageProduits', 'produit.parametreProduit', 'produit.sousCategorie.categorie', 'transactions'])

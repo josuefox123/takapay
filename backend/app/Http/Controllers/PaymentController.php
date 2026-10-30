@@ -314,8 +314,10 @@ class PaymentController extends Controller
                 if ($cagnotte) {
                     $finalAmount = $amount > 0 ? $amount : 0.0;
                     $cagnotte->increment('montant_verse', $finalAmount);
-                    if ($cagnotte->montant_verse >= $cagnotte->prix_unitaire) {
+                    $cagnotte->refresh();
+                    if ($cagnotte->montant_verse >= $cagnotte->objectif_effectif) {
                         $cagnotte->update(['statut' => 'terminee']);
+                        $cagnotte->sendCagnottePreteNotification($clientEmail);
                     }
 
                     Transaction::firstOrCreate(
@@ -369,6 +371,9 @@ class PaymentController extends Controller
                     ]);
                     $cagnotteId = $cagnotte->id;
                     $resolvedCagnotte = $cagnotte;
+                    if ($cagnotte->statut === 'terminee') {
+                        $cagnotte->sendCagnottePreteNotification($clientEmail);
+                    }
                 }
 
                 Transaction::firstOrCreate(

@@ -7,8 +7,16 @@ export { TAKAPAY_CATEGORIES };
  */
 export const resolveImageUrl = (path) => {
   if (!path || typeof path !== 'string') return '';
-  if (path.startsWith('http://') || path.startsWith('https://') || path.startsWith('data:') || path.startsWith('/assets/')) {
+  if (path.startsWith('blob:') || path.startsWith('data:') || path.startsWith('http://') || path.startsWith('https://')) {
     return path;
+  }
+  if (path.startsWith('/api/videos/')) {
+    return path;
+  }
+  // Pour les fichiers vidéo, passer par l'API de streaming HTTP Range pour compatibilité totale iOS/Safari/Chrome
+  if (/\.(mp4|webm|ogg|mov)$/i.test(path)) {
+    const filename = path.split('/').pop();
+    return `/api/videos/${filename}`;
   }
   if (path.startsWith('/storage/')) {
     return path;
@@ -138,6 +146,7 @@ export const mapAdminProductToClient = (p) => {
     prix_total: discountedPrice,
     o: oldPrice,
     im: primaryImg,
+    images: imageList,
     video: p.video ? (typeof p.video === 'string' ? resolveImageUrl(p.video) : (p.video.chemin ? resolveImageUrl(p.video.chemin) : p.video)) : null,
     stockCount: p.stock !== undefined ? Number(p.stock) : 15,
     availabilityDuration: p.duree ? `${p.duree} mois de disponibilité` : 'Disponible',

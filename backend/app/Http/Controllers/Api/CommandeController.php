@@ -34,6 +34,12 @@ class CommandeController extends Controller
             $query->whereRaw('1 = 0');
         }
 
+        // Écarte les simples ébauches de cagnottes orphelines (abandonnées sans versement)
+        $query->where(function ($q) {
+            $q->where('type_commande', 'cash')
+                ->orWhereHas('transactions');
+        });
+
         $perPage = (int) $request->query('per_page', 50);
         return CommandeResource::collection($query->paginate($perPage));
     }
@@ -48,7 +54,12 @@ class CommandeController extends Controller
             'utilisateur',
             'commandeProduits.produit',
             'transactions.cagnotte',
-        ])->latest();
+        ])
+        ->where(function ($q) {
+            $q->where('type_commande', 'cash')
+                ->orWhereHas('transactions');
+        })
+        ->latest();
 
         if ($request->filled('statut')) {
             $query->where('statut', $request->query('statut'));
