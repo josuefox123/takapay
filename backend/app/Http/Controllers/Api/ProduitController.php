@@ -66,19 +66,23 @@ $produitFields = ['nom', 'sous_categorie_id', 'description', 'stock', 'duree', '
                 if (!empty($produitData['video']) && is_array($produitData['video'])) {
                     $produitData['video'] = $produitData['video']['chemin'] ?? null;
                 }
-                if (!empty($produitData['video']) && is_string($produitData['video']) && str_starts_with($produitData['video'], 'data:video/')) {
-                    $comma = strpos($produitData['video'], ',');
-                    $header = substr($produitData['video'], 0, $comma);
-                    $binary = base64_decode(substr($produitData['video'], $comma + 1), true);
-                    if ($binary !== false) {
-                        $ext = 'mp4';
-                        if (preg_match('#data:video/(webm|ogg|quicktime|mp4)#i', $header, $m)) {
-                            $ext = $m[1] === 'quicktime' ? 'mov' : $m[1];
+                if (!empty($produitData['video']) && is_string($produitData['video'])) {
+                    if (str_starts_with($produitData['video'], 'blob:')) {
+                        unset($produitData['video']);
+                    } elseif (str_starts_with($produitData['video'], 'data:video/')) {
+                        $comma = strpos($produitData['video'], ',');
+                        $header = substr($produitData['video'], 0, $comma);
+                        $binary = base64_decode(substr($produitData['video'], $comma + 1), true);
+                        if ($binary !== false) {
+                            $ext = 'mp4';
+                            if (preg_match('#data:video/(webm|ogg|quicktime|mp4)#i', $header, $m)) {
+                                $ext = $m[1] === 'quicktime' ? 'mov' : $m[1];
+                            }
+                            $videoFileName = 'video_'.time().'_'.\Illuminate\Support\Str::random(6).'.'.$ext;
+                            Storage::disk('public')->put('produits/'.$videoFileName, $binary);
+                            Storage::disk('public')->put($videoFileName, $binary);
+                            $produitData['video'] = 'produits/'.$videoFileName;
                         }
-                        $videoFileName = 'video_'.time().'_'.\Illuminate\Support\Str::random(6).'.'.$ext;
-                        Storage::disk('public')->put('produits/'.$videoFileName, $binary);
-                        Storage::disk('public')->put($videoFileName, $binary);
-                        $produitData['video'] = 'produits/'.$videoFileName;
                     }
                 }
                 $produit->update($produitData);

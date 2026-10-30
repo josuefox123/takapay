@@ -253,7 +253,7 @@ class AdminController extends Controller
                             Storage::disk('public')->put($videoFileName, $binary);
                             $videoPath = 'produits/'.$videoFileName;
                         }
-                    } else {
+                    } elseif (!str_starts_with($rawVideo, 'blob:')) {
                         $videoPath = $rawVideo;
                     }
                 }
