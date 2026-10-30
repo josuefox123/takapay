@@ -666,15 +666,17 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                   <div
                     key={item.id}
                     style={{
-                      background: '#ffffff',
+                      background: isItemCancelled ? '#fcfbf9' : '#ffffff',
                       borderRadius: '20px',
-                      border: '1.5px solid #eee7e0',
+                      border: isItemCancelled ? '1.5px dashed #ded6cd' : '1.5px solid #eee7e0',
                       padding: '20px',
-                      boxShadow: '0 4px 16px rgba(0,0,0,0.03)',
+                      boxShadow: isItemCancelled ? 'none' : '0 4px 16px rgba(0,0,0,0.03)',
+                      opacity: isItemCancelled ? 0.8 : 1,
                       display: 'flex',
                       flexDirection: 'column',
                       justifyContent: 'space-between',
                       gap: '16px',
+                      transition: 'all 0.2s ease',
                     }}
                   >
                     <div>
@@ -705,7 +707,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                               ? '#f0fdf4'
                               : isItemFinished
                               ? '#dcfce7'
-                              : '#fee2e2',
+                              : '#fef3c7',
                             color: isItemCancelled
                               ? '#b91c1c'
                               : isItemReceived
@@ -716,7 +718,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                               ? '#166534'
                               : isItemFinished
                               ? '#15803d'
-                              : '#b91c1c',
+                              : '#b45309',
                             fontSize: '11.5px',
                             fontWeight: 800,
                           }}
@@ -753,7 +755,12 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                           <img
                             src={prod.im || ''}
                             alt={prod.n || 'Article'}
-                            style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                            style={{
+                              width: '100%',
+                              height: '100%',
+                              objectFit: 'contain',
+                              filter: isItemCancelled ? 'grayscale(40%)' : 'none',
+                            }}
                             onError={(e) => {
                               e.target.onerror = null;
                               e.target.style.opacity = '0';
@@ -762,11 +769,11 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                         </div>
 
                         <div style={{ flex: 1, minWidth: 0 }}>
-                          <h3 style={{ fontSize: '16.5px', fontWeight: 800, color: '#1b1716', margin: '0 0 3px', lineHeight: 1.3 }}>
+                          <h3 style={{ fontSize: '16.5px', fontWeight: 800, color: isItemCancelled ? '#57534e' : '#1b1716', margin: '0 0 3px', lineHeight: 1.3 }}>
                             {prod.n}
                           </h3>
                           <div style={{ fontSize: '12px', color: '#706966' }}>{cleanVariantDisplay(prod.variant)}</div>
-                          <div style={{ fontSize: '13.5px', color: '#dc2626', fontWeight: 800, marginTop: '4px' }}>
+                          <div style={{ fontSize: '13.5px', color: isItemCancelled ? '#78716c' : '#dc2626', fontWeight: 800, marginTop: '4px' }}>
                             Total : {formatFCFA(item.prixTotal)}
                           </div>
                         </div>
@@ -775,17 +782,38 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                       {/* Progression & Chiffres */}
                       <div
                         style={{
-                          background: '#faf6f3',
+                          background: isItemCancelled ? '#f5f0eb' : '#faf6f3',
                           borderRadius: '14px',
                           padding: '12px 14px',
                           border: '1px solid #f0e8e0',
                         }}
                       >
-                        {isItemCash ? (
+                        {isItemCancelled ? (
+                          <div style={{ fontSize: '12.5px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                              <span style={{ color: '#706966' }}>Statut :</span>
+                              <b style={{ color: '#b91c1c' }}>
+                                {isItemCod ? 'Commande annulée' : 'Cagnotte interrompue'}
+                              </b>
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                              <span style={{ color: '#706966' }}>
+                                {isItemCod ? 'Frais d’annulation :' : 'Cotisations :'}
+                              </span>
+                              <b style={{ color: '#1b1716' }}>
+                                {isItemCod
+                                  ? '0 FCFA (Sans frais)'
+                                  : Number(item.montantVerse) > 0
+                                  ? `${formatFCFA(item.montantVerse)} (Remboursement sous 24H)`
+                                  : '0 FCFA'}
+                              </b>
+                            </div>
+                          </div>
+                        ) : isItemCash ? (
                           <div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12.5px', marginBottom: '4px' }}>
                               <span style={{ color: '#706966' }}>{isItemCod ? 'Modalité :' : 'Règlement :'}</span>
-                              <b style={{ color: isItemReceived ? '#15803d' : isItemCod ? '#0369a1' : '#166534' }}>
+                              <b style={{ color: isItemReceived ? '#15803d' : isItemCod ? '#b45309' : '#166534' }}>
                                 {isItemReceived ? 'Colis livré & réceptionné' : isItemCod ? 'À régler au livreur' : 'Payé au comptant'}
                               </b>
                             </div>
@@ -832,15 +860,19 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                           flex: 1,
                           padding: '11px',
                           borderRadius: '12px',
-                          border: '1.5px solid #dc2626',
-                          background: '#ffffff',
-                          color: '#dc2626',
+                          border: isItemCancelled ? '1px solid #ded6cd' : '1.5px solid #dc2626',
+                          background: isItemCancelled ? '#f5f0eb' : '#ffffff',
+                          color: isItemCancelled ? '#57534e' : '#dc2626',
                           fontSize: '13px',
                           fontWeight: 800,
                           cursor: 'pointer',
                         }}
                       >
-                        {isItemCash ? 'Détails & Suivi →' : 'Détails & Versements →'}
+                        {isItemCancelled
+                          ? 'Voir l’annulation →'
+                          : isItemCash
+                          ? 'Détails & Suivi →'
+                          : 'Détails & Versements →'}
                       </button>
 
                       {!isItemCash && !isItemFinished && !isItemCancelled && (
@@ -963,7 +995,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
               </button>
 
 
-              {!isCash && !isFinished && !isCancelled && (
+              {!isFinished && !isArticleReceived && !isCancelled && (
                 <button
                   type="button"
                   onClick={openCancelModal}
@@ -991,14 +1023,14 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                   }}
                 >
                   <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>cancel</span>
-                  Annuler la cagnotte
+                  {isCash ? 'Annuler la commande' : 'Annuler la cagnotte'}
                 </button>
               )}
             </div>
           </div>
 
           {/* Bannière commande paiement à la livraison */}
-          {isCod && !isArticleReceived && (
+          {isCod && !isArticleReceived && !isCancelled && (
             <div
               style={{
                 background: 'linear-gradient(135deg, #1b1716 0%, #2a2321 100%)',
@@ -1065,10 +1097,12 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
               <div>
                 <h3 style={{ margin: '0 0 4px', fontSize: '18px', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '22px', color: '#dc2626' }}>cancel</span>
-                  <span>Cagnotte annulée · Remboursement sous 24H</span>
+                  <span>{isCash ? 'Commande annulée' : 'Cagnotte annulée · Remboursement sous 24H'}</span>
                 </h3>
                 <p style={{ margin: 0, fontSize: '13.5px', opacity: 0.95, lineHeight: 1.5 }}>
-                  Cette cagnotte fait l'objet d'une demande d'annulation. Conformément aux CGU, une retenue forfaitaire de 5% est déduite pour frais de gestion. Le montant restant (95%) vous sera renvoyé dans un délai maximal de <b>24 heures</b> sur votre numéro Mobile Money.
+                  {isCash
+                    ? 'Cette commande a été annulée à votre demande. Aucun montant ne vous sera réclamé et la livraison ne sera pas effectuée.'
+                    : "Cette cagnotte fait l'objet d'une demande d'annulation. Conformément aux CGU, une retenue forfaitaire de 5% est déduite pour frais de gestion. Le montant restant (95%) vous sera renvoyé dans un délai maximal de 24 heures sur votre numéro Mobile Money."}
                 </p>
               </div>
               <div
@@ -1250,14 +1284,18 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                         style={{
                           fontSize: '11.5px',
                           fontWeight: 800,
-                          color: '#b45309',
-                          background: '#fef3c7',
-                          border: '1px solid #fde68a',
+                          color: isCancelled ? '#b91c1c' : '#b45309',
+                          background: isCancelled ? '#fee2e2' : '#fef3c7',
+                          border: isCancelled ? '1px solid #fecaca' : '1px solid #fde68a',
                           padding: '3px 10px',
                           borderRadius: '99px',
                         }}
                       >
-                        {isArticleReceived ? (
+                        {isCancelled ? (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                            ✕ Commande annulée
+                          </span>
+                        ) : isArticleReceived ? (
                           <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
                             <CheckCircle2 size={12} color="#b45309" /> Réceptionné & Payé
                           </span>
@@ -1268,18 +1306,38 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                         )}
                       </span>
                     </div>
-                    <div style={{ fontSize: '28px', fontWeight: 900, color: '#1b1716', letterSpacing: '-0.5px' }}>
+                    <div style={{ fontSize: '28px', fontWeight: 900, color: isCancelled ? '#78716c' : '#1b1716', letterSpacing: '-0.5px' }}>
                       {formatFCFA(cagnotte.prixTotal)}
                     </div>
                     <p style={{ margin: '6px 0 0', fontSize: '12.5px', color: '#64748b', lineHeight: 1.4 }}>
-                      {isArticleReceived
+                      {isCancelled
+                        ? 'Cette commande a été annulée. Aucun règlement ne sera perçu et le livreur ne sera pas déployé.'
+                        : isArticleReceived
                         ? 'Le règlement a été effectué en totalité auprès du coursier.'
                         : 'Aucun paiement en ligne requis. Vous réglerez cette somme directement au coursier à la réception.'}
                     </p>
                   </div>
 
                   {/* Bouton d'action principal */}
-                  {!isArticleReceived ? (
+                  {isCancelled ? (
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '10px',
+                        padding: '14px 18px',
+                        borderRadius: '14px',
+                        background: '#fef2f2',
+                        border: '1.5px solid #fecaca',
+                        color: '#991b1b',
+                        fontWeight: 700,
+                        fontSize: '13.5px',
+                      }}
+                    >
+                      <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '20px', color: '#dc2626' }}>cancel</span>
+                      <span>Commande annulée. Livraison et paiement désactivés.</span>
+                    </div>
+                  ) : !isArticleReceived ? (
                     <button
                       type="button"
                       onClick={() => {
@@ -2442,7 +2500,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
               </div>
               <div>
                 <h3 style={{ fontSize: '18px', fontWeight: 800, margin: '0 0 2px' }}>
-                  Annuler cette cagnotte ?
+                  {isCash ? 'Annuler cette commande ?' : 'Annuler cette cagnotte ?'}
                 </h3>
                 <small style={{ color: '#706966', fontSize: '12px' }}>
                   {p.n || 'Article TakaPay'}
@@ -2451,100 +2509,125 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
             </div>
 
             <p style={{ fontSize: '13.5px', color: '#4b443f', lineHeight: 1.5, margin: '0 0 16px' }}>
-              Êtes-vous vraiment sûr de vouloir annuler votre cagnotte en cours ?
+              {isCash
+                ? 'Êtes-vous sûr de vouloir annuler votre commande en paiement à la livraison ?'
+                : 'Êtes-vous vraiment sûr de vouloir annuler votre cagnotte en cours ?'}
             </p>
 
-            {/* Avertissement CGU et pourcentage */}
-            <div
-              style={{
-                background: '#fffbeb',
-                border: '1.5px solid #fef3c7',
-                borderRadius: '14px',
-                padding: '14px 16px',
-                marginBottom: '18px',
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
-                <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '20px', color: '#d97706', flexShrink: 0 }}>warning</span>
-                <div style={{ fontSize: '12.5px', color: '#92400e', lineHeight: 1.5 }}>
-                  <b>Conditions d’annulation :</b>
-                  <br />
-                  Une retenue forfaitaire de <b>5%</b> sera déduite du montant total cotisé au titre des frais de dossier et de gestion. Les <b>95% restants</b> vous seront renvoyés sous <b>24 heures</b> par virement Mobile Money.
-                </div>
-              </div>
-            </div>
-
-            {/* Détail du calcul financier */}
-            <div
-              style={{
-                background: '#faf6f3',
-                border: '1px solid #eee7e0',
-                borderRadius: '14px',
-                padding: '14px 16px',
-                marginBottom: '18px',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '8px',
-                fontSize: '13px',
-              }}
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: '#706966' }}>Montant total cotisé :</span>
-                <b style={{ color: '#1b1716' }}>{formatFCFA(cagnotte.montantVerse || 0)}</b>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: '#b91c1c' }}>Frais retenus (5%) :</span>
-                <b style={{ color: '#b91c1c' }}>
-                  - {formatFCFA(Math.round(((cagnotte.montantVerse || 0) * 5) / 100))}
-                </b>
-              </div>
+            {isCash || (cagnotte.montantVerse || 0) === 0 ? (
               <div
                 style={{
-                  borderTop: '1px solid #e5ded7',
-                  paddingTop: '8px',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  fontSize: '14px',
+                  background: '#fffbeb',
+                  border: '1.5px solid #fde68a',
+                  borderRadius: '14px',
+                  padding: '14px 16px',
+                  marginBottom: '20px',
                 }}
               >
-                <span style={{ fontWeight: 800, color: '#15803d' }}>Montant net remboursé (95%) :</span>
-                <b style={{ fontWeight: 800, color: '#15803d' }}>
-                  {formatFCFA(
-                    Math.max(
-                      0,
-                      (cagnotte.montantVerse || 0) -
-                        Math.round(((cagnotte.montantVerse || 0) * 5) / 100)
-                    )
-                  )}
-                </b>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                  <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '20px', color: '#d97706', flexShrink: 0 }}>info</span>
+                  <div style={{ fontSize: '12.5px', color: '#92400e', lineHeight: 1.5 }}>
+                    <b>Annulation sans frais :</b>
+                    <br />
+                    Comme aucun versement en ligne n'a été effectué pour cette commande, son annulation est <b>immédiate et totalement gratuite</b>. La livraison ne sera pas effectuée.
+                  </div>
+                </div>
               </div>
-            </div>
+            ) : (
+              <>
+                {/* Avertissement CGU et pourcentage */}
+                <div
+                  style={{
+                    background: '#fffbeb',
+                    border: '1.5px solid #fef3c7',
+                    borderRadius: '14px',
+                    padding: '14px 16px',
+                    marginBottom: '18px',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                    <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '20px', color: '#d97706', flexShrink: 0 }}>warning</span>
+                    <div style={{ fontSize: '12.5px', color: '#92400e', lineHeight: 1.5 }}>
+                      <b>Conditions d’annulation :</b>
+                      <br />
+                      Une retenue forfaitaire de <b>5%</b> sera déduite du montant total cotisé au titre des frais de dossier et de gestion. Les <b>95% restants</b> vous seront renvoyés sous <b>24 heures</b> par virement Mobile Money.
+                    </div>
+                  </div>
+                </div>
 
-            {/* Numéro pour le remboursement */}
-            <div style={{ marginBottom: '20px' }}>
-              <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 700, marginBottom: '6px', color: '#1b1716' }}>
-                Numéro Mobile Money pour recevoir le remboursement *
-              </label>
-              <input
-                type="tel"
-                required
-                value={cancelPhone}
-                onChange={(e) => setCancelPhone(e.target.value)}
-                placeholder="Ex: 97000000 ou 61000000"
-                style={{
-                  width: '100%',
-                  padding: '11px 14px',
-                  borderRadius: '10px',
-                  border: '1.5px solid #ded6cd',
-                  fontSize: '13.5px',
-                  boxSizing: 'border-box',
-                }}
-              />
-              <small style={{ color: '#706966', fontSize: '11.5px', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '14px', color: '#16a34a' }}>schedule</span>
-                <span>Remboursement garanti dans un délai maximal de <b>24 heures</b>.</span>
-              </small>
-            </div>
+                {/* Détail du calcul financier */}
+                <div
+                  style={{
+                    background: '#faf6f3',
+                    border: '1px solid #eee7e0',
+                    borderRadius: '14px',
+                    padding: '14px 16px',
+                    marginBottom: '18px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '8px',
+                    fontSize: '13px',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: '#706966' }}>Montant total cotisé :</span>
+                    <b style={{ color: '#1b1716' }}>{formatFCFA(cagnotte.montantVerse || 0)}</b>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: '#b91c1c' }}>Frais retenus (5%) :</span>
+                    <b style={{ color: '#b91c1c' }}>
+                      - {formatFCFA(Math.round(((cagnotte.montantVerse || 0) * 5) / 100))}
+                    </b>
+                  </div>
+                  <div
+                    style={{
+                      borderTop: '1px solid #e5ded7',
+                      paddingTop: '8px',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      fontSize: '14px',
+                    }}
+                  >
+                    <span style={{ fontWeight: 800, color: '#15803d' }}>Montant net remboursé (95%) :</span>
+                    <b style={{ fontWeight: 800, color: '#15803d' }}>
+                      {formatFCFA(
+                        Math.max(
+                          0,
+                          (cagnotte.montantVerse || 0) -
+                            Math.round(((cagnotte.montantVerse || 0) * 5) / 100)
+                        )
+                      )}
+                    </b>
+                  </div>
+                </div>
+
+                {/* Numéro pour le remboursement */}
+                <div style={{ marginBottom: '20px' }}>
+                  <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 700, marginBottom: '6px', color: '#1b1716' }}>
+                    Numéro Mobile Money pour recevoir le remboursement *
+                  </label>
+                  <input
+                    type="tel"
+                    required
+                    value={cancelPhone}
+                    onChange={(e) => setCancelPhone(e.target.value)}
+                    placeholder="Ex: 97000000 ou 61000000"
+                    style={{
+                      width: '100%',
+                      padding: '11px 14px',
+                      borderRadius: '10px',
+                      border: '1.5px solid #ded6cd',
+                      fontSize: '13.5px',
+                      boxSizing: 'border-box',
+                    }}
+                  />
+                  <small style={{ color: '#706966', fontSize: '11.5px', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '14px', color: '#16a34a' }}>schedule</span>
+                    <span>Remboursement garanti dans un délai maximal de <b>24 heures</b>.</span>
+                  </small>
+                </div>
+              </>
+            )}
 
             <div style={{ display: 'flex', gap: '10px' }}>
               <button
@@ -2563,7 +2646,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                   cursor: isCancelling ? 'not-allowed' : 'pointer',
                 }}
               >
-                Non, garder ma cagnotte
+                {isCash ? 'Non, conserver' : 'Non, garder ma cagnotte'}
               </button>
 
               <button
@@ -2584,7 +2667,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                   opacity: isCancelling ? 0.7 : 1,
                 }}
               >
-                {isCancelling ? 'Traitement...' : 'Oui, confirmer l’annulation'}
+                {isCancelling ? 'Traitement...' : isCash ? 'Oui, annuler la commande' : 'Oui, confirmer l’annulation'}
               </button>
             </div>
           </div>
