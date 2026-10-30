@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, useParams } from 'react-router-dom';
 import Header from '../../components/public/Header';
 import ClientHomeView from '../../components/client/ClientHomeView';
 import ClientCatalogView from '../../components/client/ClientCatalogView';
@@ -19,6 +19,7 @@ import './client.css';
 export default function AppHome({ initialTab = 'home' }) {
   const navigate = useNavigate();
   const location = useLocation();
+  const { id: routeId, category: routeCategory } = useParams();
 
   // Navigation & vues : 'home' | 'shop' | 'subcat' | 'product' | 'order' | 'cag' | 'pro' | 'notif'
   const [view, setView] = useState(initialTab);
@@ -34,29 +35,49 @@ export default function AppHome({ initialTab = 'home' }) {
   }
 
   // Sélection Catalogue
-  const [selectedCat, setSelectedCat] = useState('Tous');
+  const [selectedCat, setSelectedCat] = useState(() => {
+    if (routeCategory) {
+      try {
+        return decodeURIComponent(routeCategory);
+      } catch {
+        return routeCategory;
+      }
+    }
+    return 'Tous';
+  });
   const [selectedSubCat, setSelectedSubCat] = useState('');
   const [isPromoOnly, setIsPromoOnly] = useState(false);
   const [isFavoritesOnly, setIsFavoritesOnly] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
   // Produit actif pour la vue détaillée
-  const [activeProductId, setActiveProductId] = useState(1);
+  const [activeProductId, setActiveProductId] = useState(() => {
+    if (routeId && !Number.isNaN(Number(routeId))) {
+      return Number(routeId);
+    }
+    return 1;
+  });
   const [selectedColorForOrder, setSelectedColorForOrder] = useState(null);
   const [orderOptions, setOrderOptions] = useState({ mode: 'cagnotte', quantity: 1 });
 
   // Utilisateur connecté & Cagnottes (sauvegarde en localStorage)
-  const [cagnotteCount, setCagnotteCount] = useState(() => {
-    const list = getStoredCagnottes();
-    return Array.isArray(list) ? list.length : 0;
-  });
-
   const [user, setUser] = useState(() => {
     try {
       const saved = localStorage.getItem('takapay-client-user');
       return saved ? JSON.parse(saved) : null;
     } catch {
       return null;
+    }
+  });
+
+  const [cagnotteCount, setCagnotteCount] = useState(() => {
+    try {
+      const saved = localStorage.getItem('takapay-client-user');
+      const savedUser = saved ? JSON.parse(saved) : null;
+      const list = getStoredCagnottes(savedUser);
+      return Array.isArray(list) ? list.length : 0;
+    } catch {
+      return 0;
     }
   });
 
@@ -104,9 +125,69 @@ export default function AppHome({ initialTab = 'home' }) {
   // Synchronisation bidirectionnelle avec les routes URL
   useEffect(() => {
     const p = location.pathname;
-    if (p === '/app/produits' || p === '/app/categories' || p === '/catalogue') {
+    const searchParams = new URLSearchParams(location.search);
+    const subParam = searchParams.get('sub');
+    const isPromoParam = searchParams.get('promo') === '1';
+
+    const productMatch = p.match(/^\/app\/produits?\/([^/]+)/);
+    const orderMatch = p.match(/^\/app\/commande(?:\/([^/]+))?/);
+    const categoryMatch = p.match(/^\/app\/categories\/([^/]+)/);
+
+    if (productMatch) {
+      const pId = Number(productMatch[1]);
+      if (!Number.isNaN(pId)) {
+        setActiveProductId(pId);
+      }
       setIsFavoritesOnly(false);
-      setView('shop');
+      setView('product');
+    } else if (orderMatch) {
+      if (orderMatch[1]) {
+        const pId = Number(orderMatch[1]);
+        if (!Number.isNaN(pId)) {
+          setActiveProductId(pId);
+        }
+      }
+      setIsFavoritesOnly(false);
+      setView('order');
+    } else if (categoryMatch) {
+      try {
+        setSelectedCat(decodeURIComponent(categoryMatch[1]));
+      } catch {
+        setSelectedCat(categoryMatch[1]);
+      }
+      setIsFavoritesOnly(false);
+      if (subParam) {
+        try {
+          setSelectedSubCat(decodeURIComponent(subParam));
+        } catch {
+          setSelectedSubCat(subParam);
+        }
+        setIsPromoOnly(false);
+        setView('subcat');
+      } else {
+        setSelectedSubCat('');
+        setIsPromoOnly(false);
+        setView('shop');
+      }
+    } else if (p === '/app/produits' || p === '/app/categories' || p === '/catalogue') {
+      setIsFavoritesOnly(false);
+      if (subParam) {
+        try {
+          setSelectedSubCat(decodeURIComponent(subParam));
+        } catch {
+          setSelectedSubCat(subParam);
+        }
+        setIsPromoOnly(false);
+        setView('subcat');
+      } else if (isPromoParam) {
+        setSelectedSubCat('Promotions');
+        setIsPromoOnly(true);
+        setView('subcat');
+      } else {
+        setSelectedSubCat('');
+        setIsPromoOnly(false);
+        setView('shop');
+      }
     } else if (p === '/app/favoris') {
       setIsFavoritesOnly(true);
       setIsPromoOnly(false);
@@ -121,16 +202,30 @@ export default function AppHome({ initialTab = 'home' }) {
     } else if (p === '/app/notifications') {
       setIsFavoritesOnly(false);
       setView('notif');
+    } else if (p === '/connexion') {
+      setIsFavoritesOnly(false);
+      setView('order');
     } else if (p === '/app') {
       setIsFavoritesOnly(false);
       setView('home');
     }
-  }, [location.pathname]);
+  }, [location.pathname, location.search]);
 
-  // Synchronisation réactive du compteur de cagnottes
+  // Synchronisation réactive du compteur de cagnottes pour l'utilisateur connecté
   useEffect(() => {
-    const handleCagUpdate = (e) => {
-      const list = e.detail || getStoredCagnottes(user);
+    if (!user?.id) {
+      setCagnotteCount(0);
+      return;
+    }
+    const currentList = getStoredCagnottes(user);
+    setCagnotteCount(currentList.length);
+
+    const handleCagUpdate = () => {
+      if (!user?.id) {
+        setCagnotteCount(0);
+        return;
+      }
+      const list = getStoredCagnottes(user);
       if (Array.isArray(list)) {
         setCagnotteCount(list.length);
       }
@@ -182,27 +277,17 @@ export default function AppHome({ initialTab = 'home' }) {
     }).catch(() => {});
   }, []);
 
-  // Synchronisation en direct avec la base de données et le tableau de bord admin
+  // Synchronisation des cagnottes réelles de l'utilisateur connecté depuis le backend
   useEffect(() => {
     let isMounted = true;
+    if (!user?.id) {
+      setCagnotteCount(0);
+      return;
+    }
 
-    const loadLiveProducts = async () => {
+    const loadUserCagnottes = async () => {
       try {
-        const liveItems = await adminService.getProduits();
-        if (isMounted && Array.isArray(liveItems)) {
-          const clientConverted = liveItems.map(mapAdminProductToClient).filter(Boolean);
-          PRODUCTS.length = 0;
-          PRODUCTS.push(...clientConverted);
-          setProductsList(clientConverted);
-        }
-      } catch {
-        // En cas d'indisponibilité du backend, conserve les produits en mémoire
-      }
-    };
-
-    const loadLiveCagnottes = async () => {
-      try {
-        const live = await adminService.getCagnottes(user?.id);
+        const live = await adminService.getCagnottes(user.id);
         if (isMounted && Array.isArray(live)) {
           const converted = live.map(mapBackendCagnotteToClient).filter(Boolean);
           try {
@@ -215,8 +300,42 @@ export default function AppHome({ initialTab = 'home' }) {
       } catch { /* ignore */ }
     };
 
+    loadUserCagnottes();
+
+    const handleCagnotteUpdated = () => {
+      loadUserCagnottes();
+      setCagnotteKey((k) => k + 1);
+    };
+    window.addEventListener('takapay_cagnotte_updated', handleCagnotteUpdated);
+
+    return () => {
+      isMounted = false;
+      window.removeEventListener('takapay_cagnotte_updated', handleCagnotteUpdated);
+    };
+  }, [user]);
+
+  // Synchronisation en direct des produits du catalogue avec la base de données
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadLiveProducts = async () => {
+      try {
+        const liveItems = await adminService.getProduits();
+        if (isMounted && Array.isArray(liveItems)) {
+          const clientConverted = liveItems.map(mapAdminProductToClient).filter(Boolean);
+          PRODUCTS.length = 0;
+          PRODUCTS.push(...clientConverted);
+          try {
+            localStorage.setItem('takapay_cached_products', JSON.stringify(clientConverted));
+          } catch { /* ignore */ }
+          setProductsList(clientConverted);
+        }
+      } catch {
+        // En cas d'indisponibilité du backend, conserve les produits en mémoire
+      }
+    };
+
     loadLiveProducts();
-    loadLiveCagnottes();
 
     const handleProductsUpdated = () => {
       refreshProductsFromStore();
@@ -226,17 +345,10 @@ export default function AppHome({ initialTab = 'home' }) {
     window.addEventListener('takapay_products_updated', handleProductsUpdated);
     window.addEventListener('storage', handleProductsUpdated);
 
-    const handleCagnotteUpdated = () => {
-      loadLiveCagnottes();
-      setCagnotteKey((k) => k + 1);
-    };
-    window.addEventListener('takapay_cagnotte_updated', handleCagnotteUpdated);
-
     return () => {
       isMounted = false;
       window.removeEventListener('takapay_products_updated', handleProductsUpdated);
       window.removeEventListener('storage', handleProductsUpdated);
-      window.removeEventListener('takapay_cagnotte_updated', handleCagnotteUpdated);
     };
   }, []);
 
@@ -291,6 +403,7 @@ export default function AppHome({ initialTab = 'home' }) {
     setPreviousView(view);
     setActiveProductId(id);
     setView('product');
+    navigate(`/app/produits/${id}`);
   };
 
   const handleSelectCategory = (catId) => {
@@ -299,9 +412,15 @@ export default function AppHome({ initialTab = 'home' }) {
     setSelectedCat(catId);
     setSelectedSubCat('');
     setView('shop');
+    if (catId && catId !== 'Tous') {
+      navigate(`/app/categories/${encodeURIComponent(catId)}`);
+    } else {
+      navigate('/app/produits');
+    }
   };
 
   const handleSelectSubcategory = (subName, categoryName) => {
+    setPreviousView(view);
     if (categoryName) {
       setSelectedCat(categoryName);
     }
@@ -309,13 +428,36 @@ export default function AppHome({ initialTab = 'home' }) {
     setIsPromoOnly(false);
     setIsFavoritesOnly(false);
     setView('subcat');
+    if (categoryName && categoryName !== 'Tous') {
+      navigate(`/app/categories/${encodeURIComponent(categoryName)}?sub=${encodeURIComponent(subName)}`);
+    } else {
+      navigate(`/app/produits?sub=${encodeURIComponent(subName)}`);
+    }
   };
 
   const handleSelectPromo = () => {
+    setPreviousView(view);
     setIsPromoOnly(true);
     setIsFavoritesOnly(false);
     setSelectedSubCat('Promotions');
     setView('subcat');
+    navigate('/app/produits?promo=1');
+  };
+
+  const handleBackFromSubcategory = () => {
+    setIsFavoritesOnly(false);
+    setIsPromoOnly(false);
+    setSelectedSubCat('');
+    if (previousView === 'home') {
+      setView('home');
+      navigate('/app');
+    } else if (selectedCat && selectedCat !== 'Tous') {
+      setView('shop');
+      navigate(`/app/categories/${encodeURIComponent(selectedCat)}`);
+    } else {
+      setView('shop');
+      navigate('/app/produits');
+    }
   };
 
   const handleStartOrder = (product, color, options = {}) => {
@@ -325,7 +467,15 @@ export default function AppHome({ initialTab = 'home' }) {
       quantity: options.quantity || 1,
       initialDeposit: options.firstDeposit || options.deposit || options.initialDeposit || null,
     });
-    setView('order');
+    const pId = product?.id || activeProductId;
+    if (pId) {
+      setActiveProductId(pId);
+      setView('order');
+      navigate(`/app/commande/${pId}`);
+    } else {
+      setView('order');
+      navigate('/app/commande');
+    }
   };
 
   const handleUserAuthSuccess = (loggedUser, customMsg) => {
@@ -379,14 +529,17 @@ export default function AppHome({ initialTab = 'home' }) {
   if (isCashOrder) {
     showToast(`Votre commande pour ${orderData.product?.n || 'l’article'} a été enregistrée avec succès !`);
     setView('pro');
+    navigate('/app/profil');
   } else {
     showToast(`Votre cagnotte pour ${orderData.product?.n || 'l’article'} a été initiée avec succès !`);
     setView('cag');
+    navigate('/app/cagnotte');
   }
 };
 
   const handleLogout = () => {
     setUser(null);
+    setCagnotteCount(0);
     try {
       localStorage.removeItem('takapay-client-user');
       localStorage.removeItem('takapay_client_token');
@@ -395,6 +548,25 @@ export default function AppHome({ initialTab = 'home' }) {
       // Ignorer
     }
     showToast('Vous avez été déconnecté.');
+  };
+
+  const handleBackNavigation = (fallbackPath = '/app') => {
+    if (fallbackPath === '/app') {
+      setView('home');
+    } else if (fallbackPath.startsWith('/app/produits') || fallbackPath.startsWith('/app/categories')) {
+      setView('shop');
+    } else if (fallbackPath.startsWith('/app/cagnotte')) {
+      setView('cag');
+    } else if (fallbackPath.startsWith('/app/profil')) {
+      setView('pro');
+    } else if (fallbackPath.startsWith('/app/notifications')) {
+      setView('notif');
+    }
+    if (window.history.state && window.history.state.idx > 0) {
+      navigate(-1);
+    } else {
+      navigate(fallbackPath);
+    }
   };
 
   return (
@@ -457,7 +629,7 @@ export default function AppHome({ initialTab = 'home' }) {
               products={productsList}
               isPromoOnly={isPromoOnly}
               isFavoritesOnly={isFavoritesOnly}
-              onBack={() => setView('shop')}
+              onBack={handleBackFromSubcategory}
               onSelectProduct={handleOpenProduct}
             />
           )}
@@ -468,7 +640,30 @@ export default function AppHome({ initialTab = 'home' }) {
               product={productsList.find((p) => p.id === Number(activeProductId)) || PRODUCTS.find((p) => p.id === Number(activeProductId))}
               user={user}
               onShowToast={showToast}
-              onBack={() => setView(previousView || 'shop')}
+              onBack={() => {
+                if (window.history.state && window.history.state.idx > 0) {
+                  navigate(-1);
+                } else if (previousView === 'home') {
+                  setView('home');
+                  navigate('/app');
+                } else if (previousView === 'subcat' && isFavoritesOnly) {
+                  setView('subcat');
+                  navigate('/app/favoris');
+                } else if (previousView === 'subcat' && selectedSubCat) {
+                  setView('subcat');
+                  if (selectedCat && selectedCat !== 'Tous') {
+                    navigate(`/app/categories/${encodeURIComponent(selectedCat)}?sub=${encodeURIComponent(selectedSubCat)}`);
+                  } else {
+                    navigate(`/app/produits?sub=${encodeURIComponent(selectedSubCat)}`);
+                  }
+                } else if (selectedCat && selectedCat !== 'Tous') {
+                  setView('shop');
+                  navigate(`/app/categories/${encodeURIComponent(selectedCat)}`);
+                } else {
+                  setView('shop');
+                  navigate('/app/produits');
+                }
+              }}
               onStartOrder={handleStartOrder}
               onSelectProduct={handleOpenProduct}
             />
@@ -484,17 +679,25 @@ export default function AppHome({ initialTab = 'home' }) {
               user={user}
               onUserAuthSuccess={handleUserAuthSuccess}
               onCompleteOrder={handleCompleteOrder}
-              onBack={() => setView('product')}
+              onBack={() => {
+                if (activeProductId) {
+                  setView('product');
+                  navigate(`/app/produits/${activeProductId}`);
+                } else {
+                  setView('shop');
+                  navigate('/app/produits');
+                }
+              }}
             />
           )}
 
           {view === 'cag' && (
             <ClientCagnotteView
               user={user}
-              onBack={() => setView(previousView || 'home')}
+              onBack={() => handleBackNavigation('/app')}
               onShowToast={showToast}
               onGoCatalog={() => handleSelectTab('shop')}
-              onGoLogin={() => setView('pro')}
+              onGoLogin={() => handleSelectTab('pro')}
             />
           )}
 
@@ -502,7 +705,7 @@ export default function AppHome({ initialTab = 'home' }) {
             <ClientProfileView
               user={user}
               onLogout={handleLogout}
-              onBack={() => setView(previousView || 'home')}
+              onBack={() => handleBackNavigation('/app')}
               onShowToast={showToast}
               onUpdateUser={handleUserAuthSuccess}
             />
@@ -511,8 +714,8 @@ export default function AppHome({ initialTab = 'home' }) {
           {view === 'notif' && (
             <ClientNotificationsView
               user={user}
-              onBack={() => setView(previousView || 'home')}
-              onGoCagnotte={() => setView('cag')}
+              onBack={() => handleBackNavigation('/app')}
+              onGoCagnotte={() => handleSelectTab('cag')}
               onGoCatalog={() => handleSelectTab('shop')}
             />
           )}

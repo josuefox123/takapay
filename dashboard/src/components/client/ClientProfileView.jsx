@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { adminService } from '../../services/adminService';
+import ClientForgotPinModal from './ClientForgotPinModal';
 
 export default function ClientProfileView({
   user = null,
@@ -11,7 +12,9 @@ export default function ClientProfileView({
   // États d'authentification pour visiteur non connecté
   const [authMode, setAuthMode] = useState('login'); // 'login' | 'signup'
   const [authError, setAuthError] = useState('');
+  const [authNotice, setAuthNotice] = useState('');
   const [isSubmittingAuth, setIsSubmittingAuth] = useState(false);
+  const [showForgotPinModal, setShowForgotPinModal] = useState(false);
 
   // Formulaire connexion
   const [loginId, setLoginId] = useState('');
@@ -423,7 +426,24 @@ export default function ClientProfileView({
                   onChange={(e) => setLoginId(e.target.value)}
                 />
 
-                <label className="fl" htmlFor="profile-login-pin">Code PIN ou mot de passe</label>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '14px', marginBottom: '6px' }}>
+                  <label className="fl" htmlFor="profile-login-pin" style={{ margin: 0 }}>Code PIN ou mot de passe</label>
+                  <button
+                    type="button"
+                    onClick={() => setShowForgotPinModal(true)}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: 'var(--r, #c62828)',
+                      fontSize: '12.5px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      padding: 0,
+                    }}
+                  >
+                    Code oublié ?
+                  </button>
+                </div>
                 <input
                   id="profile-login-pin"
                   type="password"
@@ -434,6 +454,12 @@ export default function ClientProfileView({
                   onChange={(e) => setLoginPin(e.target.value)}
                 />
               </>
+            )}
+
+            {authNotice && (
+              <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#15803d', padding: '10px 14px', borderRadius: '10px', fontSize: '13px', margin: '12px 0 6px', fontWeight: 600 }}>
+                {authNotice}
+              </div>
             )}
 
             {authError && (
@@ -497,6 +523,27 @@ export default function ClientProfileView({
             <span>{isSubmittingAuth ? 'Connexion...' : 'Continuer avec Google'}</span>
           </button>
         </div>
+
+        {/* Modale de réinitialisation sécurisée du code PIN (par Email ou SMS) */}
+        <ClientForgotPinModal
+          isOpen={showForgotPinModal}
+          onClose={() => setShowForgotPinModal(false)}
+          initialIdentifiant={loginId}
+          onSuccess={(resetId, successMsg) => {
+            setShowForgotPinModal(false);
+            setAuthMode('login');
+            if (resetId) {
+              setLoginId(resetId);
+            }
+            setLoginPin('');
+            setAuthError('');
+            const msg = successMsg || 'Code PIN modifié avec succès ! Veuillez vous connecter avec votre nouveau code PIN.';
+            setAuthNotice(msg);
+            if (onShowToast) {
+              onShowToast(msg);
+            }
+          }}
+        />
       </div>
     );
   }
@@ -1941,6 +1988,30 @@ export default function ClientProfileView({
           </div>
         </div>
       )}
+
+      {/* Modale de réinitialisation sécurisée du code PIN (par Email ou SMS) */}
+      <ClientForgotPinModal
+        isOpen={showForgotPinModal}
+        onClose={() => setShowForgotPinModal(false)}
+        initialIdentifiant={loginId || user?.telephone || user?.email || ''}
+        onSuccess={(resetId, successMsg) => {
+          setShowForgotPinModal(false);
+          if (onLogout) {
+            onLogout();
+          }
+          setAuthMode('login');
+          if (resetId) {
+            setLoginId(resetId);
+          }
+          setLoginPin('');
+          setAuthError('');
+          const msg = successMsg || 'Code PIN modifié avec succès ! Veuillez vous reconnecter avec votre nouveau code PIN.';
+          setAuthNotice(msg);
+          if (onShowToast) {
+            onShowToast(msg);
+          }
+        }}
+      />
     </div>
   );
 }

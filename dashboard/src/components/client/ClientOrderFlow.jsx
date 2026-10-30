@@ -3,6 +3,7 @@ import { FeexPayProvider, FeexPayButton } from '@feexpay/react-sdk';
 import '@feexpay/react-sdk/style.css';
 import { formatFCFA } from '../../data/clientStore';
 import { adminService } from '../../services/adminService';
+import ClientForgotPinModal from './ClientForgotPinModal';
 
 export default function ClientOrderFlow({
   product,
@@ -15,6 +16,7 @@ export default function ClientOrderFlow({
   onCompleteOrder,
   onBack,
 }) {
+  const [showForgotPinModal, setShowForgotPinModal] = useState(false);
   const [activeUser, setActiveUser] = useState(() => {
     if (user) return user;
     try {
@@ -50,6 +52,7 @@ export default function ClientOrderFlow({
   // Paiement
   const [provider, setProvider] = useState('MTN');
   const [error, setError] = useState('');
+  const [authNotice, setAuthNotice] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [paymentData, setPaymentData] = useState(null);
   const [orderType, setOrderType] = useState(initialOrderType || 'cagnotte'); // 'cagnotte' ou 'cash'
@@ -505,7 +508,24 @@ export default function ClientOrderFlow({
                       onChange={(e) => setLoginId(e.target.value)}
                     />
 
-                    <label className="fl" htmlFor="login-pin">Code PIN ou mot de passe</label>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '14px', marginBottom: '6px' }}>
+                      <label className="fl" htmlFor="login-pin" style={{ margin: 0 }}>Code PIN ou mot de passe</label>
+                      <button
+                        type="button"
+                        onClick={() => setShowForgotPinModal(true)}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: 'var(--r, #c62828)',
+                          fontSize: '12.5px',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          padding: 0,
+                        }}
+                      >
+                        Code oublié ?
+                      </button>
+                    </div>
                     <input
                       id="login-pin"
                       type="password"
@@ -516,6 +536,12 @@ export default function ClientOrderFlow({
                       onChange={(e) => setLoginPin(e.target.value)}
                     />
                   </>
+                )}
+
+                {authNotice && (
+                  <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#15803d', padding: '10px 14px', borderRadius: '10px', fontSize: '13px', margin: '8px 0', fontWeight: 600 }}>
+                    {authNotice}
+                  </div>
                 )}
 
                 {error && (
@@ -1283,6 +1309,24 @@ export default function ClientOrderFlow({
           </div>
         </div>
       )}
+
+      {/* Modale de réinitialisation sécurisée du code PIN (par Email ou SMS) */}
+      <ClientForgotPinModal
+        isOpen={showForgotPinModal}
+        onClose={() => setShowForgotPinModal(false)}
+        initialIdentifiant={loginId}
+        onSuccess={(resetId, successMsg) => {
+          setShowForgotPinModal(false);
+          setStep('auth');
+          setAuthMode('login');
+          if (resetId) {
+            setLoginId(resetId);
+          }
+          setLoginPin('');
+          setError('');
+          setAuthNotice(successMsg || 'Code PIN modifié avec succès ! Veuillez vous connecter avec votre nouveau code PIN.');
+        }}
+      />
     </div>
   );
 }

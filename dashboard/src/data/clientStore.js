@@ -338,15 +338,29 @@ export const syncCategoriesFromDb = async () => {
   return [];
 };
 
-if (typeof window !== 'undefined') {
+export const getCachedProducts = () => {
+  if (typeof window === 'undefined') return [];
   try {
-    localStorage.removeItem('takapay_created_products');
-    localStorage.removeItem('takapay_created_categories');
-    localStorage.removeItem('takapay_created_subcategories');
-    localStorage.removeItem('takapay_backend_categories');
-    localStorage.removeItem('takapay-notifications');
-    localStorage.removeItem('takapay-demo-cagnotte');
-  } catch { /* ignore */ }
+    const raw = localStorage.getItem('takapay_cached_products');
+    if (!raw) return [];
+    const list = JSON.parse(raw);
+    return Array.isArray(list) ? list : [];
+  } catch {
+    return [];
+  }
+};
+
+export const CAMPAIGNS = [];
+
+export const PRODUCTS = [];
+
+// Initialisation synchrone immédiate des produits depuis le cache persistant
+const initialCachedProducts = getCachedProducts();
+if (initialCachedProducts.length > 0) {
+  PRODUCTS.push(...initialCachedProducts);
+}
+
+if (typeof window !== 'undefined') {
   syncCategoriesFromDb();
   window.addEventListener('takapay_categories_updated', (e) => {
     if (Array.isArray(e.detail)) {
@@ -357,15 +371,15 @@ if (typeof window !== 'undefined') {
   });
 }
 
-export const CAMPAIGNS = [];
-
-export const PRODUCTS = [];
-
 export const getMergedProducts = () => {
-  const custom = getStoredCustomProducts();
-  const existingIds = new Set(custom.map((c) => c.id));
-  const remainingBase = BASE_PRODUCTS.filter((b) => !existingIds.has(b.id));
-  return [...custom, ...remainingBase];
+  if (PRODUCTS.length > 0) return [...PRODUCTS];
+  const cached = getCachedProducts();
+  if (cached.length > 0) {
+    PRODUCTS.length = 0;
+    PRODUCTS.push(...cached);
+    return cached;
+  }
+  return getStoredCustomProducts();
 };
 
 export const BASE_PRODUCTS = PRODUCTS;
@@ -751,6 +765,11 @@ export const getStoredCagnottes = (_user = null) => {
     localStorage.removeItem('takapay-client-cagnottes');
   } catch { /* ignore */ }
 
+  // Si l'utilisateur n'est pas connecté, il n'a aucune cagnotte
+  if (!_user || !_user.id) {
+    return [];
+  }
+
   // 1. Lire les cagnottes réelles synchronisées depuis le backend
   let backendList = [];
   try {
@@ -762,19 +781,12 @@ export const getStoredCagnottes = (_user = null) => {
   } catch { /* ignore */ }
 
   // Filtrer pour ne garder que les cagnottes avec un produit réel valide
-  let validList = backendList.filter(
+  const validList = backendList.filter(
     (c) => c && c.product && (c.product.n || c.product.nom) && (c.backendId || c.id)
   );
 
-  // Filtrer strictement par utilisateur connecté
-  if (_user && _user.id) {
-    validList = validList.filter((c) => {
-      if (!c.userId) return false;
-      return String(c.userId) === String(_user.id);
-    });
-  }
-
-  return validList;
+  // Filtrer strictement par l'utilisateur connecté
+  return validList.filter((c) => c && c.userId && String(c.userId) === String(_user.id));
 };
 
 

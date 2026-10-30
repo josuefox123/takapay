@@ -6,10 +6,18 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\LoginRequest;
 use App\Http\Requests\Api\RegisterRequest;
 use App\Http\Resources\UserResource;
+use App\Mail\PinChangedMail;
+use App\Mail\ResetPinMail;
+use App\Models\Notification;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
@@ -240,24 +248,319 @@ class AuthController extends Controller
         $user->password = $request->new_pin;
         $user->save();
 
+        // Notification in-app et email si renseigné
+        $this->notifyPinChanged($user);
+
         return response()->json([
             'message' => 'Votre code PIN de sécurité a été modifié avec succès.',
         ]);
     }
 
     /**
-     * Déconnexion et révocation du jeton courant
+     * Envoie un SMS OTP au numéro de l'utilisateur (Termii, passerelle générique ou journal local)
      */
-    public function logout(Request $request): JsonResponse
+    private function sendOtpSms(string $telephone, string $code): bool
     {
-        $token = $request->user()->currentAccessToken();
+        $message = "Votre code de réinitialisation PIN TakaPay est : {$code}. Valide 15 minutes. Ne le partagez avec personne.";
 
-        if ($token) {
-            $token->delete();
+        // Journalisation systématique
+        Log::info("Code OTP SMS pour {$telephone} : {$code}");
+
+        // Si une clé d'API SMS (Termii / Generic) est renseignée dans .env
+        $smsApiKey = env('SMS_API_KEY') ?: env('TERMII_API_KEY');
+        if (! empty($smsApiKey)) {
+            try {
+                $senderId = env('SMS_SENDER_ID', 'TakaPay');
+                $response = Http::timeout(8)->post('https://api.ng.termii.com/api/sms/send', [
+                    'to' => $telephone,
+                    'from' => $senderId,
+                    'sms' => $message,
+                    'type' => 'plain',
+                    'channel' => 'generic',
+                    'api_key' => $smsApiKey,
+                ]);
+
+                return $response->successful();
+            } catch (\Throwable $e) {
+                Log::warning('Erreur envoi SMS externe : '.$e->getMessage());
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Résout un utilisateur selon l'identifiant fourni (Email strict ou Téléphone strict).
+     * Refuse strictement les numéros de téléphone contenant des lettres.
+     */
+    private function resolveUserByIdentifiant(string $identifiant, ?string &$error = null, ?string &$channel = null): ?User
+    {
+        $identifiant = trim($identifiant);
+
+        if (str_contains($identifiant, '@')) {
+            $channel = 'email';
+
+            if (! filter_var($identifiant, FILTER_VALIDATE_EMAIL)) {
+                $error = 'L\'adresse email saisie est invalide.';
+                return null;
+            }
+
+            $user = User::where('email', strtolower($identifiant))->first();
+            if (! $user) {
+                $error = 'Aucun compte TakaPay n\'a été trouvé avec cette adresse email.';
+                return null;
+            }
+
+            return $user;
+        }
+
+        // Sinon, c'est un numéro de téléphone : refus strict si présence de lettres
+        $channel = 'sms';
+
+        if (preg_match('/[a-zA-Z]/', $identifiant)) {
+            $error = 'Le numéro de téléphone ne doit pas comporter de lettres. Veuillez saisir uniquement des chiffres.';
+            return null;
+        }
+
+        $cleanPhone = preg_replace('/[^\d+]/', '', $identifiant);
+        $digitsOnly = preg_replace('/\D/', '', $cleanPhone);
+
+        if (strlen($digitsOnly) < 8) {
+            $error = 'Le numéro de téléphone doit comporter au moins 8 chiffres.';
+            return null;
+        }
+
+        $user = User::where('telephone', $cleanPhone)
+            ->orWhere('telephone', $identifiant)
+            ->orWhere('telephone', 'like', "%{$digitsOnly}%")
+            ->first();
+
+        if (! $user) {
+            $error = 'Aucun compte TakaPay n\'a été trouvé avec ce numéro de téléphone.';
+            return null;
+        }
+
+        return $user;
+    }
+
+    /**
+     * Demande d'envoi d'un code de réinitialisation de PIN (Email automatique si email, SMS si téléphone)
+     */
+    public function forgotPin(Request $request): JsonResponse
+    {
+        $request->validate([
+            'identifiant' => ['required', 'string'],
+        ]);
+
+        $error = null;
+        $channel = null;
+        $user = $this->resolveUserByIdentifiant($request->identifiant, $error, $channel);
+
+        if (! $user) {
+            return response()->json([
+                'message' => $error ?: 'Aucun compte TakaPay n\'a été trouvé avec cet identifiant.',
+            ], 422);
+        }
+
+        // Génération d'un code OTP aléatoire à 6 chiffres
+        $code = str_pad((string) mt_rand(100000, 999999), 6, '0', STR_PAD_LEFT);
+
+        // Sauvegarde dans le cache pendant 15 minutes
+        Cache::put('pin_reset_'.$user->id, [
+            'code' => $code,
+            'user_id' => $user->id,
+            'channel' => $channel,
+            'created_at' => now(),
+        ], now()->addMinutes(15));
+
+        // Sauvegarde dans la table password_reset_tokens
+        DB::table('password_reset_tokens')->updateOrInsert(
+            ['email' => $user->email],
+            [
+                'token' => Hash::make($code),
+                'created_at' => now(),
+            ]
+        );
+
+        if ($channel === 'sms') {
+            $cleanPhone = preg_replace('/[^\d+]/', '', $request->identifiant);
+            $destPhone = ! empty($user->telephone) ? $user->telephone : $cleanPhone;
+            $this->sendOtpSms($destPhone, $code);
+
+            $len = strlen($destPhone);
+            $masked = $len > 6
+                ? substr($destPhone, 0, 4).'****'.substr($destPhone, -2)
+                : $destPhone;
+
+            return response()->json([
+                'message' => "Un code de vérification à 6 chiffres a été envoyé par SMS au {$masked}.",
+                'channel' => 'sms',
+                'destination' => $masked,
+                'user_id' => $user->id,
+            ]);
+        }
+
+        // Envoi par email
+        try {
+            Mail::to($user->email)->send(new ResetPinMail($user, $code));
+        } catch (\Throwable $e) {
+            Log::error("Erreur lors de l'envoi d'email de réinitialisation : ".$e->getMessage());
+        }
+
+        $parts = explode('@', $user->email);
+        $namePart = $parts[0];
+        $domainPart = $parts[1] ?? '';
+        $maskedName = strlen($namePart) > 2 ? substr($namePart, 0, 2).'***' : $namePart.'***';
+        $destination = $maskedName.'@'.$domainPart;
+
+        return response()->json([
+            'message' => "Un code de vérification à 6 chiffres a été envoyé à l'adresse email {$destination}.",
+            'channel' => 'email',
+            'destination' => $destination,
+            'user_id' => $user->id,
+        ]);
+    }
+
+    /**
+     * Vérification préalable du code secret reçu avant la saisie du nouveau PIN
+     */
+    public function verifyPinCode(Request $request): JsonResponse
+    {
+        $request->validate([
+            'identifiant' => ['required', 'string'],
+            'code' => ['required', 'string', 'size:6'],
+        ]);
+
+        $error = null;
+        $channel = null;
+        $user = $this->resolveUserByIdentifiant($request->identifiant, $error, $channel);
+
+        if (! $user) {
+            return response()->json([
+                'message' => $error ?: 'Utilisateur introuvable.',
+            ], 422);
+        }
+
+        $cacheData = Cache::get('pin_reset_'.$user->id);
+        $codeValid = false;
+
+        if ($cacheData && isset($cacheData['code']) && $cacheData['code'] === $request->code) {
+            $codeValid = true;
+        } else {
+            $tokenRecord = DB::table('password_reset_tokens')->where('email', $user->email)->first();
+            if ($tokenRecord && Hash::check($request->code, $tokenRecord->token)) {
+                $createdAt = \Carbon\Carbon::parse($tokenRecord->created_at);
+                if ($createdAt->addMinutes(15)->isFuture()) {
+                    $codeValid = true;
+                }
+            }
+        }
+
+        if (! $codeValid) {
+            return response()->json([
+                'message' => 'Le code de vérification saisi est incorrect ou a expiré.',
+            ], 422);
         }
 
         return response()->json([
-            'message' => 'Déconnexion réussie.',
+            'valid' => true,
+            'message' => 'Code vérifié avec succès.',
         ]);
+    }
+
+    /**
+     * Validation du code et enregistrement du nouveau code PIN
+     */
+    public function resetPin(Request $request): JsonResponse
+    {
+        $request->validate([
+            'identifiant' => ['required', 'string'],
+            'code' => ['required', 'string', 'size:6'],
+            'new_pin' => ['required', 'string', 'size:6'],
+            'confirm_pin' => ['required', 'string', 'same:new_pin'],
+        ]);
+
+        $error = null;
+        $channel = null;
+        $user = $this->resolveUserByIdentifiant($request->identifiant, $error, $channel);
+
+        if (! $user) {
+            return response()->json([
+                'message' => $error ?: 'Utilisateur introuvable.',
+            ], 422);
+        }
+
+        $cacheData = Cache::get('pin_reset_'.$user->id);
+        $codeValid = false;
+
+        if ($cacheData && isset($cacheData['code']) && $cacheData['code'] === $request->code) {
+            $codeValid = true;
+        } else {
+            $tokenRecord = DB::table('password_reset_tokens')->where('email', $user->email)->first();
+            if ($tokenRecord && Hash::check($request->code, $tokenRecord->token)) {
+                $createdAt = \Carbon\Carbon::parse($tokenRecord->created_at);
+                if ($createdAt->addMinutes(15)->isFuture()) {
+                    $codeValid = true;
+                }
+            }
+        }
+
+        if (! $codeValid) {
+            return response()->json([
+                'message' => 'Le code de vérification saisi est incorrect ou a expiré.',
+            ], 422);
+        }
+
+        // Mise à jour du code PIN
+        $user->password = $request->new_pin;
+        $user->save();
+
+        Cache::forget('pin_reset_'.$user->id);
+        DB::table('password_reset_tokens')->where('email', $user->email)->delete();
+
+        // Révoquer les anciens jetons pour sécurité (la connexion ne sera pas automatique)
+        $user->tokens()->delete();
+
+        // Notification in-app et email si renseigné
+        $this->notifyPinChanged($user);
+
+        return response()->json([
+            'message' => 'Votre code PIN a été modifié avec succès ! Veuillez vous connecter avec votre nouveau code PIN.',
+            'identifiant' => $request->identifiant,
+        ]);
+    }
+
+    /**
+     * Crée une notification in-app et envoie un e-mail si l'utilisateur possède une adresse e-mail valide
+     */
+    private function notifyPinChanged(User $user): void
+    {
+        // 1. Notification in-app systématique
+        try {
+            Notification::create([
+                'utilisateur_id' => $user->id,
+                'cagnotte_id' => null,
+                'titre' => 'Code PIN modifié avec succès',
+                'message' => 'Votre code PIN de sécurité a été modifié avec succès. Si vous n’êtes pas à l’origine de cette action, veuillez contacter immédiatement l’assistance TakaPay.',
+                'type' => 'securite',
+                'statut' => 'non_lu',
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning('Impossible d\'enregistrer la notification in-app de code PIN modifié : ' . $e->getMessage());
+        }
+
+        // 2. Envoi d'un e-mail si l'utilisateur a renseigné un véritable e-mail
+        $email = $user->email ?? null;
+        $hasRealEmail = ! empty($email)
+            && filter_var($email, FILTER_VALIDATE_EMAIL)
+            && ! str_ends_with(strtolower($email), '@client.takapay.bj');
+
+        if ($hasRealEmail) {
+            try {
+                Mail::to($email)->send(new PinChangedMail($user));
+            } catch (\Throwable $e) {
+                Log::warning("Impossible d'envoyer l'e-mail de confirmation de PIN modifié à {$email} : " . $e->getMessage());
+            }
+        }
     }
 }
