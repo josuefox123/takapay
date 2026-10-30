@@ -96,11 +96,17 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
   const [depositError, setDepositError] = useState('');
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
+  const [isReactivating, setIsReactivating] = useState(false);
+  const [dismissCancelledBanner, setDismissCancelledBanner] = useState(false);
   const [cancelPhone, setCancelPhone] = useState(user?.telephone || user?.phone || '');
   const [showConfirmReceiptModal, setShowConfirmReceiptModal] = useState(false);
   const [confirmReceiptStep, setConfirmReceiptStep] = useState(1);
   const [receiptCheckbox, setReceiptCheckbox] = useState(false);
   const [isConfirmingReceipt, setIsConfirmingReceipt] = useState(false);
+
+  useEffect(() => {
+    setDismissCancelledBanner(false);
+  }, [selectedCagnotteId]);
 
   // Synchronisation directe avec l'API / le dashboard admin
   useEffect(() => {
@@ -331,6 +337,74 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
       paidAmount > 0
         ? `Demande d'annulation prise en compte. Un virement de ${formatFCFA(refundAmount)} (déduit de 5% de frais) vous sera renvoyé dans un délai de 24H sur le ${effectivePhone}.`
         : 'Cagnotte annulée avec succès.'
+    );
+  };
+
+  const handleReactivateCagnotte = async () => {
+    if (!activeCagnotte) return;
+    setIsReactivating(true);
+
+    const targetId = activeCagnotte.id;
+    const isTargetCash = Boolean(activeCagnotte.isCash || activeCagnotte.mode === 'cash' || activeCagnotte.mode === 'cash_cod');
+    const newStatut = isTargetCash ? 'en_attente' : 'en_cours';
+
+    const now = new Date();
+    const dateFormatted =
+      now.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' }) +
+      ' ' +
+      now.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+
+    const reactivateTx = {
+      id: `tx-reactivate-${Date.now()}`,
+      reference: `TK-REACTIV-${Date.now()}`,
+      titre: 'Annulation annulée · Cagnotte rétablie',
+      methode: activeCagnotte.moyenPaiement || 'Takapay',
+      date: dateFormatted,
+      montant: 0,
+      statut: 'Rétablie',
+      type: 'reactivation',
+      periode: 'aujourdhui',
+      client: clientName,
+    };
+
+    const updatedCagnotte = {
+      ...activeCagnotte,
+      statut: newStatut,
+      montantRemboursement: null,
+      fraisAnnulation: null,
+      telephoneRemboursement: null,
+      transactions: [reactivateTx, ...(activeCagnotte.transactions || [])],
+    };
+
+    const updatedList = cagnottesList.map((c) =>
+      String(c.id) === String(targetId) ? updatedCagnotte : c
+    );
+
+    setCagnottesList(updatedList);
+    setDismissCancelledBanner(false);
+
+    try {
+      localStorage.setItem('takapay_backend_cagnottes', JSON.stringify(updatedList));
+      window.dispatchEvent(new CustomEvent('takapay_cagnotte_updated'));
+    } catch {
+      // Ignorer
+    }
+
+    const backendCagnotteId = activeCagnotte.backendId || (String(activeCagnotte.id).startsWith('cag-') ? String(activeCagnotte.id).replace('cag-', '') : activeCagnotte.id);
+    if (backendCagnotteId) {
+      try {
+        await adminService.reactivateCagnotte(backendCagnotteId, { statut: newStatut });
+      } catch (err) {
+        console.warn('Erreur API réactivation:', err);
+      }
+    }
+
+    setIsReactivating(false);
+
+    onShowToast?.(
+      isTargetCash
+        ? 'Votre commande a bien été rétablie.'
+        : 'Votre cagnotte a été rétablie avec succès. Vous pouvez continuer vos versements !'
     );
   };
 
@@ -1077,7 +1151,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
           )}
 
           {/* Bannière d'annulation si annulée */}
-          {isCancelled && (
+          {isCancelled && !dismissCancelledBanner && (
             <div
               style={{
                 background: '#fff1f2',
@@ -1087,38 +1161,98 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                 padding: '20px 24px',
                 marginBottom: '24px',
                 display: 'flex',
-                alignItems: 'center',
+                alignItems: 'flex-start',
                 justifyContent: 'space-between',
                 flexWrap: 'wrap',
                 gap: '16px',
                 boxShadow: '0 4px 16px rgba(220,38,38,0.08)',
               }}
             >
-              <div>
-                <h3 style={{ margin: '0 0 4px', fontSize: '18px', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '22px', color: '#dc2626' }}>cancel</span>
+              <div style={{ flex: 1, minWidth: '280px' }}>
+                <h3 style={{ margin: '0 0 6px', fontSize: '18px', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '22px', color: '#dc2626' }}>info</span>
                   <span>{isCash ? 'Commande annulée' : 'Cagnotte annulée · Remboursement sous 24H'}</span>
                 </h3>
-                <p style={{ margin: 0, fontSize: '13.5px', opacity: 0.95, lineHeight: 1.5 }}>
+                <p style={{ margin: '0 0 14px', fontSize: '13.5px', opacity: 0.95, lineHeight: 1.5 }}>
                   {isCash
                     ? 'Cette commande a été annulée à votre demande. Aucun montant ne vous sera réclamé et la livraison ne sera pas effectuée.'
                     : "Cette cagnotte fait l'objet d'une demande d'annulation. Conformément aux CGU, une retenue forfaitaire de 5% est déduite pour frais de gestion. Le montant restant (95%) vous sera renvoyé dans un délai maximal de 24 heures sur votre numéro Mobile Money."}
                 </p>
+
+                {/* Bouton fonctionnel pour rétablir la cagnotte et annuler l'annulation */}
+                <button
+                  type="button"
+                  onClick={handleReactivateCagnotte}
+                  disabled={isReactivating}
+                  style={{
+                    padding: '9px 18px',
+                    borderRadius: '12px',
+                    border: '1.5px solid #dc2626',
+                    background: '#ffffff',
+                    color: '#dc2626',
+                    fontWeight: 800,
+                    fontSize: '13px',
+                    cursor: isReactivating ? 'not-allowed' : 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    boxShadow: '0 2px 8px rgba(220,38,38,0.12)',
+                    transition: 'all 0.15s ease',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = '#dc2626';
+                    e.currentTarget.style.color = '#ffffff';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = '#ffffff';
+                    e.currentTarget.style.color = '#dc2626';
+                  }}
+                >
+                  <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '18px' }}>
+                    replay
+                  </span>
+                  <span>
+                    {isReactivating
+                      ? 'Rétablissement...'
+                      : isCash
+                      ? 'Rétablir ma commande'
+                      : 'Rétablir ma cagnotte'}
+                  </span>
+                </button>
               </div>
-              <div
+
+              {/* Croix fonctionnelle pour fermer/masquer la bannière */}
+              <button
+                type="button"
+                onClick={() => setDismissCancelledBanner(true)}
+                title="Masquer cette alerte"
+                aria-label="Fermer l'alerte"
                 style={{
-                  width: '44px',
-                  height: '44px',
+                  width: '34px',
+                  height: '34px',
                   borderRadius: '50%',
+                  border: '1px solid #fecaca',
                   background: '#fee2e2',
                   display: 'grid',
                   placeItems: 'center',
                   color: '#dc2626',
+                  cursor: 'pointer',
+                  fontSize: '17px',
+                  fontWeight: 800,
                   flexShrink: 0,
+                  transition: 'all 0.15s ease',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = '#fca5a5';
+                  e.currentTarget.style.transform = 'scale(1.05)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = '#fee2e2';
+                  e.currentTarget.style.transform = 'scale(1)';
                 }}
               >
-                <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '24px' }}>history_toggle_off</span>
-              </div>
+                ✕
+              </button>
             </div>
           )}
 

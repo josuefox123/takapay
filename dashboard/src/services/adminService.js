@@ -118,6 +118,36 @@ export const adminService = {
     }
   },
 
+  async reactivateCagnotte(cagnotteId, payload = {}) {
+    try {
+      const token = this.getClientToken() || this.getToken();
+      const res = await fetch(`${API_BASE}/cagnottes/${cagnotteId}/reactiver`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        await fetch(`${API_BASE}/cagnottes/${cagnotteId}`, {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({ statut: payload.statut || 'en_cours' }),
+        }).catch(() => {});
+      }
+      return true;
+    } catch (e) {
+      console.warn('Erreur réactivation cagnotte:', e);
+      return false;
+    }
+  },
+
   async rembourserCagnotteFeexpay(cagnotteId, payload = {}) {
     try {
       const token = this.getToken();
