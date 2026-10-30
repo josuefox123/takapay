@@ -666,6 +666,9 @@ export default function AppHome({ initialTab = 'home' }) {
               }}
               onStartOrder={handleStartOrder}
               onSelectProduct={handleOpenProduct}
+              onGoHome={() => handleSelectTab('home')}
+              onSelectCategory={handleSelectCategory}
+              onSelectSubcategory={handleSelectSubcategory}
             />
           )}
 
