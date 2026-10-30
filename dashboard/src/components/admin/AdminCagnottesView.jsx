@@ -144,7 +144,7 @@ export default function AdminCagnottesView() {
       <div style={{ marginBottom: '24px' }}>
         <h1 className="admin-header-title">Évolution des Cagnottes</h1>
         <p className="admin-header-sub">
-          Suivez la progression des épargnes clients, les montants versés et les échéanciers
+          Suivez la progression des cagnottes clients, les montants cotisés et les cagnottes prêtes à livrer
         </p>
       </div>
 
@@ -252,6 +252,8 @@ export default function AdminCagnottesView() {
                   const clientNom = c.client_nom || (c.utilisateur ? `${c.utilisateur.nom || ''} ${c.utilisateur.prenom || ''}`.trim() : 'Client Takapay');
                   const clientTel = c.telephone_remboursement || c.telephone_livraison || c.utilisateur?.telephone || c.client_tel || '+229 -- -- -- --';
                   const prodNom = c.produit?.nom || c.produit_nom || 'Article';
+                  const mp = String(c.moyen_paiement || '').toLowerCase();
+                  const isCash = mp.includes('livraison') || mp.includes('cash') || c.mode === 'cash' || c.mode === 'cash_cod' || Boolean(c.isCod) || Boolean(c.isCash);
 
                   return (
                     <tr key={c.id}>
@@ -288,12 +290,12 @@ export default function AdminCagnottesView() {
                           </span>
                         </div>
                         <span className="admin-sub-text">
-                          {c.echeances_payees !== undefined ? `${c.echeances_payees} / ${c.echeances_total} échéances` : 'Paiement libre'}
+                          {isCash ? 'Cash' : (pct >= 100 ? '🎉 100% complétée' : 'Cotisation libre')}
                         </span>
                       </td>
                       <td>
                         <span style={{ fontSize: '12px', fontWeight: 500 }}>
-                          {c.moyen_paiement || 'Mobile Money'}
+                          {c.moyen_paiement === 'livraison' ? 'Paiement à la livraison' : (c.moyen_paiement || 'Mobile Money')}
                         </span>
                       </td>
                       <td>

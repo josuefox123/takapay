@@ -23,7 +23,14 @@ class CagnotteController extends Controller
     public function index(Request $request): AnonymousResourceCollection
     {
         $user = $request->user('sanctum');
-        $userId = $request->query('user_id') ?? $user?->id;
+        if (! $user && $request->bearerToken()) {
+            $accessToken = \Laravel\Sanctum\PersonalAccessToken::findToken($request->bearerToken());
+            if ($accessToken && $accessToken->tokenable) {
+                $user = $accessToken->tokenable;
+            }
+        }
+
+        $userId = $request->query('user_id');
 
         $query = Cagnotte::has('produit')
             ->with(['utilisateur', 'produit.imageProduits', 'produit.parametreProduit', 'produit.sousCategorie.categorie', 'transactions'])
@@ -34,12 +41,15 @@ class CagnotteController extends Controller
             if ($userId) {
                 $query->where('utilisateur_id', $userId);
             }
+        } elseif ($user && $user->role === 'client') {
+            // Utilisateur client connecté : restreindre strictement à ses cagnottes
+            $query->where('utilisateur_id', $user->id);
         } else {
-            // Espace client ou visiteur : filtrer strictement par son user_id
+            // Espace client ou visiteur anonyme : filtrer par user_id explicite s'il est fourni
             if (! empty($userId)) {
                 $query->where('utilisateur_id', $userId);
             } else {
-                // Aucun utilisateur identifié : renvoyer une liste vide (0 cagnotte pour les visiteurs)
+                // Aucun utilisateur identifié : renvoyer une liste vide pour un visiteur non connecté
                 $query->whereRaw('1 = 0');
             }
         }
