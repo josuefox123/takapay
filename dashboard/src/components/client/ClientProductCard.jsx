@@ -94,7 +94,7 @@ export default function ClientProductCard({ product, onSelect }) {
         <img
           src={product.im}
           alt={product.n}
-          loading="lazy"
+          decoding="async"
           onError={(e) => {
             e.target.style.opacity = '0';
           }}

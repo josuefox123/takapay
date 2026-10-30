@@ -10,8 +10,16 @@ export default function ClientHeroCarousel({
   onSelectPromo,
 }) {
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [dbCarousels, setDbCarousels] = useState([]);
-  const [loadingDb, setLoadingDb] = useState(true);
+  const [isTransitioning, setIsTransitioning] = useState(true);
+  const [dbCarousels, setDbCarousels] = useState(() => {
+    try {
+      const saved = localStorage.getItem('takapay_cached_carousels');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [loadingDb, setLoadingDb] = useState(false);
 
   // Charger les bannières dynamiques configurées par l'administrateur
   useEffect(() => {
@@ -22,6 +30,9 @@ export default function ClientHeroCarousel({
         if (isMounted) {
           if (Array.isArray(data) && data.length > 0) {
             setDbCarousels(data);
+            try {
+              localStorage.setItem('takapay_cached_carousels', JSON.stringify(data));
+            } catch { /* ignore */ }
           }
           setLoadingDb(false);
         }
@@ -135,34 +146,72 @@ export default function ClientHeroCarousel({
     return [welcomeSlide, ...articleSlides];
   }, [dbCarousels, products, onGoCatalog, onSelectPromo, onSelectProduct]);
 
-  // Défilement automatique toutes les 6 secondes
+  // Diapositives étendues pour une boucle infinie continue (clone de la première slide en fin de piste)
+  const extendedSlides = useMemo(() => {
+    if (slides.length <= 1) return slides;
+    return [
+      ...slides,
+      {
+        ...slides[0],
+        id: `${slides[0].id}-loop-clone`,
+      },
+    ];
+  }, [slides]);
+
+  // Défilement automatique continu toutes les 6 secondes (toujours vers l'avant, pas de rembobinage)
   useEffect(() => {
     if (slides.length <= 1) return;
     const timer = setInterval(() => {
-      setCurrentIndex((prev) => (prev + 1) % slides.length);
+      setIsTransitioning(true);
+      setCurrentIndex((prev) => prev + 1);
     }, 6000);
 
     return () => clearInterval(timer);
   }, [slides.length]);
 
+  // Réinitialisation instantanée et invisible à la première slide une fois la transition du clone terminée
+  const handleTransitionEnd = () => {
+    if (currentIndex >= slides.length) {
+      setIsTransitioning(false);
+      setCurrentIndex(0);
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          setIsTransitioning(true);
+        });
+      });
+    }
+  };
+
+  const handleDotClick = (dotIdx) => {
+    setIsTransitioning(true);
+    setCurrentIndex(dotIdx);
+  };
+
   if (slides.length === 0) return null;
+
+  const activeDot = currentIndex % slides.length;
 
   return (
     <div className="client-carousel" aria-label="Campagnes et bannières en vedette TakaPay">
-      {/* Piste de défilement horizontal fluide */}
+      {/* Piste de défilement horizontal fluide en boucle infinie */}
       <div
         className="client-carousel-track"
         style={{
           transform: `translateX(-${currentIndex * 100}%)`,
+          transition: isTransitioning
+            ? 'transform 0.65s cubic-bezier(0.22, 1, 0.36, 1)'
+            : 'none',
         }}
+        onTransitionEnd={handleTransitionEnd}
       >
-        {slides.map((s, idx) => {
+        {extendedSlides.map((s, idx) => {
           const hasContent = Boolean(s.kicker || s.title || s.description || s.priceText || s.btnText);
+          const isCurrentActive = (idx % slides.length) === activeDot;
 
           return (
             <article
               key={s.id}
-              className={`client-slide client-slide-panoramic ${idx === currentIndex ? 'active' : ''} ${!hasContent ? 'is-pure-image' : ''}`}
+              className={`client-slide client-slide-panoramic ${isCurrentActive ? 'active' : ''} ${!hasContent ? 'is-pure-image' : ''}`}
               onClick={!hasContent && s.action ? s.action : undefined}
               style={{ cursor: !hasContent && s.action ? 'pointer' : 'default' }}
             >
@@ -238,8 +287,8 @@ export default function ClientHeroCarousel({
               <button
                 key={dotIdx}
                 type="button"
-                className={`client-slide-dot ${dotIdx === currentIndex ? 'active' : ''}`}
-                onClick={() => setCurrentIndex(dotIdx)}
+                className={`client-slide-dot ${dotIdx === activeDot ? 'active' : ''}`}
+                onClick={() => handleDotClick(dotIdx)}
                 aria-label={`Aller au slide ${dotIdx + 1}`}
               />
             ))}
