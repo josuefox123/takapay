@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Mail\CagnotteAnnuleeMail;
 use App\Mail\CagnottePreteMail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -167,6 +168,45 @@ class Cagnotte extends Model
             }
         } catch (\Throwable $e) {
             Log::error('Erreur lors de l\'envoi de la notification "Cagnotte prête" : ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Envoie la notification et l'email au client lorsqu'il demande l'annulation de sa cagnotte.
+     */
+    public function sendCagnotteAnnuleeNotification(float $montantRemboursement, float $fraisAnnulation, string $telephone, ?string $overrideEmail = null): void
+    {
+        try {
+            $user = $this->utilisateur;
+
+            // 1. Notification dans l'espace client
+            if ($user) {
+                Notification::create([
+                    'utilisateur_id' => $user->id,
+                    'cagnotte_id' => $this->id,
+                    'titre' => 'Demande d\'annulation enregistrée',
+                    'message' => "Votre demande d'annulation pour l'article " . ($this->produit?->nom ?? '') . " a bien été enregistrée. Des frais de gestion de 5% (" . number_format($fraisAnnulation, 0, ',', ' ') . " FCFA) sont déduits. Le montant de " . number_format($montantRemboursement, 0, ',', ' ') . " FCFA vous sera reversé sous 24H sur votre numéro " . $telephone . ".",
+                    'type' => 'alerte',
+                    'statut' => 'non_lu',
+                ]);
+            }
+
+            // 2. Recherche d'un email valide
+            $targetEmail = null;
+            if (!empty($overrideEmail) && filter_var($overrideEmail, FILTER_VALIDATE_EMAIL) && !str_ends_with($overrideEmail, '@client.takapay.bj')) {
+                $targetEmail = $overrideEmail;
+            } elseif ($user && !empty($user->email) && !str_ends_with($user->email, '@client.takapay.bj') && filter_var($user->email, FILTER_VALIDATE_EMAIL)) {
+                $targetEmail = $user->email;
+            }
+
+            if ($targetEmail) {
+                Mail::to($targetEmail)->send(new CagnotteAnnuleeMail($this, $user, $montantRemboursement, $fraisAnnulation, $telephone));
+                Log::info('Email "Cagnotte annulée" envoyé à ' . $targetEmail . ' (cagnotte #' . $this->id . ')');
+            } else {
+                Log::warning('Demande d\'annulation enregistrée mais aucun email valide pour utilisateur #' . ($user?->id ?? 'anonyme'));
+            }
+        } catch (\Throwable $e) {
+            Log::error('Erreur lors de l\'envoi de la notification "Cagnotte annulée" : ' . $e->getMessage());
         }
     }
 }

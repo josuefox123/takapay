@@ -187,16 +187,11 @@ class CagnotteController extends Controller
             ]);
         }
 
-        if ($cagnotte->utilisateur_id) {
-            Notification::create([
-                'utilisateur_id' => $cagnotte->utilisateur_id,
-                'cagnotte_id' => $cagnotte->id,
-                'titre' => 'Demande d\'annulation enregistrée',
-                'message' => "Votre demande d'annulation pour l'article " . ($cagnotte->produit?->nom ?? '') . " a bien été enregistrée. Des frais de gestion de 5% (" . number_format($frais, 0, ',', ' ') . " FCFA) sont déduits. Le montant de " . number_format($remboursement, 0, ',', ' ') . " FCFA vous sera reversé sous 24H sur votre numéro " . $telephone . ".",
-                'type' => 'alerte',
-                'statut' => 'non_lu',
-            ]);
-        }
+        $clientEmail = $request->input('email')
+            ?? $cagnotte->utilisateur?->email
+            ?? $request->user('sanctum')?->email;
+
+        $cagnotte->sendCagnotteAnnuleeNotification($remboursement, $frais, $telephone, $clientEmail);
 
         return response()->json([
             'message' => 'Demande d\'annulation enregistrée avec succès. Votre remboursement de 95% sera envoyé sous 24H.',

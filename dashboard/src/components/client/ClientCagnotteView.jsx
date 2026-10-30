@@ -341,6 +341,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
       try {
         await adminService.cancelCagnotte(backendCagnotteId, {
           telephone: effectivePhone,
+          email: user?.email || '',
         });
       } catch (err) {
         console.warn('Erreur API annulation:', err);
