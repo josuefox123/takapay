@@ -274,6 +274,73 @@ export const adminService = {
     return data;
   },
 
+  async forgotPin(identifiant) {
+    const res = await fetch(`${API_BASE}/forgot-pin`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify({ identifiant }),
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const msg =
+        data.message ||
+        Object.values(data.errors || {})?.[0]?.[0] ||
+        "Impossible d'envoyer le code de réinitialisation.";
+      throw new Error(msg);
+    }
+    return data;
+  },
+
+  async verifyPinCode(identifiant, code) {
+    const res = await fetch(`${API_BASE}/verify-pin-code`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify({ identifiant, code }),
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const msg =
+        data.message ||
+        Object.values(data.errors || {})?.[0]?.[0] ||
+        'Code de vérification incorrect ou expiré.';
+      throw new Error(msg);
+    }
+    return data;
+  },
+
+  async resetPin(identifiant, code, new_pin, confirm_pin) {
+    const res = await fetch(`${API_BASE}/reset-pin`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify({ identifiant, code, new_pin, confirm_pin }),
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const msg =
+        data.message ||
+        Object.values(data.errors || {})?.[0]?.[0] ||
+        'Échec de la réinitialisation du code PIN.';
+      throw new Error(msg);
+    }
+
+    if (data.access_token) {
+      localStorage.setItem('takapay_client_token', data.access_token);
+    }
+    return data;
+  },
+
   async googleAuth(userData) {
     const res = await fetch(`${API_BASE}/auth/google`, {
       method: 'POST',

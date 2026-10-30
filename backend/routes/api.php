@@ -34,6 +34,9 @@ use Illuminate\Support\Facades\Route;
 Route::post('/register', [AuthController::class, 'register'])->middleware('throttle:10,1');
 Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:5,1')->name('login');
 Route::post('/auth/google', [AuthController::class, 'googleAuth'])->middleware('throttle:10,1');
+Route::post('/forgot-pin', [AuthController::class, 'forgotPin'])->middleware('throttle:5,1');
+Route::post('/verify-pin-code', [AuthController::class, 'verifyPinCode'])->middleware('throttle:5,1');
+Route::post('/reset-pin', [AuthController::class, 'resetPin'])->middleware('throttle:5,1');
 
 /*
 |--------------------------------------------------------------------------
