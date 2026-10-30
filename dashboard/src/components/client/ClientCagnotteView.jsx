@@ -1890,40 +1890,6 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                 </div>
               )}
 
-              {/* Bouton principal si Cash : Oui article reçu */}
-              {isCash && !isArticleReceived && (
-                <button
-                  type="button"
-                  onClick={() => setShowConfirmReceiptModal(true)}
-                  style={{
-                    width: '100%',
-                    padding: '16px',
-                    borderRadius: '16px',
-                    border: 'none',
-                    background: '#f59e0b',
-                    color: '#1b1716',
-                    fontWeight: 800,
-                    fontSize: '15.5px',
-                    cursor: 'pointer',
-                    boxShadow: '0 6px 20px rgba(245, 158, 11, 0.35)',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '8px',
-                    marginTop: '16px',
-                    transition: 'all .15s ease',
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.background = '#d97706';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = '#f59e0b';
-                  }}
-                >
-                  <CheckCircle2 size={18} color="#1b1716" />
-                  Oui, article reçu
-                </button>
-              )}
 
               {/* Bouton principal si Cagnotte : Effectuer un versement */}
               {!isCash && !isFinished && !isCancelled && (
