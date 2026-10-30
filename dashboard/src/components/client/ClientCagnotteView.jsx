@@ -1900,27 +1900,27 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                     padding: '16px',
                     borderRadius: '16px',
                     border: 'none',
-                    background: '#1b1716',
-                    color: '#ffffff',
+                    background: '#f59e0b',
+                    color: '#1b1716',
                     fontWeight: 800,
                     fontSize: '15.5px',
                     cursor: 'pointer',
-                    boxShadow: '0 6px 20px rgba(27, 23, 22, 0.25)',
+                    boxShadow: '0 6px 20px rgba(245, 158, 11, 0.35)',
                     display: 'inline-flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     gap: '8px',
                     marginTop: '16px',
-                    transition: 'background .15s',
+                    transition: 'all .15s ease',
                   }}
                   onMouseEnter={(e) => {
-                    e.currentTarget.style.background = '#2a2321';
+                    e.currentTarget.style.background = '#d97706';
                   }}
                   onMouseLeave={(e) => {
-                    e.currentTarget.style.background = '#1b1716';
+                    e.currentTarget.style.background = '#f59e0b';
                   }}
                 >
-                  <CheckCircle2 size={18} color="#f59e0b" />
+                  <CheckCircle2 size={18} color="#1b1716" />
                   Oui, article reçu
                 </button>
               )}
