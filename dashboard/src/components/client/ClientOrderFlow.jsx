@@ -242,8 +242,8 @@ export default function ClientOrderFlow({
     : Math.max(
         1,
         product?.payment?.minimumStart
-          ? Math.round(product.payment.minimumStart * priceRatio)
-          : Math.round(effectivePrice * 0.1)
+          ? Math.floor(product.payment.minimumStart * priceRatio)
+          : Math.floor((effectivePrice * 10) / 100)
       );
   const effectiveQuantity = orderType === 'cash' ? Math.max(1, quantity) : 1;
   const paymentAmount = orderType === 'cash' ? (cashPrice * effectiveQuantity) : minDeposit;

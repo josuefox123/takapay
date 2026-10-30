@@ -10,6 +10,9 @@ export default function ClientProductDetail({
   onBack,
   onStartOrder,
   onSelectProduct,
+  onGoHome,
+  onSelectCategory,
+  onSelectSubcategory,
 }) {
   const product = propProduct || PRODUCTS.find((p) => p.id === Number(productId)) || PRODUCTS[0];
   const [selectedGallery, setSelectedGallery] = useState(() => {
@@ -17,6 +20,10 @@ export default function ClientProductDetail({
     return (!hasImgs && product?.video) ? 'video' : 0;
   });
   const [selectedColor, setSelectedColor] = useState(0);
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [product?.id]);
 
   useEffect(() => {
     const hasImgs = ((Array.isArray(product?.images) && product.images.length > 0) ? product.images : (product?.im ? [product.im] : [])).filter(Boolean).length > 0;
@@ -303,8 +310,8 @@ export default function ClientProductDetail({
   const [cagnotteOption, setCagnotteOption] = useState('offer_10');
   const [customCagnotteAmount, setCustomCagnotteAmount] = useState('');
 
-  const deposit10 = Math.max(1, Math.round(currentPrice * 0.10));
-  const deposit15 = Math.max(1, Math.round(currentPrice * 0.15));
+  const deposit10 = Math.max(1, Math.floor((currentPrice * 10) / 100));
+  const deposit15 = Math.max(1, Math.floor((currentPrice * 15) / 100));
   const minAllowedDeposit = Math.min(100, deposit10);
   const parsedCustomAmount = Number(customCagnotteAmount) > 0 ? Number(customCagnotteAmount) : 0;
   const effectiveFirstDeposit = cagnotteOption === 'offer_10'
@@ -421,13 +428,42 @@ export default function ClientProductDetail({
         </button>
 
         <nav aria-label="Fil d'Ariane" style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', fontWeight: 600 }}>
-          <span style={{ color: 'var(--tx)', opacity: 0.75 }}>Accueil</span>
+          <button
+            type="button"
+            onClick={onGoHome || onBack}
+            style={{ background: 'none', border: 'none', padding: 0, color: 'var(--tx)', opacity: 0.75, cursor: 'pointer', font: 'inherit' }}
+            onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--r)'; e.currentTarget.style.opacity = '1'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--tx)'; e.currentTarget.style.opacity = '0.75'; }}
+          >
+            Accueil
+          </button>
           <span style={{ color: 'var(--mu)', opacity: 0.5 }}>/</span>
-          <span style={{ color: 'var(--tx)', opacity: 0.85 }}>{categoryName}</span>
+          <button
+            type="button"
+            onClick={() => (onSelectCategory ? onSelectCategory(categoryName) : onBack?.())}
+            style={{ background: 'none', border: 'none', padding: 0, color: 'var(--tx)', opacity: 0.85, cursor: 'pointer', font: 'inherit' }}
+            onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--r)'; e.currentTarget.style.opacity = '1'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--tx)'; e.currentTarget.style.opacity = '0.85'; }}
+          >
+            {categoryName}
+          </button>
           <span style={{ color: 'var(--mu)', opacity: 0.5 }}>/</span>
-          <span style={{ color: 'var(--r)', background: 'rgba(220, 38, 38, 0.08)', padding: '3px 10px', borderRadius: '8px', fontWeight: 700 }}>
+          <button
+            type="button"
+            onClick={() => (onSelectSubcategory ? onSelectSubcategory(subcategoryName, categoryName) : onBack?.())}
+            style={{
+              background: 'rgba(220, 38, 38, 0.08)',
+              border: 'none',
+              padding: '3px 10px',
+              borderRadius: '8px',
+              color: 'var(--r)',
+              fontWeight: 700,
+              cursor: 'pointer',
+              font: 'inherit',
+            }}
+          >
             {subcategoryName}
-          </span>
+          </button>
         </nav>
       </div>
 
@@ -1523,12 +1559,21 @@ export default function ClientProductDetail({
                 <div
                   key={item.id}
                   className="proposal-item-card"
-                  onClick={() => onSelectProduct(item.id)}
+                  onClick={() => {
+                    if (typeof onSelectProduct === 'function') {
+                      onSelectProduct(item.id);
+                    }
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                  }}
                   role="button"
                   tabIndex={0}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') onSelectProduct(item.id);
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      if (typeof onSelectProduct === 'function') onSelectProduct(item.id);
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }
                   }}
+                  style={{ cursor: 'pointer' }}
                 >
                   <div className="proposal-img-box">
                     <img
@@ -1552,20 +1597,6 @@ export default function ClientProductDetail({
                     </span>
                     <div className="proposal-title" title={item.n}>
                       {item.n}
-                    </div>
-
-                    <div style={{ fontSize: '11.5px', color: '#16a34a', fontWeight: 700, margin: '4px 0 6px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      {item.payment?.mode === 'cash' ? (
-                        <>
-                          <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '15px' }}>payments</span>
-                          <span>Paiement Cash</span>
-                        </>
-                      ) : (
-                        <>
-                          <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '15px' }}>savings</span>
-                          <span>Option Cagnotte Libre</span>
-                        </>
-                      )}
                     </div>
 
                     <div className="proposal-price">
