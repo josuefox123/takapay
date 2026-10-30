@@ -287,11 +287,11 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
     const cancelTx = {
       id: `tx-cancel-${Date.now()}`,
       reference: `TK-ANNUL-${Date.now()}`,
-      titre: 'Demande d’annulation (-5% de retenue)',
+      titre: 'Argent renvoyé · Remboursement cagnotte',
       methode: activeCagnotte.moyenPaiement || 'Mobile Money',
       date: dateFormatted,
       montant: refundAmount,
-      statut: 'Remboursement sous 24H',
+      statut: 'Argent renvoyé',
       type: 'annulation',
       periode: 'aujourdhui',
       client: clientName,
@@ -1909,51 +1909,100 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                 </div>
               </div>
 
-              {/* Progression */}
+              {/* Progression active OU Bilan d'annulation */}
               <div
                 style={{
-                  background: '#faf6f3',
+                  background: isCancelled ? '#fffaf5' : '#faf6f3',
                   borderRadius: '20px',
                   padding: '20px',
-                  border: '1px solid #f0e8e0',
+                  border: isCancelled ? '1.5px solid #fed7aa' : '1px solid #f0e8e0',
                 }}
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                  <span style={{ fontSize: '14px', fontWeight: 700, color: '#2b2624' }}>
-                    {isLibre ? 'Progression de la cagnotte (Objectif 100% pour la récupération)' : 'Progression de remboursement'}
+                  <span style={{ fontSize: '14px', fontWeight: 800, color: isCancelled ? '#9a3412' : '#2b2624' }}>
+                    {isCancelled
+                      ? 'Bilan financier de l’annulation'
+                      : isLibre
+                      ? 'Progression de la cagnotte (Objectif 100%)'
+                      : 'Progression du financement'}
                   </span>
-                  <span style={{ fontSize: '16px', fontWeight: 800, color: '#dc2626' }}>{pct}%</span>
+                  {!isCancelled && <span style={{ fontSize: '16px', fontWeight: 800, color: '#dc2626' }}>{pct}%</span>}
                 </div>
 
-                <div style={{ height: '9px', background: '#ece5dc', borderRadius: '99px', overflow: 'hidden', marginBottom: '18px' }}>
-                  <div
-                    style={{
-                      width: `${Math.min(100, pct)}%`,
-                      height: '100%',
-                      background: '#dc2626',
-                      borderRadius: '99px',
-                      transition: 'width .5s ease',
-                    }}
-                  />
-                </div>
+                {!isCancelled ? (
+                  <>
+                    <div style={{ height: '9px', background: '#ece5dc', borderRadius: '99px', overflow: 'hidden', marginBottom: '18px' }}>
+                      <div
+                        style={{
+                          width: `${Math.min(100, pct)}%`,
+                          height: '100%',
+                          background: '#dc2626',
+                          borderRadius: '99px',
+                          transition: 'width .5s ease',
+                        }}
+                      />
+                    </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center' }}>
-                  <div>
-                    <small style={{ color: '#8c8580', fontSize: '11px', display: 'block', marginBottom: '4px' }}>
-                      Montant déjà versé
-                    </small>
-                    <b style={{ fontSize: '17px', fontWeight: 800, color: '#1b1716' }}>{formatFCFA(cagnotte.montantVerse)}</b>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center' }}>
+                      <div>
+                        <small style={{ color: '#8c8580', fontSize: '11px', display: 'block', marginBottom: '4px' }}>
+                          Versement cagnotte (Total cotisé)
+                        </small>
+                        <b style={{ fontSize: '17px', fontWeight: 800, color: '#1b1716' }}>{formatFCFA(cagnotte.montantVerse)}</b>
+                      </div>
+
+                      <div style={{ width: '1px', height: '38px', background: '#ded6cd', margin: '0 16px' }} />
+
+                      <div style={{ textAlign: 'right' }}>
+                        <small style={{ color: '#8c8580', fontSize: '11px', display: 'block', marginBottom: '4px' }}>
+                          Reste à verser
+                        </small>
+                        <b style={{ fontSize: '17px', fontWeight: 800, color: '#1b1716' }}>{formatFCFA(cagnotte.resteAPayer)}</b>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div style={{ display: 'grid', gap: '12px', fontSize: '13px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ color: '#706966' }}>1. Versement cagnotte (Total cotisé) :</span>
+                      <b style={{ color: '#1b1716', fontSize: '14.5px' }}>{formatFCFA(cagnotte.montantVerse || 0)}</b>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ color: '#b91c1c' }}>2. Frais de retenue gestion (5%) :</span>
+                      <b style={{ color: '#b91c1c' }}>
+                        - {formatFCFA(cagnotte.fraisAnnulation || Math.round(((cagnotte.montantVerse || 0) * 5) / 100))}
+                      </b>
+                    </div>
+                    <div
+                      style={{
+                        borderTop: '1px solid #fed7aa',
+                        paddingTop: '10px',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                      }}
+                    >
+                      <div>
+                        <b style={{ color: '#c2410c', fontSize: '14px', display: 'block' }}>
+                          3. Argent renvoyé au client (95%) :
+                        </b>
+                        <small style={{ color: '#706966', fontSize: '11.5px' }}>
+                          Sur le compte Mobile Money : {cagnotte.telephoneRemboursement || user?.telephone || user?.phone || 'renseigné'}
+                        </small>
+                      </div>
+                      <b style={{ color: '#c2410c', fontSize: '17px', fontWeight: 900 }}>
+                        {formatFCFA(
+                          cagnotte.montantRemboursement ||
+                            Math.max(
+                              0,
+                              (cagnotte.montantVerse || 0) -
+                                Math.round(((cagnotte.montantVerse || 0) * 5) / 100)
+                            )
+                        )}
+                      </b>
+                    </div>
                   </div>
-
-                  <div style={{ width: '1px', height: '38px', background: '#ded6cd', margin: '0 16px' }} />
-
-                  <div style={{ textAlign: 'right' }}>
-                    <small style={{ color: '#8c8580', fontSize: '11px', display: 'block', marginBottom: '4px' }}>
-                      Reste à payer
-                    </small>
-                    <b style={{ fontSize: '17px', fontWeight: 800, color: '#1b1716' }}>{formatFCFA(cagnotte.resteAPayer)}</b>
-                  </div>
-                </div>
+                )}
               </div>
 
               {/* Information Cagnotte Libre : récupération à 100% */}
@@ -2148,82 +2197,100 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
 
               {/* Liste des versements */}
               <div style={{ display: 'grid', gap: '12px', marginBottom: '20px' }}>
-                {filteredTransactions.map((tx) => (
-                  <div
-                    key={tx.id}
-                    onClick={() => setSelectedReceipt(tx)}
-                    style={{
-                      background: '#ffffff',
-                      border: '1px solid #ece5df',
-                      borderRadius: '16px',
-                      padding: '14px 16px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '14px',
-                      boxShadow: '0 1px 4px rgba(0,0,0,0.02)',
-                      cursor: 'pointer',
-                      transition: 'transform .15s, border-color .15s',
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.transform = 'translateY(-1px)';
-                      e.currentTarget.style.borderColor = '#d9d0c7';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.transform = 'none';
-                      e.currentTarget.style.borderColor = '#ece5df';
-                    }}
-                  >
+                {filteredTransactions.map((tx) => {
+                  const isRefund = tx.type === 'annulation' || tx.type === 'remboursement' || tx.titre?.toLowerCase().includes('annulation') || tx.titre?.toLowerCase().includes('remboursement') || tx.titre?.toLowerCase().includes('renvoyé');
+                  const isReactivate = tx.type === 'reactivation' || tx.titre?.toLowerCase().includes('rétablie');
+                  return (
                     <div
+                      key={tx.id}
+                      onClick={() => setSelectedReceipt(tx)}
                       style={{
-                        width: '42px',
-                        height: '42px',
-                        borderRadius: '50%',
-                        background: '#f3ece6',
-                        display: 'grid',
-                        placeItems: 'center',
-                        fontSize: '18px',
-                        color: '#4b443f',
-                        flexShrink: 0,
+                        background: isRefund ? '#fffcf9' : '#ffffff',
+                        border: isRefund ? '1.5px solid #fed7aa' : '1px solid #ece5df',
+                        borderRadius: '16px',
+                        padding: '14px 16px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '14px',
+                        boxShadow: '0 1px 4px rgba(0,0,0,0.02)',
+                        cursor: 'pointer',
+                        transition: 'transform .15s, border-color .15s',
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.transform = 'translateY(-1px)';
+                        e.currentTarget.style.borderColor = isRefund ? '#f97316' : '#d9d0c7';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.transform = 'none';
+                        e.currentTarget.style.borderColor = isRefund ? '#fed7aa' : '#ece5df';
                       }}
                     >
-                      💳
-                    </div>
-
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                        <b style={{ fontSize: '14.5px', color: '#1b1716' }}>{tx.titre}</b>
-                        <small style={{ fontSize: '11px', color: '#8c8580' }}>{tx.reference || tx.id}</small>
+                      <div
+                        style={{
+                          width: '42px',
+                          height: '42px',
+                          borderRadius: '50%',
+                          background: isRefund ? '#ffedd5' : isReactivate ? '#fef3c7' : '#f3ece6',
+                          display: 'grid',
+                          placeItems: 'center',
+                          fontSize: '18px',
+                          color: isRefund ? '#c2410c' : isReactivate ? '#b45309' : '#4b443f',
+                          flexShrink: 0,
+                        }}
+                      >
+                        {isRefund ? '↩️' : isReactivate ? '🔄' : '💳'}
                       </div>
-                      <span style={{ fontSize: '12px', color: '#706966', display: 'block', marginTop: '2px' }}>
-                        {tx.methode}
-                      </span>
-                      <span style={{ fontSize: '11px', color: '#9e958f' }}>{tx.date}</span>
-                    </div>
 
-                    <div style={{ textAlign: 'right', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <div>
-                        <b style={{ fontSize: '15px', color: '#1b1716', display: 'block' }}>+{formatFCFA(tx.montant)}</b>
-                        <span
-                          style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '4px',
-                            fontSize: '11px',
-                            fontWeight: 700,
-                            color: '#15803d',
-                            background: '#dcfce7',
-                            padding: '2px 8px',
-                            borderRadius: '99px',
-                            marginTop: '3px',
-                          }}
-                        >
-                          ✔ Réussi
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                          <b style={{ fontSize: '14.5px', color: isRefund ? '#c2410c' : '#1b1716' }}>
+                            {isRefund
+                              ? 'Argent renvoyé (Remboursement)'
+                              : isReactivate
+                              ? 'Cagnotte rétablie'
+                              : tx.titre && !tx.titre.toLowerCase().includes('demande d’annulation')
+                              ? tx.titre
+                              : 'Versement cagnotte (Cotisation)'}
+                          </b>
+                          <small style={{ fontSize: '11px', color: '#8c8580' }}>{tx.reference || tx.id}</small>
+                        </div>
+                        <span style={{ fontSize: '12px', color: '#706966', display: 'block', marginTop: '2px' }}>
+                          {isRefund ? 'Virement Mobile Money sortant' : tx.methode}
                         </span>
+                        <span style={{ fontSize: '11px', color: '#9e958f' }}>{tx.date}</span>
                       </div>
-                      <span style={{ color: '#a09895', fontSize: '18px', fontWeight: 600 }}>›</span>
+
+                      <div style={{ textAlign: 'right', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <div>
+                          <b style={{ fontSize: '15px', color: isRefund ? '#c2410c' : '#1b1716', display: 'block' }}>
+                            {isRefund
+                              ? `- ${formatFCFA(tx.montant)}`
+                              : isReactivate
+                              ? '—'
+                              : `+ ${formatFCFA(tx.montant)}`}
+                          </b>
+                          <span
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              fontSize: '11px',
+                              fontWeight: 700,
+                              color: isRefund ? '#c2410c' : '#15803d',
+                              background: isRefund ? '#ffedd5' : '#dcfce7',
+                              padding: '2px 8px',
+                              borderRadius: '99px',
+                              marginTop: '3px',
+                            }}
+                          >
+                            {isRefund ? '↩ Argent renvoyé' : isReactivate ? '✔ Rétablie' : '✔ Validé'}
+                          </span>
+                        </div>
+                        <span style={{ color: '#a09895', fontSize: '18px', fontWeight: 600 }}>›</span>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
 
                 {filteredTransactions.length === 0 && (
                   <div style={{ textAlign: 'center', padding: '36px 16px', color: '#8c8580', fontSize: '13.5px' }}>
@@ -2523,8 +2590,14 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
             }}
           >
             <div style={{ textAlign: 'center', marginBottom: '20px', borderBottom: '1px dashed #ded6cd', paddingBottom: '16px' }}>
-              <span style={{ fontSize: '28px' }}>🧾</span>
-              <h3 style={{ fontSize: '18px', fontWeight: 800, margin: '8px 0 2px' }}>Reçu de versement Takapay</h3>
+              <span style={{ fontSize: '28px' }}>
+                {selectedReceipt.type === 'annulation' || selectedReceipt.type === 'remboursement' ? '↩️' : '🧾'}
+              </span>
+              <h3 style={{ fontSize: '18px', fontWeight: 800, margin: '8px 0 2px' }}>
+                {selectedReceipt.type === 'annulation' || selectedReceipt.type === 'remboursement'
+                  ? 'Avis d’argent renvoyé (Remboursement)'
+                  : 'Reçu de versement Takapay'}
+              </h3>
               <small style={{ color: '#706966', fontSize: '12px' }}>
                 Référence : {selectedReceipt.reference || selectedReceipt.id}
               </small>
@@ -2536,7 +2609,18 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                 ['Cagnotte article :', <b key="a">{p.n || '—'}</b>],
                 ['Moyen utilisé :', <b key="m">{selectedReceipt.methode}</b>],
                 ['Date & heure :', <b key="d">{selectedReceipt.date}</b>],
-                ['Statut :', <span key="s" style={{ color: '#15803d', fontWeight: 700 }}>✔ Validé</span>],
+                [
+                  'Statut :',
+                  <span
+                    key="s"
+                    style={{
+                      color: selectedReceipt.type === 'annulation' ? '#c2410c' : '#15803d',
+                      fontWeight: 700,
+                    }}
+                  >
+                    {selectedReceipt.type === 'annulation' ? '↩ Argent renvoyé' : '✔ Validé'}
+                  </span>,
+                ],
               ].map(([label, value]) => (
                 <div key={label} style={{ display: 'flex', justifyContent: 'space-between', gap: '12px' }}>
                   <span style={{ color: '#706966' }}>{label}</span>
@@ -2552,8 +2636,14 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                   fontSize: '15px',
                 }}
               >
-                <span>Montant versé :</span>
-                <b style={{ color: '#dc2626' }}>+{formatFCFA(selectedReceipt.montant)}</b>
+                <span>
+                  {selectedReceipt.type === 'annulation' ? 'Argent renvoyé au client :' : 'Montant versé :'}
+                </span>
+                <b style={{ color: selectedReceipt.type === 'annulation' ? '#c2410c' : '#dc2626' }}>
+                  {selectedReceipt.type === 'annulation'
+                    ? `- ${formatFCFA(selectedReceipt.montant)}`
+                    : `+ ${formatFCFA(selectedReceipt.montant)}`}
+                </b>
               </div>
             </div>
 
