@@ -586,38 +586,23 @@ export const mapBackendCagnotteToClient = (c) => {
       t.type === 'remboursement' ||
       t.type === 'annulation' ||
       (t.reference_externe && (t.reference_externe.startsWith('REM-') || t.reference_externe.includes('ANNUL')));
+    const isExecuted = t.statut === 'succes' || t.statut === 'reussi' || t.statut === 'Argent renvoyé';
     return {
       id: `tx-${t.id}`,
       reference: t.reference_externe || `TK-${t.id}`,
-      titre: isRefundTx ? 'Argent renvoyé (Remboursement)' : 'Versement cagnotte (Cotisation)',
+      titre: isRefundTx
+        ? (isExecuted ? 'Argent renvoyé (Remboursement)' : 'Remboursement en attente')
+        : 'Versement cagnotte (Cotisation)',
       methode: isRefundTx ? (t.moyen_paiement || c.moyen_paiement || 'Mobile Money') : (t.moyen_paiement || c.moyen_paiement || 'MTN Mobile Money'),
       date: t.date ? new Date(t.date).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Récemment',
       montant: Number(t.montant || 0),
-      statut: isRefundTx ? 'Argent renvoyé' : (t.statut === 'succes' || t.statut === 'reussi' ? 'Réussi' : (t.statut || 'Réussi')),
+      statut: isRefundTx
+        ? (isExecuted ? 'Argent renvoyé' : 'En attente')
+        : (isExecuted ? 'Réussi' : (t.statut || 'Réussi')),
       type: isRefundTx ? 'remboursement' : (t.type || 'versement'),
       periode: 'aujourdhui',
     };
   }) : [];
-
-  if (
-    (c.statut === 'annulee' || c.statut === 'cancelled' || c.statut === 'annulation_demandee') &&
-    !txs.some((t) => t.type === 'remboursement' || t.type === 'annulation')
-  ) {
-    const refundAmt = Number(c.montant_remboursement || Math.round(((Number(c.montant_verse) || 0) * 95) / 100));
-    if (refundAmt > 0) {
-      txs.unshift({
-        id: `tx-refund-auto-${c.id}`,
-        reference: `REM-${c.id}`,
-        titre: 'Argent renvoyé (Remboursement)',
-        methode: c.moyen_paiement || 'Mobile Money',
-        date: c.date_demande_annulation ? new Date(c.date_demande_annulation).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Récemment',
-        montant: refundAmt,
-        statut: 'Argent renvoyé',
-        type: 'remboursement',
-        periode: 'aujourdhui',
-      });
-    }
-  }
 
   const subcategoryName =
     prod.sous_categorie?.nom ||

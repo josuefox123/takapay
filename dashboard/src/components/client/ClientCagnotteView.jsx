@@ -226,27 +226,26 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
 
   const isRefundCompleted =
     isCancelled &&
+    cagnotte.statut !== 'annulation_demandee' &&
+    cagnotte.rawStatut !== 'annulation_demandee' &&
+    !(cagnotte.transactions || []).some(
+      (t) =>
+        (t.type === 'remboursement' || t.type === 'annulation') &&
+        (t.statut === 'en_attente' || t.statut === 'En attente')
+    ) &&
     (cagnotte.rawStatut === 'annulee' ||
       cagnotte.statut === 'annulee' ||
       (cagnotte.transactions || []).some(
         (t) =>
           (t.type === 'remboursement' ||
             t.type === 'annulation' ||
-            t.titre?.toLowerCase().includes('renvoyé') ||
-            t.titre?.toLowerCase().includes('remboursement')) &&
+            t.titre?.toLowerCase().includes('renvoyé')) &&
           (t.statut === 'succes' ||
             t.statut === 'reussi' ||
             t.statut === 'Argent renvoyé' ||
             t.statut === 'Réussi' ||
             t.statut === 'effectue')
-      ) ||
-      (cagnotte.statut !== 'annulation_demandee' &&
-        cagnotte.rawStatut !== 'annulation_demandee' &&
-        !(cagnotte.transactions || []).some(
-          (t) =>
-            (t.type === 'remboursement' || t.type === 'annulation') &&
-            (t.statut === 'en_attente' || t.statut === 'En attente')
-        )));
+      ));
   const isLibre =
     cagnotte.mode === 'libre' ||
     cagnotte.product?.payment?.mode === 'libre' ||
@@ -313,26 +312,15 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
       ' ' +
       now.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
 
-    const cancelTx = {
-      id: `tx-cancel-${Date.now()}`,
-      reference: `TK-ANNUL-${Date.now()}`,
-      titre: 'Argent renvoyé · Remboursement cagnotte',
-      methode: activeCagnotte.moyenPaiement || 'Mobile Money',
-      date: dateFormatted,
-      montant: refundAmount,
-      statut: 'Argent renvoyé',
-      type: 'annulation',
-      periode: 'aujourdhui',
-      client: clientName,
-    };
-
     const updatedCagnotte = {
       ...activeCagnotte,
-      statut: 'cancelled',
+      statut: 'annulation_demandee',
+      rawStatut: 'annulation_demandee',
       montantRemboursement: refundAmount,
       fraisAnnulation: penaltyAmount,
       telephoneRemboursement: effectivePhone,
-      transactions: [cancelTx, ...(activeCagnotte.transactions || [])],
+      dateDemandeAnnulation: dateFormatted,
+      transactions: activeCagnotte.transactions || [],
     };
 
     const updatedList = cagnottesList.map((c) =>
@@ -377,32 +365,16 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
     const isTargetCash = Boolean(activeCagnotte.isCash || activeCagnotte.mode === 'cash' || activeCagnotte.mode === 'cash_cod');
     const newStatut = isTargetCash ? 'en_attente' : 'en_cours';
 
-    const now = new Date();
-    const dateFormatted =
-      now.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' }) +
-      ' ' +
-      now.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
-
-    const reactivateTx = {
-      id: `tx-reactivate-${Date.now()}`,
-      reference: `TK-REACTIV-${Date.now()}`,
-      titre: 'Annulation annulée · Cagnotte rétablie',
-      methode: activeCagnotte.moyenPaiement || 'Takapay',
-      date: dateFormatted,
-      montant: 0,
-      statut: 'Rétablie',
-      type: 'reactivation',
-      periode: 'aujourdhui',
-      client: clientName,
-    };
-
     const updatedCagnotte = {
       ...activeCagnotte,
       statut: newStatut,
+      rawStatut: newStatut,
       montantRemboursement: null,
       fraisAnnulation: null,
       telephoneRemboursement: null,
-      transactions: [reactivateTx, ...(activeCagnotte.transactions || [])],
+      transactions: (activeCagnotte.transactions || []).filter(
+        (t) => t.type !== 'annulation' && t.type !== 'remboursement' && t.type !== 'reactivation'
+      ),
     };
 
     const updatedList = cagnottesList.map((c) =>
@@ -773,26 +745,25 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
 
                 const isItemRefundCompleted =
                   isItemCancelled &&
+                  item.statut !== 'annulation_demandee' &&
+                  item.rawStatut !== 'annulation_demandee' &&
+                  !(item.transactions || []).some(
+                    (t) =>
+                      (t.type === 'remboursement' || t.type === 'annulation') &&
+                      (t.statut === 'en_attente' || t.statut === 'En attente')
+                  ) &&
                   (item.rawStatut === 'annulee' ||
                     item.statut === 'annulee' ||
                     (item.transactions || []).some(
                       (t) =>
                         (t.type === 'remboursement' ||
                           t.type === 'annulation' ||
-                          t.titre?.toLowerCase().includes('renvoyé') ||
-                          t.titre?.toLowerCase().includes('remboursement')) &&
+                          t.titre?.toLowerCase().includes('renvoyé')) &&
                         (t.statut === 'succes' ||
                           t.statut === 'reussi' ||
                           t.statut === 'Argent renvoyé' ||
                           t.statut === 'Réussi')
-                    ) ||
-                    (item.statut !== 'annulation_demandee' &&
-                      item.rawStatut !== 'annulation_demandee' &&
-                      !(item.transactions || []).some(
-                        (t) =>
-                          (t.type === 'remboursement' || t.type === 'annulation') &&
-                          (t.statut === 'en_attente' || t.statut === 'En attente')
-                      )));
+                    ));
                 return (
                   <div
                     key={item.id}
@@ -1087,7 +1058,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                     }}
                   >
                     {isCancelled
-                      ? '✕ Cagnotte annulée'
+                      ? (isRefundCompleted ? '✕ Cagnotte annulée · Remboursée' : '✕ Annulation demandée · Remboursement sous 24H')
                       : isArticleReceived
                       ? '✔ Article reçu'
                       : isCod
@@ -2041,10 +2012,14 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                     >
                       <div>
                         <b style={{ color: '#c2410c', fontSize: '14px', display: 'block' }}>
-                          3. Argent renvoyé au client (95%) :
+                          {isRefundCompleted
+                            ? '3. Argent renvoyé au client (95%) :'
+                            : '3. Argent à renvoyer sous 24H (95%) :'}
                         </b>
                         <small style={{ color: '#706966', fontSize: '11.5px' }}>
-                          Sur le compte Mobile Money : {cagnotte.telephoneRemboursement || user?.telephone || user?.phone || 'renseigné'}
+                          {isRefundCompleted
+                            ? `Viré sur le compte Mobile Money : ${cagnotte.telephoneRemboursement || user?.telephone || user?.phone || 'renseigné'}`
+                            : `Sera reversé sous 24H sur le compte Mobile Money : ${cagnotte.telephoneRemboursement || user?.telephone || user?.phone || 'renseigné'}`}
                         </small>
                       </div>
                       <b style={{ color: '#c2410c', fontSize: '17px', fontWeight: 900 }}>
@@ -2262,20 +2237,22 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                     tx.titre?.toLowerCase().includes('remboursement') ||
                     tx.titre?.toLowerCase().includes('renvoyé') ||
                     tx.reference?.startsWith('REM-') ||
-                    tx.reference?.includes('ANNUL') ||
-                    (isCancelled && (
-                      Number(tx.montant) === Number(cagnotte.montantRemboursement) ||
-                      Number(tx.montant) === Number(cagnotte.montant_remboursement) ||
-                      Number(tx.montant) === Math.round(((Number(cagnotte.montantVerse) || 0) * 95) / 100) ||
-                      (tx.id && String(tx.id).includes('cancel')) ||
-                      (filteredTransactions.length === 2 && idx === 0 && Number(tx.montant) < Number(cagnotte.montantVerse))
-                    ));
+                    tx.reference?.includes('ANNUL');
+
+                  const isRefundExecuted =
+                    isRefund &&
+                    (isRefundCompleted ||
+                      tx.statut === 'succes' ||
+                      tx.statut === 'reussi' ||
+                      tx.statut === 'Argent renvoyé');
 
                   const isReactivate = tx.type === 'reactivation' || tx.titre?.toLowerCase().includes('rétablie');
 
                   let displayTitle = 'Versement cagnotte (Cotisation)';
                   if (isRefund) {
-                    displayTitle = 'Argent renvoyé (Remboursement)';
+                    displayTitle = isRefundExecuted
+                      ? 'Argent renvoyé (Remboursement)'
+                      : 'Remboursement programmé (sous 24H)';
                   } else if (isReactivate) {
                     displayTitle = 'Cagnotte rétablie';
                   } else if (
@@ -2318,33 +2295,35 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                           width: '42px',
                           height: '42px',
                           borderRadius: '50%',
-                          background: isRefund ? '#ffedd5' : isReactivate ? '#fef3c7' : '#f3ece6',
+                          background: isRefund ? (isRefundExecuted ? '#ffedd5' : '#fef3c7') : isReactivate ? '#fef3c7' : '#f3ece6',
                           display: 'grid',
                           placeItems: 'center',
                           fontSize: '18px',
-                          color: isRefund ? '#c2410c' : isReactivate ? '#b45309' : '#4b443f',
+                          color: isRefund ? (isRefundExecuted ? '#c2410c' : '#b45309') : isReactivate ? '#b45309' : '#4b443f',
                           flexShrink: 0,
                         }}
                       >
-                        {isRefund ? '↩️' : isReactivate ? '🔄' : '💳'}
+                        {isRefund ? (isRefundExecuted ? '↩️' : '⏳') : isReactivate ? '🔄' : '💳'}
                       </div>
 
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                          <b style={{ fontSize: '14.5px', color: isRefund ? '#c2410c' : '#1b1716' }}>
+                          <b style={{ fontSize: '14.5px', color: isRefund ? (isRefundExecuted ? '#c2410c' : '#b45309') : '#1b1716' }}>
                             {displayTitle}
                           </b>
                           <small style={{ fontSize: '11px', color: '#8c8580' }}>{tx.reference || tx.id}</small>
                         </div>
                         <span style={{ fontSize: '12px', color: '#706966', display: 'block', marginTop: '2px' }}>
-                          {isRefund ? 'Virement Mobile Money sortant (Remboursement)' : tx.methode}
+                          {isRefund
+                            ? (isRefundExecuted ? 'Virement Mobile Money sortant (Remboursement)' : 'Remboursement Mobile Money programmé sous 24H')
+                            : tx.methode}
                         </span>
                         <span style={{ fontSize: '11px', color: '#9e958f' }}>{tx.date}</span>
                       </div>
 
                       <div style={{ textAlign: 'right', display: 'flex', alignItems: 'center', gap: '10px' }}>
                         <div>
-                          <b style={{ fontSize: '15px', color: isRefund ? '#c2410c' : '#1b1716', display: 'block' }}>
+                          <b style={{ fontSize: '15px', color: isRefund ? (isRefundExecuted ? '#c2410c' : '#b45309') : '#1b1716', display: 'block' }}>
                             {isRefund
                               ? `- ${formatFCFA(tx.montant)}`
                               : isReactivate
@@ -2358,14 +2337,18 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                               gap: '4px',
                               fontSize: '11px',
                               fontWeight: 700,
-                              color: isRefund ? '#c2410c' : isReactivate ? '#b45309' : '#15803d',
-                              background: isRefund ? '#ffedd5' : isReactivate ? '#fef3c7' : '#dcfce7',
+                              color: isRefund ? (isRefundExecuted ? '#c2410c' : '#b45309') : isReactivate ? '#b45309' : '#15803d',
+                              background: isRefund ? (isRefundExecuted ? '#ffedd5' : '#fef3c7') : isReactivate ? '#fef3c7' : '#dcfce7',
                               padding: '2px 8px',
                               borderRadius: '99px',
                               marginTop: '3px',
                             }}
                           >
-                            {isRefund ? '↩ Argent renvoyé' : isReactivate ? '✔ Rétablie' : '✔ Validé'}
+                            {isRefund
+                              ? (isRefundExecuted ? '↩ Argent renvoyé' : '⏳ En attente sous 24H')
+                              : isReactivate
+                              ? '✔ Rétablie'
+                              : '✔ Validé'}
                           </span>
                         </div>
                         <span style={{ color: '#a09895', fontSize: '18px', fontWeight: 600 }}>›</span>
@@ -2679,22 +2662,24 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
               selectedReceipt.titre?.toLowerCase().includes('remboursement') ||
               selectedReceipt.titre?.toLowerCase().includes('renvoyé') ||
               selectedReceipt.reference?.startsWith('REM-') ||
-              selectedReceipt.reference?.includes('ANNUL') ||
-              (isCancelled && (
-                Number(selectedReceipt.montant) === Number(cagnotte.montantRemboursement) ||
-                Number(selectedReceipt.montant) === Number(cagnotte.montant_remboursement) ||
-                Number(selectedReceipt.montant) === Math.round(((Number(cagnotte.montantVerse) || 0) * 95) / 100)
-              ));
+              selectedReceipt.reference?.includes('ANNUL');
+
+            const isReceiptExecuted =
+              isReceiptRefund &&
+              (isRefundCompleted ||
+                selectedReceipt.statut === 'succes' ||
+                selectedReceipt.statut === 'reussi' ||
+                selectedReceipt.statut === 'Argent renvoyé');
 
             return (
               <>
                 <div style={{ textAlign: 'center', marginBottom: '20px', borderBottom: '1px dashed #ded6cd', paddingBottom: '16px' }}>
                   <span style={{ fontSize: '28px' }}>
-                    {isReceiptRefund ? '↩️' : '🧾'}
+                    {isReceiptRefund ? (isReceiptExecuted ? '↩️' : '⏳') : '🧾'}
                   </span>
                   <h3 style={{ fontSize: '18px', fontWeight: 800, margin: '8px 0 2px' }}>
                     {isReceiptRefund
-                      ? 'Avis d’argent renvoyé (Remboursement)'
+                      ? (isReceiptExecuted ? 'Avis d’argent renvoyé (Remboursement)' : 'Demande de remboursement (sous 24H)')
                       : 'Reçu de versement Takapay'}
                   </h3>
                   <small style={{ color: '#706966', fontSize: '12px' }}>
@@ -2713,11 +2698,11 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                       <span
                         key="s"
                         style={{
-                          color: isReceiptRefund ? '#c2410c' : '#15803d',
+                          color: isReceiptRefund ? (isReceiptExecuted ? '#c2410c' : '#b45309') : '#15803d',
                           fontWeight: 700,
                         }}
                       >
-                        {isReceiptRefund ? '↩ Argent renvoyé' : '✔ Validé'}
+                        {isReceiptRefund ? (isReceiptExecuted ? '↩ Argent renvoyé' : '⏳ En attente de virement') : '✔ Validé'}
                       </span>,
                     ],
                   ].map(([label, value]) => (
@@ -2736,9 +2721,11 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                     }}
                   >
                     <span>
-                      {isReceiptRefund ? 'Argent renvoyé au client :' : 'Montant versé (Cotisation) :'}
+                      {isReceiptRefund
+                        ? (isReceiptExecuted ? 'Argent renvoyé au client :' : 'Argent à renvoyer sous 24H :')
+                        : 'Montant versé (Cotisation) :'}
                     </span>
-                    <b style={{ color: isReceiptRefund ? '#c2410c' : '#dc2626' }}>
+                    <b style={{ color: isReceiptRefund ? (isReceiptExecuted ? '#c2410c' : '#b45309') : '#dc2626' }}>
                       {isReceiptRefund
                         ? `- ${formatFCFA(selectedReceipt.montant)}`
                         : `+ ${formatFCFA(selectedReceipt.montant)}`}
