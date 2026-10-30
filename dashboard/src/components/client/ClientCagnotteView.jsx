@@ -962,33 +962,6 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                 ← Toutes mes cagnottes ({cagnottesList.length})
               </button>
 
-              {isCash && !isArticleReceived && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setConfirmReceiptStep(1);
-                    setReceiptCheckbox(false);
-                    setShowConfirmReceiptModal(true);
-                  }}
-                  style={{
-                    padding: '10px 18px',
-                    borderRadius: '12px',
-                    border: 'none',
-                    background: '#16a34a',
-                    color: '#ffffff',
-                    fontWeight: 800,
-                    fontSize: '13.5px',
-                    cursor: 'pointer',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    boxShadow: '0 4px 14px rgba(22,163,74,0.3)',
-                  }}
-                >
-                  <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>check_circle</span>
-                  Oui, article reçu
-                </button>
-              )}
 
               {!isCash && !isFinished && !isCancelled && (
                 <button
