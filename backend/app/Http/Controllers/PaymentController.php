@@ -111,8 +111,18 @@ class PaymentController extends Controller
                 $reference = ($request->input('moyen_paiement') === 'livraison' ? 'CMD_COD_' : 'CMD_CASH_') . time() . '_' . rand(1000, 9999);
             } else {
                 $quantite = 1;
-                // Cagnotte : vérifier le 1er versement plancher
-                $prixMinimum = (float) ($param?->prix_minimum ?? round($fullProductPrice * 0.1));
+                // Cagnotte : vérifier le 1er versement plancher en tenant compte des réductions promotionnelles
+                $rawMin = (float) ($param?->prix_minimum ?? 0);
+                $prixMinimum = $rawMin > 0
+                    ? ($promoPct > 0 ? round($rawMin * (1 - $promoPct / 100)) : $rawMin)
+                    : round($fullProductPrice * 0.1);
+
+                // Autoriser également si le montant correspond au moins à l'Offre 10% du prix remisé
+                $deposit10 = round($fullProductPrice * 0.10);
+                if ($deposit10 > 0 && $requestedAmount >= $deposit10) {
+                    $prixMinimum = min($prixMinimum, $requestedAmount);
+                }
+
                 if ($prixMinimum > 0 && $requestedAmount < $prixMinimum) {
                     return response()->json([
                         'message' => 'Le premier versement minimum pour démarrer cette cagnotte est de ' . number_format($prixMinimum, 0, ',', ' ') . ' FCFA.',

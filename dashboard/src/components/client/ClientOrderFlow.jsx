@@ -240,7 +240,7 @@ export default function ClientOrderFlow({
   const minDeposit = (initialDeposit && Number(initialDeposit) > 0)
     ? Number(initialDeposit)
     : Math.max(
-        100,
+        1,
         product?.payment?.minimumStart
           ? Math.round(product.payment.minimumStart * priceRatio)
           : Math.round(effectivePrice * 0.1)
