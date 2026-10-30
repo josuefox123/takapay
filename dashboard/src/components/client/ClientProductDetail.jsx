@@ -255,36 +255,57 @@ export default function ClientProductDetail({
   const colors = product.colors || [];
   const chosenColor = colors[selectedColor] || colors[0];
 
+  // Paramètres & promotion éventuelle sur le produit
+  const param = product.parametre_produit || {};
+  const promo = param.promotion || product.promotion;
+  const promoPercent = promo ? Number(promo.pourcentage_promo || 0) : 0;
+
+  const rawProductPrice = Number(param.prix_total || product.prix_total || product.prix || product.p || 0);
+  const rawCashPrice = Number(param.prix_cash || product.prix_cash || rawProductPrice);
+
+  // Prix de base garanti avec application de la promotion si non encore appliquée
+  const resolvedBasePrice = (promoPercent > 0 && !product.o && rawProductPrice > 0)
+    ? Math.round(rawProductPrice * (1 - promoPercent / 100))
+    : Number(product.p || rawProductPrice || 0);
+
+  const resolvedCashPrice = (promoPercent > 0 && !product.o && rawCashPrice > 0)
+    ? Math.round(rawCashPrice * (1 - promoPercent / 100))
+    : Number(product.prix_cash || product.payment?.prixCash || resolvedBasePrice);
+
+  const resolvedOldPrice = (promoPercent > 0 && !product.o && rawProductPrice > 0)
+    ? rawProductPrice
+    : product.o;
+
   // Calcul du prix dynamique selon la couleur sélectionnée
   const hasCustomPrice = Boolean(chosenColor?.hasCustomPrice && chosenColor?.price);
-  const currentPrice = hasCustomPrice ? Number(chosenColor.price) : Number(product.p || 0);
+  const currentPrice = hasCustomPrice ? Number(chosenColor.price) : resolvedBasePrice;
   const currentOldPrice = chosenColor?.oldPrice !== undefined && chosenColor?.oldPrice !== null
     ? chosenColor.oldPrice
-    : (!hasCustomPrice ? product.o : null);
+    : (!hasCustomPrice ? resolvedOldPrice : null);
 
   const discount = currentOldPrice && currentOldPrice > currentPrice
     ? Math.round((1 - currentPrice / currentOldPrice) * 100)
-    : 0;
+    : (promoPercent > 0 ? promoPercent : 0);
 
   // Modalités financières dynamiquement recalculées selon le prix de la couleur choisie
   const pay = product.payment || {};
   const isCash = pay.mode === 'cash';
   const isLibre = pay.mode === 'libre' || true; // Par défaut sur Takapay : option Cash ou Cagnotte Libre
-  const cashPrice = Number(product.prix_cash || pay.prixCash || 0);
-  const effectiveCashPrice = cashPrice > 0 ? cashPrice : currentPrice;
+  const effectiveCashPrice = resolvedCashPrice > 0 ? resolvedCashPrice : currentPrice;
 
   // Choix du mode de commande : 'cash' ou 'cagnotte'
   const [orderMode, setOrderMode] = useState(isCash ? 'cash' : 'cagnotte');
   // Quantité en option cash (ajustable et libre, min 1) ; en cagnotte cela reste 1 article
   const [cashQuantity, setCashQuantity] = useState(1);
 
-  // Cagnotte Libre : 3 choix avec différentes propositions
+  // Cagnotte Libre : 3 choix avec différentes propositions respectant scrupuleusement les pourcentages des offres
   // 'offer_10' (1er versement 10%), 'offer_15' (1er versement 15%), 'custom' (montant personnalisé selon le budget)
   const [cagnotteOption, setCagnotteOption] = useState('offer_10');
   const [customCagnotteAmount, setCustomCagnotteAmount] = useState('');
 
-  const deposit10 = Math.max(500, Math.round(currentPrice * 0.10));
-  const deposit15 = Math.max(500, Math.round(currentPrice * 0.15));
+  const deposit10 = Math.max(1, Math.round(currentPrice * 0.10));
+  const deposit15 = Math.max(1, Math.round(currentPrice * 0.15));
+  const minAllowedDeposit = Math.min(100, deposit10);
   const parsedCustomAmount = Number(customCagnotteAmount) > 0 ? Number(customCagnotteAmount) : 0;
   const effectiveFirstDeposit = cagnotteOption === 'offer_10'
     ? deposit10
@@ -976,7 +997,7 @@ export default function ClientProductDetail({
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <input
                         type="number"
-                        min={500}
+                        min={minAllowedDeposit}
                         max={currentPrice}
                         value={customCagnotteAmount}
                         onChange={(e) => setCustomCagnotteAmount(e.target.value)}
@@ -996,7 +1017,7 @@ export default function ClientProductDetail({
                       <span style={{ fontSize: '12px', fontWeight: 800, color: 'var(--mu)' }}>FCFA</span>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px', fontSize: '11px', color: 'var(--mu)' }}>
-                      <span>Minimum : {formatFCFA(500)}</span>
+                      <span>Minimum : {formatFCFA(minAllowedDeposit)}</span>
                       {parsedCustomAmount > 0 && (
                         <span>
                           Solde restant : <strong style={{ color: 'var(--tx)' }}>{formatFCFA(Math.max(0, currentPrice - parsedCustomAmount))}</strong>
@@ -1031,15 +1052,15 @@ export default function ClientProductDetail({
           </div>
 
           {/* ACTIONS D'ACHAT DIRECT (PAS DE PANIER) */}
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            {/* Bouton d'action principal CTA rouge compact */}
+          <div>
+            {/* Bouton d'action principal CTA rouge compact prenant toute la largeur */}
             <button
               type="button"
               className="client-btn"
               style={{
-                flex: 1,
-                fontSize: '14px',
-                padding: '11px 16px',
+                width: '100%',
+                fontSize: '15px',
+                padding: '12px 16px',
                 borderRadius: '12px',
                 fontWeight: 800,
                 background: 'var(--r)',
@@ -1049,7 +1070,7 @@ export default function ClientProductDetail({
                 justifyContent: 'center',
                 gap: '8px',
                 cursor: 'pointer',
-                height: '44px',
+                height: '46px',
               }}
               onClick={() => {
                 if (orderMode === 'cash') {
@@ -1066,59 +1087,6 @@ export default function ClientProductDetail({
               }}
             >
               <span>Passer ma commande</span>
-            </button>
-
-            {/* Bouton vert avec logo WhatsApp */}
-            <a
-              href={whatsappUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{
-                width: '44px',
-                height: '44px',
-                borderRadius: '12px',
-                background: '#25D366',
-                color: '#ffffff',
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                textDecoration: 'none',
-                boxShadow: '0 4px 12px rgba(37, 211, 102, 0.25)',
-                transition: 'transform 0.15s ease',
-                flexShrink: 0,
-              }}
-              title="Commander sur WhatsApp"
-              aria-label="WhatsApp"
-            >
-              <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
-                <path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.39 1.26 4.81L2 22l5.42-1.42a9.9 9.9 0 0 0 4.62 1.17h.01c5.46 0 9.9-4.45 9.9-9.91C21.95 6.45 17.5 2 12.04 2Z" />
-              </svg>
-            </a>
-
-            {/* Bouton Favoris inline */}
-            <button
-              type="button"
-              onClick={toggleFavorite}
-              style={{
-                width: '44px',
-                height: '44px',
-                borderRadius: '12px',
-                border: isFavorite ? '2px solid var(--r)' : '1.5px solid var(--bd)',
-                background: isFavorite ? 'rgba(220, 38, 38, 0.08)' : 'var(--cd)',
-                color: isFavorite ? 'var(--r)' : 'var(--tx)',
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: 'pointer',
-                transition: 'all 0.18s ease',
-                flexShrink: 0,
-              }}
-              title={isFavorite ? 'Retirer des favoris' : 'Ajouter aux favoris'}
-              aria-label="Favoris"
-            >
-              <svg viewBox="0 0 24 24" width="20" height="20" fill={isFavorite ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z" />
-              </svg>
             </button>
           </div>
 
@@ -1209,16 +1177,27 @@ export default function ClientProductDetail({
                 target="_blank"
                 rel="noopener noreferrer"
                 className="aside-share-btn"
+                title="Partager sur WhatsApp"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
               >
-                WhatsApp
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" style={{ flexShrink: 0 }}>
+                  <path fill="#25D366" d="M12.04 2c-5.46 0-9.91 4.45-9.91 9.91 0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38c1.45.79 3.08 1.21 4.74 1.21 5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.82 9.82 0 0 0 12.04 2z" />
+                  <path fill="#ffffff" fillRule="evenodd" clipRule="evenodd" d="M17.51 14.38c-.3-.15-1.77-.87-2.04-.97-.28-.1-.48-.15-.68.15-.2.3-.77.97-.95 1.17-.17.2-.35.22-.65.07-.3-.15-1.26-.46-2.4-1.48-.89-.79-1.49-1.77-1.66-2.07-.18-.3-.02-.46.13-.61.13-.14.3-.35.45-.52.15-.18.2-.3.3-.5.1-.2.05-.38-.02-.53-.08-.15-.68-1.64-.93-2.24-.25-.6-.5-.52-.68-.53-.18-.01-.38-.01-.58-.01-.2 0-.53.07-.81.38-.28.3-1.07 1.05-1.07 2.56 0 1.51 1.1 2.97 1.25 3.17.15.2 2.16 3.3 5.23 4.63.73.32 1.3.51 1.74.65.73.23 1.4.2 1.93.12.59-.09 1.77-.72 2.02-1.42.25-.7.25-1.3.17-1.42-.07-.13-.27-.2-.57-.35z" />
+                </svg>
+                <span>WhatsApp</span>
               </a>
               <a
                 href={`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(window.location.href)}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="aside-share-btn"
+                title="Partager sur Facebook"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
               >
-                Facebook
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="#1877F2" style={{ flexShrink: 0 }}>
+                  <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
+                </svg>
+                <span>Facebook</span>
               </a>
             </div>
           </div>
@@ -1610,91 +1589,7 @@ export default function ClientProductDetail({
         </section>
       )}
 
-      {/* =========================================================================
-          BARRE D'ACTION MOBILE STICKY EN BAS
-          ========================================================================= */}
-      <div className="product-sticky-mobile-bar" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-        <button
-          type="button"
-          className="client-btn"
-          style={{
-            flex: 1,
-            padding: '11px 14px',
-            fontSize: '13.5px',
-            fontWeight: 800,
-            borderRadius: '12px',
-            background: 'var(--r)',
-            cursor: 'pointer',
-            height: '42px',
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-          onClick={() => {
-            if (orderMode === 'cash') {
-              setShowPaymentModal(true);
-              setPaymentModalStep('choice');
-            } else {
-              onStartOrder(product, chosenColor, {
-                mode: 'cagnotte',
-                quantity: 1,
-                firstDeposit: effectiveFirstDeposit,
-                cagnotteOption,
-              });
-            }
-          }}
-        >
-          <span>Passer ma commande</span>
-        </button>
 
-        {/* Bouton vert avec logo WhatsApp */}
-        <a
-          href={whatsappUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{
-            width: '42px',
-            height: '42px',
-            borderRadius: '12px',
-            background: '#25D366',
-            color: '#ffffff',
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            textDecoration: 'none',
-            flexShrink: 0,
-          }}
-          title="Commander sur WhatsApp"
-          aria-label="WhatsApp"
-        >
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
-            <path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.39 1.26 4.81L2 22l5.42-1.42a9.9 9.9 0 0 0 4.62 1.17h.01c5.46 0 9.9-4.45 9.9-9.91C21.95 6.45 17.5 2 12.04 2Z" />
-          </svg>
-        </a>
-
-        <button
-          type="button"
-          onClick={toggleFavorite}
-          style={{
-            width: '42px',
-            height: '42px',
-            borderRadius: '12px',
-            border: isFavorite ? '2px solid var(--r)' : '1.5px solid var(--bd)',
-            background: isFavorite ? 'rgba(220, 38, 38, 0.08)' : 'var(--cd)',
-            color: isFavorite ? 'var(--r)' : 'var(--tx)',
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            cursor: 'pointer',
-            flexShrink: 0,
-          }}
-          aria-label="Favoris"
-        >
-          <svg viewBox="0 0 24 24" width="19" height="19" fill={isFavorite ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2">
-            <path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z" />
-          </svg>
-        </button>
-      </div>
 
       {/* POPUP MODAL : CHOIX DU MODE DE RÈGLEMENT & LIVRAISON */}
       {showPaymentModal && (

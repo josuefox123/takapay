@@ -590,17 +590,28 @@ export const mapBackendCagnotteToClient = (c) => {
   }
   if (!primaryImg) primaryImg = '';
 
-  const txs = Array.isArray(c.transactions) ? c.transactions.map((t) => ({
-    id: `tx-${t.id}`,
-    reference: t.reference_externe || `TK-${t.id}`,
-    titre: 'Versement cagnotte',
-    methode: t.moyen_paiement || c.moyen_paiement || 'MTN Mobile Money',
-    date: t.date ? new Date(t.date).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Récemment',
-    montant: Number(t.montant || 0),
-    statut: t.statut === 'succes' || t.statut === 'reussi' ? 'Réussi' : (t.statut || 'Réussi'),
-    type: 'versement',
-    periode: 'aujourdhui',
-  })) : [];
+  const txs = Array.isArray(c.transactions) ? c.transactions.map((t) => {
+    const isRefundTx =
+      t.type === 'remboursement' ||
+      t.type === 'annulation' ||
+      (t.reference_externe && (t.reference_externe.startsWith('REM-') || t.reference_externe.includes('ANNUL')));
+    const isExecuted = t.statut === 'succes' || t.statut === 'reussi' || t.statut === 'Argent renvoyé';
+    return {
+      id: `tx-${t.id}`,
+      reference: t.reference_externe || `TK-${t.id}`,
+      titre: isRefundTx
+        ? (isExecuted ? 'Argent renvoyé (Remboursement)' : 'Remboursement en attente')
+        : 'Versement cagnotte (Cotisation)',
+      methode: isRefundTx ? (t.moyen_paiement || c.moyen_paiement || 'Mobile Money') : (t.moyen_paiement || c.moyen_paiement || 'MTN Mobile Money'),
+      date: t.date ? new Date(t.date).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Récemment',
+      montant: Number(t.montant || 0),
+      statut: isRefundTx
+        ? (isExecuted ? 'Argent renvoyé' : 'En attente')
+        : (isExecuted ? 'Réussi' : (t.statut || 'Réussi')),
+      type: isRefundTx ? 'remboursement' : (t.type || 'versement'),
+      periode: 'aujourdhui',
+    };
+  }) : [];
 
   const subcategoryName =
     prod.sous_categorie?.nom ||
@@ -744,10 +755,11 @@ export const mapBackendCagnotteToClient = (c) => {
     },
     dateFinEstimee: (isLibre || isCash) ? null : estimatedEndFormatted,
     moisRestants: (isLibre || isCash) ? null : moisRestants,
+    rawStatut: c.statut,
     statut: articleRecu
       ? 'completed'
       : (c.statut === 'annulee' || c.statut === 'cancelled' || c.statut === 'annulation_demandee'
-          ? 'cancelled'
+          ? (c.statut === 'annulation_demandee' ? 'annulation_demandee' : 'cancelled')
           : (isCash
               ? (isCod ? 'active' : 'completed')
               : (c.statut === 'terminee' || percent >= 100 ? 'completed' : 'active'))),
