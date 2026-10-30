@@ -123,12 +123,13 @@ export default function AdminCagnottesView() {
       produitNom.toLowerCase().includes(s);
     const matchStatus = statusFilter === 'tous' || 
       c.statut === statusFilter || 
+      (statusFilter === 'en_cours' && (c.statut === 'en_cours' || c.statut === 'active' || c.statut === 'en_attente')) ||
       (statusFilter === 'annulee' && (c.statut === 'annulee' || c.statut === 'cancelled'));
     return matchSearch && matchStatus;
   });
 
   const totalMontant = cagnottes.reduce((acc, c) => acc + (Number(c.montant_verse) || 0), 0);
-  const activeCount = cagnottes.filter((c) => c.statut === 'en_cours').length;
+  const activeCount = cagnottes.filter((c) => c.statut === 'en_cours' || c.statut === 'active' || c.statut === 'en_attente').length;
   const completedCount = cagnottes.filter((c) => c.statut === 'terminee').length;
   const cancelRequestedCount = cagnottes.filter((c) => c.statut === 'annulation_demandee').length;
 
@@ -337,8 +338,8 @@ export default function AdminCagnottesView() {
                           </div>
                         ) : (
                           <div>
-                            <span className={`admin-badge ${c.statut === 'terminee' ? 's1' : c.statut === 'en_cours' ? 's2' : 's3'}`}>
-                              {c.statut === 'terminee' ? 'Terminée' : c.statut === 'en_cours' ? 'En cours' : 'Annulée'}
+                            <span className={`admin-badge ${c.statut === 'terminee' ? 's1' : (c.statut === 'en_cours' || c.statut === 'active' || c.statut === 'en_attente') ? 's2' : 's3'}`}>
+                              {c.statut === 'terminee' ? 'Terminée' : (c.statut === 'en_cours' || c.statut === 'active' || c.statut === 'en_attente') ? 'En cours' : 'Annulée'}
                             </span>
                             {c.statut === 'annulee' && c.montant_remboursement && (
                               <button

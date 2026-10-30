@@ -103,6 +103,66 @@ window.fetch = async (...args) => {
   return originalFetch(...args);
 };
 
+// Pré-remplissage automatique des informations client dans le modal FeexPay
+if (typeof window !== 'undefined') {
+  const setNativeInputValue = (element, value) => {
+    if (!element || !value) return;
+    const valueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+    if (valueSetter) {
+      valueSetter.call(element, value);
+    } else {
+      element.value = value;
+    }
+    element.dispatchEvent(new Event('input', { bubbles: true }));
+    element.dispatchEvent(new Event('change', { bubbles: true }));
+  };
+
+  const tryPrefillFeexpayModal = () => {
+    try {
+      const savedUserStr = localStorage.getItem('takapay-client-user');
+      const savedUser = savedUserStr ? JSON.parse(savedUserStr) : null;
+      if (!savedUser) return;
+
+      const fullName = `${savedUser.prenom || ''} ${savedUser.nom || ''}`.trim() || savedUser.nom || '';
+      let rawPhone = savedUser.telephone || savedUser.phone || '';
+      let phoneDigits = String(rawPhone).replace(/\D/g, '');
+      if (phoneDigits.startsWith('229') && phoneDigits.length > 8) {
+        phoneDigits = phoneDigits.substring(3);
+      }
+      const email = savedUser.email && !savedUser.email.endsWith('@client.takapay.bj') ? savedUser.email : '';
+
+      // Nom et Prénoms
+      const nameInput = document.querySelector('input[placeholder="Nom et Prénoms"]');
+      if (nameInput && !nameInput.value && fullName && !nameInput.dataset.prefilled) {
+        nameInput.dataset.prefilled = 'true';
+        setNativeInputValue(nameInput, fullName);
+      }
+
+      // Email
+      const emailInput = document.querySelector('input[placeholder="Email"]');
+      if (emailInput && !emailInput.value && email && !emailInput.dataset.prefilled) {
+        emailInput.dataset.prefilled = 'true';
+        setNativeInputValue(emailInput, email);
+      }
+
+      // Numéro de téléphone sans indicatif
+      const phoneInput = document.querySelector('input[placeholder="Numéro de téléphone sans indicatif"]');
+      if (phoneInput && !phoneInput.value && phoneDigits && !phoneInput.dataset.prefilled) {
+        phoneInput.dataset.prefilled = 'true';
+        setNativeInputValue(phoneInput, phoneDigits);
+      }
+    } catch {
+      // Ignorer
+    }
+  };
+
+  const observer = new MutationObserver(() => {
+    tryPrefillFeexpayModal();
+  });
+  observer.observe(document.body, { childList: true, subtree: true });
+}
+
+
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <App />
