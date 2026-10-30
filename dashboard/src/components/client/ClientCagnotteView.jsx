@@ -2162,7 +2162,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                     border: '1px solid #eee7e0',
                   }}
                 >
-                  {filteredTransactions.length} versement{filteredTransactions.length > 1 ? 's' : ''}
+                  {filteredTransactions.length} transaction{filteredTransactions.length > 1 ? 's' : ''}
                 </span>
               </div>
 
@@ -2197,9 +2197,40 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
 
               {/* Liste des versements */}
               <div style={{ display: 'grid', gap: '12px', marginBottom: '20px' }}>
-                {filteredTransactions.map((tx) => {
-                  const isRefund = tx.type === 'annulation' || tx.type === 'remboursement' || tx.titre?.toLowerCase().includes('annulation') || tx.titre?.toLowerCase().includes('remboursement') || tx.titre?.toLowerCase().includes('renvoyé');
+                {filteredTransactions.map((tx, idx) => {
+                  const isRefund =
+                    tx.type === 'annulation' ||
+                    tx.type === 'remboursement' ||
+                    tx.titre?.toLowerCase().includes('annulation') ||
+                    tx.titre?.toLowerCase().includes('remboursement') ||
+                    tx.titre?.toLowerCase().includes('renvoyé') ||
+                    tx.reference?.startsWith('REM-') ||
+                    tx.reference?.includes('ANNUL') ||
+                    (isCancelled && (
+                      Number(tx.montant) === Number(cagnotte.montantRemboursement) ||
+                      Number(tx.montant) === Number(cagnotte.montant_remboursement) ||
+                      Number(tx.montant) === Math.round(((Number(cagnotte.montantVerse) || 0) * 95) / 100) ||
+                      (tx.id && String(tx.id).includes('cancel')) ||
+                      (filteredTransactions.length === 2 && idx === 0 && Number(tx.montant) < Number(cagnotte.montantVerse))
+                    ));
+
                   const isReactivate = tx.type === 'reactivation' || tx.titre?.toLowerCase().includes('rétablie');
+
+                  let displayTitle = 'Versement cagnotte (Cotisation)';
+                  if (isRefund) {
+                    displayTitle = 'Argent renvoyé (Remboursement)';
+                  } else if (isReactivate) {
+                    displayTitle = 'Cagnotte rétablie';
+                  } else if (
+                    tx.titre &&
+                    tx.titre !== 'Versement cagnotte' &&
+                    !tx.titre.toLowerCase().includes('demande d’annulation')
+                  ) {
+                    displayTitle = tx.titre;
+                  } else {
+                    displayTitle = 'Versement cagnotte (Cotisation)';
+                  }
+
                   return (
                     <div
                       key={tx.id}
@@ -2244,18 +2275,12 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                           <b style={{ fontSize: '14.5px', color: isRefund ? '#c2410c' : '#1b1716' }}>
-                            {isRefund
-                              ? 'Argent renvoyé (Remboursement)'
-                              : isReactivate
-                              ? 'Cagnotte rétablie'
-                              : tx.titre && !tx.titre.toLowerCase().includes('demande d’annulation')
-                              ? tx.titre
-                              : 'Versement cagnotte (Cotisation)'}
+                            {displayTitle}
                           </b>
                           <small style={{ fontSize: '11px', color: '#8c8580' }}>{tx.reference || tx.id}</small>
                         </div>
                         <span style={{ fontSize: '12px', color: '#706966', display: 'block', marginTop: '2px' }}>
-                          {isRefund ? 'Virement Mobile Money sortant' : tx.methode}
+                          {isRefund ? 'Virement Mobile Money sortant (Remboursement)' : tx.methode}
                         </span>
                         <span style={{ fontSize: '11px', color: '#9e958f' }}>{tx.date}</span>
                       </div>
@@ -2276,8 +2301,8 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                               gap: '4px',
                               fontSize: '11px',
                               fontWeight: 700,
-                              color: isRefund ? '#c2410c' : '#15803d',
-                              background: isRefund ? '#ffedd5' : '#dcfce7',
+                              color: isRefund ? '#c2410c' : isReactivate ? '#b45309' : '#15803d',
+                              background: isRefund ? '#ffedd5' : isReactivate ? '#fef3c7' : '#dcfce7',
                               padding: '2px 8px',
                               borderRadius: '99px',
                               marginTop: '3px',
@@ -2589,63 +2614,83 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
               color: '#1b1716',
             }}
           >
-            <div style={{ textAlign: 'center', marginBottom: '20px', borderBottom: '1px dashed #ded6cd', paddingBottom: '16px' }}>
-              <span style={{ fontSize: '28px' }}>
-                {selectedReceipt.type === 'annulation' || selectedReceipt.type === 'remboursement' ? '↩️' : '🧾'}
-              </span>
-              <h3 style={{ fontSize: '18px', fontWeight: 800, margin: '8px 0 2px' }}>
-                {selectedReceipt.type === 'annulation' || selectedReceipt.type === 'remboursement'
-                  ? 'Avis d’argent renvoyé (Remboursement)'
-                  : 'Reçu de versement Takapay'}
-              </h3>
-              <small style={{ color: '#706966', fontSize: '12px' }}>
-                Référence : {selectedReceipt.reference || selectedReceipt.id}
-              </small>
-            </div>
+          {(() => {
+            const isReceiptRefund =
+              selectedReceipt.type === 'annulation' ||
+              selectedReceipt.type === 'remboursement' ||
+              selectedReceipt.titre?.toLowerCase().includes('annulation') ||
+              selectedReceipt.titre?.toLowerCase().includes('remboursement') ||
+              selectedReceipt.titre?.toLowerCase().includes('renvoyé') ||
+              selectedReceipt.reference?.startsWith('REM-') ||
+              selectedReceipt.reference?.includes('ANNUL') ||
+              (isCancelled && (
+                Number(selectedReceipt.montant) === Number(cagnotte.montantRemboursement) ||
+                Number(selectedReceipt.montant) === Number(cagnotte.montant_remboursement) ||
+                Number(selectedReceipt.montant) === Math.round(((Number(cagnotte.montantVerse) || 0) * 95) / 100)
+              ));
 
-            <div style={{ display: 'grid', gap: '10px', fontSize: '13px', marginBottom: '20px' }}>
-              {[
-                ['Bénéficiaire :', <b key="b">{selectedReceipt.client || clientName}</b>],
-                ['Cagnotte article :', <b key="a">{p.n || '—'}</b>],
-                ['Moyen utilisé :', <b key="m">{selectedReceipt.methode}</b>],
-                ['Date & heure :', <b key="d">{selectedReceipt.date}</b>],
-                [
-                  'Statut :',
-                  <span
-                    key="s"
+            return (
+              <>
+                <div style={{ textAlign: 'center', marginBottom: '20px', borderBottom: '1px dashed #ded6cd', paddingBottom: '16px' }}>
+                  <span style={{ fontSize: '28px' }}>
+                    {isReceiptRefund ? '↩️' : '🧾'}
+                  </span>
+                  <h3 style={{ fontSize: '18px', fontWeight: 800, margin: '8px 0 2px' }}>
+                    {isReceiptRefund
+                      ? 'Avis d’argent renvoyé (Remboursement)'
+                      : 'Reçu de versement Takapay'}
+                  </h3>
+                  <small style={{ color: '#706966', fontSize: '12px' }}>
+                    Référence : {selectedReceipt.reference || selectedReceipt.id}
+                  </small>
+                </div>
+
+                <div style={{ display: 'grid', gap: '10px', fontSize: '13px', marginBottom: '20px' }}>
+                  {[
+                    ['Bénéficiaire :', <b key="b">{selectedReceipt.client || clientName}</b>],
+                    ['Cagnotte article :', <b key="a">{p.n || '—'}</b>],
+                    ['Moyen utilisé :', <b key="m">{selectedReceipt.methode}</b>],
+                    ['Date & heure :', <b key="d">{selectedReceipt.date}</b>],
+                    [
+                      'Statut :',
+                      <span
+                        key="s"
+                        style={{
+                          color: isReceiptRefund ? '#c2410c' : '#15803d',
+                          fontWeight: 700,
+                        }}
+                      >
+                        {isReceiptRefund ? '↩ Argent renvoyé' : '✔ Validé'}
+                      </span>,
+                    ],
+                  ].map(([label, value]) => (
+                    <div key={label} style={{ display: 'flex', justifyContent: 'space-between', gap: '12px' }}>
+                      <span style={{ color: '#706966' }}>{label}</span>
+                      {value}
+                    </div>
+                  ))}
+                  <div
                     style={{
-                      color: selectedReceipt.type === 'annulation' ? '#c2410c' : '#15803d',
-                      fontWeight: 700,
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      paddingTop: '10px',
+                      borderTop: '1px solid #eee7e0',
+                      fontSize: '15px',
                     }}
                   >
-                    {selectedReceipt.type === 'annulation' ? '↩ Argent renvoyé' : '✔ Validé'}
-                  </span>,
-                ],
-              ].map(([label, value]) => (
-                <div key={label} style={{ display: 'flex', justifyContent: 'space-between', gap: '12px' }}>
-                  <span style={{ color: '#706966' }}>{label}</span>
-                  {value}
+                    <span>
+                      {isReceiptRefund ? 'Argent renvoyé au client :' : 'Montant versé (Cotisation) :'}
+                    </span>
+                    <b style={{ color: isReceiptRefund ? '#c2410c' : '#dc2626' }}>
+                      {isReceiptRefund
+                        ? `- ${formatFCFA(selectedReceipt.montant)}`
+                        : `+ ${formatFCFA(selectedReceipt.montant)}`}
+                    </b>
+                  </div>
                 </div>
-              ))}
-              <div
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  paddingTop: '10px',
-                  borderTop: '1px solid #eee7e0',
-                  fontSize: '15px',
-                }}
-              >
-                <span>
-                  {selectedReceipt.type === 'annulation' ? 'Argent renvoyé au client :' : 'Montant versé :'}
-                </span>
-                <b style={{ color: selectedReceipt.type === 'annulation' ? '#c2410c' : '#dc2626' }}>
-                  {selectedReceipt.type === 'annulation'
-                    ? `- ${formatFCFA(selectedReceipt.montant)}`
-                    : `+ ${formatFCFA(selectedReceipt.montant)}`}
-                </b>
-              </div>
-            </div>
+              </>
+            );
+          })()}
 
             <div style={{ display: 'flex', gap: '10px' }}>
               <button
