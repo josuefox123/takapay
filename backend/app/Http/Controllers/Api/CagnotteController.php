@@ -29,8 +29,19 @@ class CagnotteController extends Controller
             ->with(['utilisateur', 'produit.imageProduits', 'produit.parametreProduit', 'produit.sousCategorie.categorie', 'transactions'])
             ->latest();
 
-        if ($userId && (!$user || $user->role === 'client')) {
-            $query->where('utilisateur_id', $userId);
+        // Si l'utilisateur est authentifié avec un rôle administrateur
+        if ($user && $user->role !== 'client') {
+            if ($userId) {
+                $query->where('utilisateur_id', $userId);
+            }
+        } else {
+            // Espace client ou visiteur : filtrer strictement par son user_id
+            if (! empty($userId)) {
+                $query->where('utilisateur_id', $userId);
+            } else {
+                // Aucun utilisateur identifié : renvoyer une liste vide (0 cagnotte pour les visiteurs)
+                $query->whereRaw('1 = 0');
+            }
         }
 
         return CagnotteResource::collection($query->get());

@@ -105,7 +105,12 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
   // Synchronisation directe avec l'API / le dashboard admin
   useEffect(() => {
     let isMounted = true;
-    adminService.getCagnottes(user?.id).then((live) => {
+    if (!user?.id) {
+      setCagnottesList([]);
+      setIsLoading(false);
+      return;
+    }
+    adminService.getCagnottes(user.id).then((live) => {
       if (!isMounted) return;
       if (Array.isArray(live)) {
         const converted = live.map(mapBackendCagnotteToClient).filter(Boolean);
