@@ -56,6 +56,9 @@ class CarouselController extends Controller
             'is_actif' => ['nullable'],
         ]);
 
+        // Les bannières visuelles sans texte sont autorisées, mais la colonne SQL titre est obligatoire.
+        $validated['titre'] = $validated['titre'] ?? '';
+
         if ($request->hasFile('image')) {
             $path = $request->file('image')->store('carousels', 'public');
             $validated['image'] = $path;
@@ -89,6 +92,11 @@ class CarouselController extends Controller
             'ordre' => ['nullable', 'integer'],
             'is_actif' => ['nullable'],
         ]);
+
+        // Laravel convertit un titre vide en NULL ; on conserve une chaîne vide pour MySQL.
+        if (array_key_exists('titre', $validated) && $validated['titre'] === null) {
+            $validated['titre'] = '';
+        }
 
         if ($request->hasFile('image')) {
             if ($carousel->image && Storage::disk('public')->exists($carousel->image)) {

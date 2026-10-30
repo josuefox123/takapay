@@ -1,5 +1,23 @@
 const API_BASE = '/api';
 
+const readCachedList = (key) => {
+  try {
+    const value = localStorage.getItem(key);
+    const parsed = value ? JSON.parse(value) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
+
+const writeCachedList = (key, list) => {
+  try {
+    localStorage.setItem(key, JSON.stringify(list));
+  } catch {
+    // Le cache reste facultatif si le stockage local est indisponible.
+  }
+};
+
 const EMPTY_STATS = {
   kpis: {
     encaisse_ce_mois: 0,
@@ -23,6 +41,10 @@ export const adminService = {
 
   getClientToken() {
     return localStorage.getItem('takapay_client_token') || localStorage.getItem('takapay_admin_token');
+  },
+
+  getCachedProduits() {
+    return readCachedList('takapay_backend_products');
   },
 
   async initiatePayment(payload) {
@@ -380,13 +402,14 @@ export const adminService = {
         const json = await res.json();
         const list = json.data || json;
         if (Array.isArray(list)) {
+          if (!all) writeCachedList('takapay_public_carousels', list);
           return list;
         }
       }
     } catch (_e) {
       void _e;
     }
-    return [];
+    return all ? [] : readCachedList('takapay_public_carousels');
   },
 
   async createCarousel(formData) {
@@ -563,13 +586,14 @@ export const adminService = {
         const json = await res.json();
         const list = json.data || json;
         if (Array.isArray(list)) {
+          writeCachedList('takapay_backend_products', list);
           return list;
         }
       }
     } catch {
       // Fallback
     }
-    return [];
+    return readCachedList('takapay_backend_products');
   },
 
   async deleteProduit(produitId) {
@@ -666,6 +690,7 @@ export const adminService = {
         const json = await res.json();
         const apiList = json.data || json;
         if (Array.isArray(apiList)) {
+          writeCachedList('takapay_backend_categories', apiList);
           return apiList;
         }
       }
@@ -673,7 +698,7 @@ export const adminService = {
       void _error;
     }
 
-    return [];
+    return readCachedList('takapay_backend_categories');
   },
 
   async createCategorie(payload) {
@@ -892,6 +917,22 @@ export const adminService = {
       void _error;
     }
     return [];
+  },
+
+  async deleteUnpaidCagnotte(cagnotteId) {
+    const token = this.getClientToken();
+    const res = await fetch(`${API_BASE}/cagnottes/${cagnotteId}/non-payee`, {
+      method: 'DELETE',
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        Accept: 'application/json',
+      },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data.message || 'Impossible de supprimer cette cagnotte.');
+    }
+    return data;
   },
 
   // 3. GESTION DES DOCUMENTS KYC

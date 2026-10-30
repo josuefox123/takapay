@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { formatFCFA, discountPercentage, PRODUCTS } from '../../data/clientStore';
+import { formatFCFA, discountPercentage, PRODUCTS, resolveImageUrl } from '../../data/clientStore';
 import { adminService } from '../../services/adminService';
 import welcomeBannerImg from '../../assets/imagetakapay.webp';
 
@@ -10,8 +10,15 @@ export default function ClientHeroCarousel({
   onSelectPromo,
 }) {
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [dbCarousels, setDbCarousels] = useState([]);
-  const [loadingDb, setLoadingDb] = useState(true);
+  const [dbCarousels, setDbCarousels] = useState(() => {
+    try {
+      const cached = localStorage.getItem('takapay_public_carousels');
+      const parsed = cached ? JSON.parse(cached) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  });
 
   // Charger les bannières dynamiques configurées par l'administrateur
   useEffect(() => {
@@ -20,15 +27,10 @@ export default function ClientHeroCarousel({
       .getCarousels(false)
       .then((data) => {
         if (isMounted) {
-          if (Array.isArray(data) && data.length > 0) {
-            setDbCarousels(data);
-          }
-          setLoadingDb(false);
+          setDbCarousels(Array.isArray(data) ? data : []);
         }
       })
-      .catch(() => {
-        if (isMounted) setLoadingDb(false);
-      });
+      .catch(() => {});
 
     return () => {
       isMounted = false;
@@ -45,7 +47,7 @@ export default function ClientHeroCarousel({
         return {
           id: `carousel-db-${item.id}`,
           isDb: true,
-          image: item.image_url || welcomeBannerImg,
+          image: resolveImageUrl(item.image_url) || welcomeBannerImg,
           kicker: item.kicker ? item.kicker.trim() : null,
           title: item.titre ? item.titre.trim() : null,
           description: item.description ? item.description.trim() : null,

@@ -59,7 +59,9 @@ class ProduitController extends Controller
     {
         $validated = $request->validated();
 
-        DB::transaction(function () use ($produit, $validated) {
+        $deletedImagePaths = [];
+
+        DB::transaction(function () use ($produit, $validated, &$deletedImagePaths) {
 $produitFields = ['nom', 'sous_categorie_id', 'description', 'stock', 'duree', 'couleur', 'video'];
             $produitData = array_intersect_key($validated, array_flip($produitFields));
             if (!empty($produitData)) {
@@ -105,24 +107,96 @@ $produitFields = ['nom', 'sous_categorie_id', 'description', 'stock', 'duree', '
                 }
             }
 
-            if (isset($validated['images']) && is_array($validated['images'])) {
+            if (array_key_exists('images', $validated) && is_array($validated['images'])) {
                 $imagesService = app(ImageStorageService::class);
+                $existingImages = $produit->imageProduits()->get()->keyBy('id');
+                $keptImageIds = [];
+
                 foreach ($validated['images'] as $idx => $img) {
-                    if (is_array($img) && !empty($img['chemin']) && str_starts_with($img['chemin'], 'data:image')) {
-                        $preferredName = $img['nom_fichier'] ?? $img['nom'] ?? null;
-                        $savedPath = $imagesService->process($img['chemin'], 'produits', null, "images.{$idx}.chemin", $preferredName);
+                    if (!is_array($img)) {
+                        continue;
+                    }
+
+                    $position = isset($img['position']) ? (int) $img['position'] : ($idx + 1);
+                    $isPrincipal = filter_var($img['is_principal'] ?? false, FILTER_VALIDATE_BOOLEAN);
+                    $chemin = $img['chemin'] ?? null;
+                    $existingImage = !empty($img['id']) ? $existingImages->get((int) $img['id']) : null;
+                    $isDataImage = is_string($chemin) && preg_match('#^data:(?:image/|application/octet-stream)#i', $chemin);
+
+                    if ($existingImage) {
+                        $attributes = [
+                            'position' => $position,
+                            'is_principal' => $isPrincipal,
+                        ];
+
+                        if ($isDataImage) {
+                            $savedPath = $imagesService->process(
+                                $chemin,
+                                'produits',
+                                null,
+                                "images.{$idx}.chemin"
+                            );
+                            if ($savedPath && $savedPath !== $existingImage->chemin) {
+                                $deletedImagePaths[] = $existingImage->chemin;
+                                $attributes['chemin'] = $savedPath;
+                            }
+                        }
+
+                        $existingImage->update($attributes);
+                        $keptImageIds[] = $existingImage->id;
+                        continue;
+                    }
+
+                    if (is_string($chemin) && trim($chemin) !== '') {
+                        $savedPath = $imagesService->process(
+                            $chemin,
+                            'produits',
+                            null,
+                            "images.{$idx}.chemin"
+                        );
                         if ($savedPath) {
-                            ImageProduit::create([
+                            $newImage = ImageProduit::create([
                                 'produit_id' => $produit->id,
                                 'chemin' => $savedPath,
-                                'position' => isset($img['position']) ? (int) $img['position'] : ($idx + 1),
-                                'is_principal' => !empty($img['is_principal']),
+                                'position' => $position,
+                                'is_principal' => $isPrincipal,
                             ]);
+                            $keptImageIds[] = $newImage->id;
+                        }
+                    }
+                }
+
+                foreach ($existingImages as $existingImage) {
+                    if (!in_array($existingImage->id, $keptImageIds, true)) {
+                        $deletedImagePaths[] = $existingImage->chemin;
+                        $existingImage->delete();
+                    }
+                }
+
+                $remainingImages = $produit->imageProduits()->orderBy('position')->orderBy('id')->get();
+                if ($remainingImages->isNotEmpty()) {
+                    $principalId = $remainingImages->firstWhere('is_principal', true)?->id
+                        ?? $remainingImages->first()->id;
+                    foreach ($remainingImages as $remainingImage) {
+                        $shouldBePrincipal = $remainingImage->id === $principalId;
+                        if ($remainingImage->is_principal !== $shouldBePrincipal) {
+                            $remainingImage->update(['is_principal' => $shouldBePrincipal]);
                         }
                     }
                 }
             }
         });
+
+        foreach (array_unique(array_filter($deletedImagePaths)) as $deletedPath) {
+            $legacyFilename = basename(str_replace('\\', '/', $deletedPath));
+            $stillUsed = ImageProduit::where('chemin', $deletedPath)
+                ->orWhere('chemin', $legacyFilename)
+                ->exists();
+
+            if (!$stillUsed) {
+                app(ImageStorageService::class)->delete($deletedPath);
+            }
+        }
 
         return new ProduitResource($produit->fresh(['sousCategorie.categorie', 'parametreProduit.promotion', 'imageProduits']));
     }

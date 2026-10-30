@@ -368,15 +368,18 @@ export default function ClientOrderFlow({
       const orderRef = paymentData?.reference || response.reference;
       const customerEmail = response.email || (email && email.trim()) || (user?.email && !user.email.endsWith('@client.takapay.bj') ? user.email : null);
       try {
-        await adminService.confirmPayment({
+        const confirmation = await adminService.confirmPayment({
           reference: orderRef,
           status: 'successful',
-          transaction_id: response.transaction_id || response.reference || orderRef,
+          transaction_id: response.transaction_id || response.id || response.reference || orderRef,
           amount: response.amount || paymentAmount,
           reseau: response.reseau || provider,
           user_id: activeUser?.id || user?.id,
           client_email: customerEmail,
         });
+        if (confirmation?.status !== 'success') {
+          throw new Error(confirmation?.message || 'FeexPay n’a pas confirmé le paiement.');
+        }
 
         // Persister l'adresse email réelle sur le profil utilisateur
         if (customerEmail && user && (!user.email || user.email.endsWith('@client.takapay.bj'))) {
@@ -389,17 +392,17 @@ export default function ClientOrderFlow({
           product: { ...product, p: effectivePrice },
           selectedColor,
           provider: response.reseau || provider,
-          initialAmount: paymentAmount,
+          initialAmount: Number(confirmation.amount) || paymentAmount,
           totalPrice: orderType === 'cash' ? (cashPrice * effectiveQuantity) : effectivePrice,
           reference: orderRef,
-          transactionId: response.transaction_id || orderRef,
+          transactionId: response.transaction_id || response.id || orderRef,
           date: new Date().toISOString(),
           isCash: orderType === 'cash',
           quantity: effectiveQuantity,
         });
       } catch (err) {
         console.error('Erreur confirmation backend :', err);
-        setError(`Votre paiement a été validé par FeexPay mais la confirmation sur le serveur a échoué (${err.message || 'erreur réseau'}). Veuillez contacter le support avec la référence : ${orderRef}`);
+        setError(`Le statut reçu de FeexPay n’a pas pu être vérifié par le serveur (${err.message || 'erreur réseau'}). La commande n’est pas encore confirmée. Référence : ${orderRef}`);
       }
     } else {
       setError(response?.message || 'Le paiement FeexPay a été annulé ou n’a pas abouti.');

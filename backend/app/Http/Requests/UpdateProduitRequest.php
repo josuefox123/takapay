@@ -40,6 +40,12 @@ class UpdateProduitRequest extends FormRequest
             'seuil_livraison' => ['sometimes', 'nullable', 'numeric', 'min:0'],
             'promotion_id' => ['sometimes', 'nullable', 'exists:promotions,id'],
             'images' => ['sometimes', 'nullable', 'array'],
+            'images.*' => ['array'],
+            'images.*.id' => ['sometimes', 'nullable', 'integer'],
+            'images.*.chemin' => ['nullable', 'string', 'max:15000000'],
+            'images.*.position' => ['sometimes', 'integer', 'min:1'],
+            'images.*.is_principal' => ['sometimes', 'boolean'],
+            'images.*.nom_fichier' => ['sometimes', 'nullable', 'string', 'max:255'],
         ];
     }
 }

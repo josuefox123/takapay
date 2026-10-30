@@ -11,7 +11,7 @@ import ClientProfileView from '../../components/client/ClientProfileView';
 import ClientNotificationsView from '../../components/client/ClientNotificationsView';
 import ClientWelcomeModal from '../../components/client/ClientWelcomeModal';
 import ClientCookieBanner from '../../components/client/ClientCookieBanner';
-import { PRODUCTS, DEFAULT_CLIENT_USER, mapAdminProductToClient, getMergedProducts, refreshProductsFromStore, createCagnotteFromOrder, getStoredCagnottes, mapBackendCagnotteToClient, rebuildCategories } from '../../data/clientStore';
+import { PRODUCTS, DEFAULT_CLIENT_USER, mapAdminProductToClient, getMergedProducts, getCachedLiveProducts, refreshProductsFromStore, createCagnotteFromOrder, getStoredCagnottes, mapBackendCagnotteToClient } from '../../data/clientStore';
 import { adminService } from '../../services/adminService';
 import FloatingActionButtons from '../../components/public/FloatingActionButtons';
 import './client.css';
@@ -26,7 +26,10 @@ export default function AppHome({ initialTab = 'home' }) {
   const [previousView, setPreviousView] = useState('home');
 
   // Produits synchronisés en temps réel avec la base de données et le tableau de bord admin
-  const [productsList, setProductsList] = useState(getMergedProducts);
+  const [productsList, setProductsList] = useState(() => {
+    const cached = getCachedLiveProducts();
+    return cached.length > 0 ? cached : getMergedProducts();
+  });
 
   if (initialTab !== prevInitialTab) {
     setPrevInitialTab(initialTab);
@@ -172,16 +175,6 @@ export default function AppHome({ initialTab = 'home' }) {
     };
   }, [user]);
 
-  // Chargement initial des catégories depuis l'API
-  useEffect(() => {
-    adminService.getCategories().then((cats) => {
-      if (Array.isArray(cats) && cats.length > 0) {
-        rebuildCategories(cats);
-        window.dispatchEvent(new CustomEvent('takapay_categories_updated', { detail: cats }));
-      }
-    }).catch(() => {});
-  }, []);
-
   // Synchronisation en direct avec la base de données et le tableau de bord admin
   useEffect(() => {
     let isMounted = true;
@@ -225,17 +218,23 @@ export default function AppHome({ initialTab = 'home' }) {
 
     window.addEventListener('takapay_products_updated', handleProductsUpdated);
     window.addEventListener('storage', handleProductsUpdated);
+    window.addEventListener('focus', handleProductsUpdated);
 
     const handleCagnotteUpdated = () => {
       loadLiveCagnottes();
       setCagnotteKey((k) => k + 1);
     };
     window.addEventListener('takapay_cagnotte_updated', handleCagnotteUpdated);
+    const refreshInterval = window.setInterval(() => {
+      if (document.visibilityState === 'visible') loadLiveProducts();
+    }, 60000);
 
     return () => {
       isMounted = false;
+      window.clearInterval(refreshInterval);
       window.removeEventListener('takapay_products_updated', handleProductsUpdated);
       window.removeEventListener('storage', handleProductsUpdated);
+      window.removeEventListener('focus', handleProductsUpdated);
       window.removeEventListener('takapay_cagnotte_updated', handleCagnotteUpdated);
     };
   }, []);

@@ -4,7 +4,6 @@ namespace App\Http\Resources;
 
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
-use Illuminate\Support\Facades\Storage;
 
 class ImageProduitResource extends JsonResource
 {
@@ -19,13 +18,11 @@ class ImageProduitResource extends JsonResource
         $url = $rawChemin;
 
         if ($rawChemin && ! str_starts_with($rawChemin, 'http://') && ! str_starts_with($rawChemin, 'https://') && ! str_starts_with($rawChemin, 'data:')) {
-            $cleaned = ltrim($rawChemin, '/');
-            if (Storage::disk('public')->exists('produits/'.$cleaned)) {
-                $url = asset('storage/produits/'.$cleaned);
-            } elseif (Storage::disk('public')->exists($cleaned)) {
-                $url = asset('storage/'.$cleaned);
-            } elseif (str_starts_with($cleaned, 'assets/')) {
+            $cleaned = ltrim(preg_replace('#^/?storage/#', '', $rawChemin), '/');
+            if (str_starts_with($cleaned, 'assets/')) {
                 $url = asset($cleaned);
+            } elseif (str_starts_with($cleaned, 'produits/') || str_contains($cleaned, '/')) {
+                $url = asset('storage/'.$cleaned);
             } else {
                 $url = asset('storage/produits/'.$cleaned);
             }

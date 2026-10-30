@@ -7,7 +7,24 @@ export { TAKAPAY_CATEGORIES };
  */
 export const resolveImageUrl = (path) => {
   if (!path || typeof path !== 'string') return '';
-  if (path.startsWith('http://') || path.startsWith('https://') || path.startsWith('data:') || path.startsWith('/assets/')) {
+  if (path.startsWith('http://') || path.startsWith('https://')) {
+    try {
+      const url = new URL(path);
+      const isLocalHost = ['localhost', '127.0.0.1'].includes(url.hostname);
+      const currentHostIsLocal = typeof window !== 'undefined'
+        && ['localhost', '127.0.0.1'].includes(window.location.hostname);
+      if (
+        url.pathname.startsWith('/storage/')
+        && (url.origin === window.location.origin || (isLocalHost && currentHostIsLocal))
+      ) {
+        return `${url.pathname}${url.search}${url.hash}`;
+      }
+    } catch {
+      return path;
+    }
+    return path;
+  }
+  if (path.startsWith('data:') || path.startsWith('/assets/')) {
     return path;
   }
   if (path.startsWith('/storage/')) {
@@ -343,7 +360,6 @@ if (typeof window !== 'undefined') {
     localStorage.removeItem('takapay_created_products');
     localStorage.removeItem('takapay_created_categories');
     localStorage.removeItem('takapay_created_subcategories');
-    localStorage.removeItem('takapay_backend_categories');
     localStorage.removeItem('takapay-notifications');
     localStorage.removeItem('takapay-demo-cagnotte');
   } catch { /* ignore */ }
@@ -366,6 +382,18 @@ export const getMergedProducts = () => {
   const existingIds = new Set(custom.map((c) => c.id));
   const remainingBase = BASE_PRODUCTS.filter((b) => !existingIds.has(b.id));
   return [...custom, ...remainingBase];
+};
+
+export const getCachedLiveProducts = () => {
+  try {
+    const raw = localStorage.getItem('takapay_backend_products');
+    const cached = raw ? JSON.parse(raw) : [];
+    return Array.isArray(cached)
+      ? cached.map(mapAdminProductToClient).filter(Boolean)
+      : [];
+  } catch {
+    return [];
+  }
 };
 
 export const BASE_PRODUCTS = PRODUCTS;
@@ -567,17 +595,28 @@ export const mapBackendCagnotteToClient = (c) => {
   }
   if (!primaryImg) primaryImg = '';
 
-  const txs = Array.isArray(c.transactions) ? c.transactions.map((t) => ({
+  const rawTransactions = Array.isArray(c.transactions) ? c.transactions : [];
+  const txs = rawTransactions.map((t) => ({
     id: `tx-${t.id}`,
     reference: t.reference_externe || `TK-${t.id}`,
     titre: 'Versement cagnotte',
     methode: t.moyen_paiement || c.moyen_paiement || 'MTN Mobile Money',
     date: t.date ? new Date(t.date).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Récemment',
     montant: Number(t.montant || 0),
-    statut: t.statut === 'succes' || t.statut === 'reussi' ? 'Réussi' : (t.statut || 'Réussi'),
-    type: 'versement',
+    statut: ['succes', 'reussi'].includes(String(t.statut).toLowerCase())
+      ? 'Réussi'
+      : (['echoue', 'échoué', 'failed', 'cancelled'].includes(String(t.statut).toLowerCase())
+          ? 'Échoué'
+          : (t.statut === 'en_attente' ? 'En attente' : (t.statut || 'En attente'))),
+    type: t.type || 'versement',
     periode: 'aujourdhui',
-  })) : [];
+  }));
+  const hasConfirmedPayment = rawTransactions.some((t) =>
+    ['succes', 'reussi'].includes(String(t.statut).toLowerCase())
+  );
+  const isPaymentFailed = rawTransactions.some((t) =>
+    ['echoue', 'échoué', 'failed', 'cancelled'].includes(String(t.statut).toLowerCase())
+  ) || c.statut === 'echec_paiement';
 
   const subcategoryName =
     prod.sous_categorie?.nom ||
@@ -619,13 +658,32 @@ export const mapBackendCagnotteToClient = (c) => {
     c.moyen_paiement === 'cash' ||
     txs.some((t) => t.type === 'commande_cash' || t.type === 'paiement_cash')
   );
-
   const articleRecu = Boolean(
     c.articleRecu ||
     c.statut === 'livree' ||
     c.statut === 'recu' ||
     (isCod && (c.statut === 'terminee' || c.statut === 'completed'))
   );
+  const isCashPaid = isCash && !isCod && (
+    hasConfirmedPayment ||
+    (rawTransactions.length === 0 && paid >= total && c.statut === 'terminee')
+  );
+  const displayedPaid = isCash && !isCod ? (isCashPaid ? total : paid) : paid;
+  const displayedRemaining = Math.max(0, total - displayedPaid);
+  const displayedPercent = total > 0 ? Math.min(100, Math.round((displayedPaid / total) * 100)) : 0;
+  const canDelete = displayedPaid <= 0
+    && !hasConfirmedPayment
+    && !isCod
+    && !['terminee', 'completed', 'annulee', 'cancelled', 'annulation_demandee'].includes(c.statut);
+  const clientStatus = articleRecu
+    ? 'completed'
+    : (['annulee', 'cancelled', 'annulation_demandee'].includes(c.statut)
+        ? 'cancelled'
+        : (isPaymentFailed
+            ? 'payment_failed'
+            : (isCash
+                ? (isCod ? 'active' : (isCashPaid ? 'completed' : 'active'))
+                : (c.statut === 'terminee' || percent >= 100 ? 'completed' : 'active'))));
 
   const isLibre = param.mode_paiement === 'libre';
   const mode = isCod ? 'cash_cod' : (isCash ? 'cash' : (isLibre ? 'libre' : 'echelonne'));
@@ -712,35 +770,32 @@ export const mapBackendCagnotteToClient = (c) => {
     dateCommande: c.created_at ? new Date(c.created_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Récemment',
     created_at: c.created_at || null,
     prixTotal: total,
-    montantVerse: isCash && !isCod ? total : paid,
-    resteAPayer: isCash ? (isCod ? total : 0) : remaining,
-    pourcentage: isCash ? (isCod ? 0 : 100) : percent,
+    montantVerse: displayedPaid,
+    resteAPayer: displayedRemaining,
+    pourcentage: displayedPercent,
     prochainVersement: (isLibre || isCash) ? null : {
       montant: remaining > 0 ? Math.min(installmentAmount || remaining, remaining) : 0,
       date: nextDueDateFormatted,
     },
     dateFinEstimee: (isLibre || isCash) ? null : estimatedEndFormatted,
     moisRestants: (isLibre || isCash) ? null : moisRestants,
-    statut: articleRecu
-      ? 'completed'
-      : (c.statut === 'annulee' || c.statut === 'cancelled' || c.statut === 'annulation_demandee'
-          ? 'cancelled'
-          : (isCash
-              ? (isCod ? 'active' : 'completed')
-              : (c.statut === 'terminee' || percent >= 100 ? 'completed' : 'active'))),
-    transactions: txs.length > 0 ? txs : [
+    statut: clientStatus,
+    isPaymentFailed,
+    hasConfirmedPayment,
+    canDelete,
+    transactions: txs.length > 0 ? txs : (isCod || paid > 0 ? [
       {
         id: `tx-init-${c.id}`,
         reference: `TK-INIT-${c.id}`,
         titre: isCod ? 'Paiement à la livraison' : (isCash ? 'Paiement comptant' : 'Versement initial'),
         methode: isCod ? 'Espèces à la livraison' : (c.moyen_paiement || 'Mobile Money'),
         date: c.created_at ? new Date(c.created_at).toLocaleDateString('fr-FR') : 'Récemment',
-        montant: total,
+        montant: isCod ? total : paid,
         statut: isCod ? (articleRecu ? 'Réussi' : 'En attente') : 'Réussi',
         type: isCod ? 'paiement_livraison' : (isCash ? 'commande_cash' : 'versement'),
         periode: 'aujourdhui',
       }
-    ],
+    ] : []),
   };
 };
 
@@ -779,5 +834,3 @@ export const getStoredCagnottes = (_user = null) => {
 
 
 export const DEFAULT_NOTIFICATIONS = [];
-
-

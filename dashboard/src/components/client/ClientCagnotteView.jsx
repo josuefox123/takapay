@@ -101,6 +101,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
   const [confirmReceiptStep, setConfirmReceiptStep] = useState(1);
   const [receiptCheckbox, setReceiptCheckbox] = useState(false);
   const [isConfirmingReceipt, setIsConfirmingReceipt] = useState(false);
+  const [deletingCagnotteId, setDeletingCagnotteId] = useState(null);
 
   // Synchronisation directe avec l'API / le dashboard admin
   useEffect(() => {
@@ -133,6 +134,27 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
     window.addEventListener('takapay_cagnotte_updated', sync);
     return () => window.removeEventListener('takapay_cagnotte_updated', sync);
   }, [user]);
+
+  const handleDeleteUnpaidCagnotte = async (item) => {
+    if (!item?.backendId || !item.canDelete) return;
+    const productName = item.product?.n || 'cette cagnotte';
+    if (!window.confirm(`Supprimer ${productName} ? Cette cagnotte n’a aucun paiement confirmé.`)) return;
+
+    setDeletingCagnotteId(item.id);
+    try {
+      await adminService.deleteUnpaidCagnotte(item.backendId);
+      const updated = cagnottesList.filter((c) => String(c.backendId) !== String(item.backendId));
+      setCagnottesList(updated);
+      if (String(selectedCagnotteId) === String(item.id)) setSelectedCagnotteId(null);
+      localStorage.setItem('takapay_backend_cagnottes', JSON.stringify(updated));
+      window.dispatchEvent(new CustomEvent('takapay_cagnotte_updated', { detail: updated }));
+      onShowToast?.('Cagnotte non payée supprimée.');
+    } catch (err) {
+      onShowToast?.(err.message || 'Impossible de supprimer cette cagnotte.');
+    } finally {
+      setDeletingCagnotteId(null);
+    }
+  };
 
   // ---------- Écran de connexion ----------
   if (!user) {
@@ -204,6 +226,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
   const pct = cagnotte.pourcentage || 0;
   const isCash = Boolean(cagnotte.isCash || cagnotte.mode === 'cash' || cagnotte.mode === 'cash_cod');
   const isCod = Boolean(cagnotte.isCod || cagnotte.mode === 'cash_cod');
+  const isPaymentFailed = Boolean(cagnotte.isPaymentFailed || cagnotte.statut === 'payment_failed');
   const isArticleReceived = Boolean(cagnotte.articleRecu || cagnotte.statut === 'recu');
   const isFinished = pct >= 100 || cagnotte.statut === 'completed' || isArticleReceived;
   const isCancelled = cagnotte.statut === 'cancelled' || cagnotte.statut === 'annulee';
@@ -455,21 +478,26 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
 
     if (isSuccess) {
       const orderRef = paymentData?.reference || response.reference;
-      const amountNum = parseInt(depositAmount, 10) || Number(response.amount) || 0;
+      let amountNum = parseInt(depositAmount, 10) || Number(response.amount) || 0;
       const customerEmail = response.email || user?.email || null;
 
       try {
-        await adminService.confirmPayment({
+        const confirmation = await adminService.confirmPayment({
           reference: orderRef,
           status: 'successful',
-          transaction_id: response.transaction_id || response.reference || orderRef,
+          transaction_id: response.transaction_id || response.id || response.reference || orderRef,
           amount: amountNum,
           reseau: response.reseau || depositProvider,
           user_id: user?.id,
           client_email: customerEmail,
         });
+        if (confirmation?.status !== 'success') {
+          throw new Error(confirmation?.message || 'FeexPay n’a pas confirmé le paiement.');
+        }
+        amountNum = Number(confirmation.amount) || amountNum;
       } catch (err) {
-        console.warn('Erreur confirmation backend :', err);
+        setDepositError(err.message || 'Impossible de confirmer le paiement auprès de FeexPay.');
+        return;
       }
 
       // Mise à jour de la cagnotte en local
@@ -657,6 +685,8 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                 const isItemReceived = Boolean(item.articleRecu || item.statut === 'recu');
                 const isItemFinished = itemPct >= 100 || item.statut === 'completed' || isItemReceived;
                 const isItemCancelled = item.statut === 'cancelled' || item.statut === 'annulee';
+                const isItemPaymentFailed = Boolean(item.isPaymentFailed || item.statut === 'payment_failed');
+                const hasNoConfirmedPayment = Boolean(item.canDelete && !isItemPaymentFailed);
                 return (
                   <div
                     key={item.id}
@@ -692,6 +722,10 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                             borderRadius: '99px',
                             background: isItemCancelled
                               ? '#fee2e2'
+                              : isItemPaymentFailed
+                              ? '#fee2e2'
+                              : hasNoConfirmedPayment
+                              ? '#fff7ed'
                               : isItemReceived
                               ? '#dcfce7'
                               : isItemCod
@@ -703,6 +737,10 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                               : '#fee2e2',
                             color: isItemCancelled
                               ? '#b91c1c'
+                              : isItemPaymentFailed
+                              ? '#b91c1c'
+                              : hasNoConfirmedPayment
+                              ? '#c2410c'
                               : isItemReceived
                               ? '#15803d'
                               : isItemCod
@@ -718,6 +756,10 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                         >
                           {isItemCancelled
                             ? '✕ Annulée'
+                            : isItemPaymentFailed
+                            ? '✕ Paiement échoué'
+                            : hasNoConfirmedPayment
+                            ? '⚠ Aucun paiement confirmé'
                             : isItemReceived
                             ? '✔ Article reçu'
                             : isItemCod
@@ -780,13 +822,21 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                           <div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12.5px', marginBottom: '4px' }}>
                               <span style={{ color: '#706966' }}>{isItemCod ? 'Modalité :' : 'Règlement :'}</span>
-                              <b style={{ color: isItemReceived ? '#15803d' : isItemCod ? '#0369a1' : '#166534' }}>
-                                {isItemReceived ? 'Colis livré & réceptionné' : isItemCod ? 'À régler au livreur' : 'Payé au comptant'}
+                              <b style={{ color: isItemPaymentFailed ? '#b91c1c' : hasNoConfirmedPayment ? '#c2410c' : isItemReceived ? '#15803d' : isItemCod ? '#0369a1' : '#166534' }}>
+                                {isItemPaymentFailed
+                                  ? 'Paiement échoué'
+                                  : hasNoConfirmedPayment
+                                  ? 'Aucun paiement confirmé'
+                                  : isItemReceived
+                                  ? 'Colis livré & réceptionné'
+                                  : isItemCod
+                                  ? 'À régler au livreur'
+                                  : 'Payé au comptant'}
                               </b>
                             </div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
                               <span style={{ color: '#706966' }}>Montant :</span>
-                              <b style={{ color: '#1b1716' }}>{formatFCFA(item.prixTotal)}</b>
+                              <b style={{ color: '#1b1716' }}>{formatFCFA(isItemCod ? item.prixTotal : item.montantVerse)}</b>
                             </div>
                           </div>
                         ) : (
@@ -847,6 +897,26 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                           Verser
                         </button>
                       )}
+                      {item.canDelete && (
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteUnpaidCagnotte(item)}
+                          disabled={deletingCagnotteId === item.id}
+                          style={{
+                            padding: '11px 12px',
+                            borderRadius: '12px',
+                            border: '1px solid #fecaca',
+                            background: '#fff1f2',
+                            color: '#b91c1c',
+                            fontSize: '13px',
+                            fontWeight: 800,
+                            cursor: deletingCagnotteId === item.id ? 'wait' : 'pointer',
+                            opacity: deletingCagnotteId === item.id ? 0.65 : 1,
+                          }}
+                        >
+                          {deletingCagnotteId === item.id ? 'Suppression…' : 'Supprimer'}
+                        </button>
+                      )}
                     </div>
                   </div>
                 );
@@ -894,6 +964,10 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                       borderRadius: '99px',
                       background: isCancelled
                         ? '#fee2e2'
+                        : isPaymentFailed
+                        ? '#fee2e2'
+                        : cagnotte.canDelete
+                        ? '#fff7ed'
                         : isArticleReceived
                         ? '#dcfce7'
                         : isCod
@@ -905,6 +979,10 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                         : '#fee2e2',
                       color: isCancelled
                         ? '#b91c1c'
+                        : isPaymentFailed
+                        ? '#b91c1c'
+                        : cagnotte.canDelete
+                        ? '#c2410c'
                         : isArticleReceived
                         ? '#15803d'
                         : isCod
@@ -920,6 +998,10 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                   >
                     {isCancelled
                       ? '✕ Cagnotte annulée'
+                      : isPaymentFailed
+                      ? '✕ Paiement échoué'
+                      : cagnotte.canDelete
+                      ? '⚠ Aucun paiement confirmé'
                       : isArticleReceived
                       ? '✔ Article reçu'
                       : isCod
@@ -957,7 +1039,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                 ← Toutes mes cagnottes ({cagnottesList.length})
               </button>
 
-              {isCash && !isArticleReceived && (
+              {isCash && !isArticleReceived && (isCod || cagnotte.hasConfirmedPayment) && (
                 <button
                   type="button"
                   onClick={() => {

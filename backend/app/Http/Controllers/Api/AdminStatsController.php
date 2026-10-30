@@ -23,7 +23,7 @@ class AdminStatsController extends Controller
             ->where('date', '>=', $startOfMonth)
             ->sum('montant');
 
-        $cagnottesActives = (int) Cagnotte::where('statut', 'active')->count();
+        $cagnottesActives = (int) Cagnotte::whereIn('statut', ['active', 'en_cours'])->count();
 
         $documentsAValider = (int) Document::where('statut', 'en_attente')->count();
 
@@ -55,7 +55,8 @@ class AdminStatsController extends Controller
             : 0;
 
         // ---- Documents à valider ----
-        $documents = Document::where('statut', 'en_attente')
+        $documents = Document::with('utilisateur')
+            ->where('statut', 'en_attente')
             ->latest()
             ->take(5)
             ->get()
@@ -123,7 +124,7 @@ class AdminStatsController extends Controller
             });
 
         // ---- À surveiller ----
-        $aSurveiller = Cagnotte::with(['produit', 'transactions.commande'])
+        $aSurveiller = Cagnotte::with('produit.parametreProduit')
             ->latest()
             ->take(10)
             ->get()

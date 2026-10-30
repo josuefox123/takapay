@@ -12,6 +12,7 @@ use App\Models\Notification;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -77,6 +78,50 @@ class CagnotteController extends Controller
 
         return response()->json([
             'message' => 'Cagnotte supprimée avec succès.'
+        ]);
+    }
+
+    /**
+     * Supprimer une cagnotte non payée appartenant au client connecté.
+     */
+    public function destroyUnpaid(Request $request, Cagnotte $cagnotte): JsonResponse
+    {
+        $user = $request->user('sanctum');
+        abort_unless($user && ($user->isAdmin() || $cagnotte->utilisateur_id === $user->id), 404);
+
+        $hasSuccessfulPayment = $cagnotte->transactions()
+            ->whereIn('statut', ['succes', 'reussi'])
+            ->exists();
+        $isCashOnDelivery = strtolower((string) $cagnotte->moyen_paiement) === 'livraison'
+            || $cagnotte->transactions()->where('type', 'paiement_livraison')->exists();
+
+        if (
+            (float) $cagnotte->montant_verse > 0
+            || $hasSuccessfulPayment
+            || $isCashOnDelivery
+            || in_array($cagnotte->statut, ['terminee', 'annulee', 'annulation_demandee'], true)
+        ) {
+            return response()->json([
+                'message' => 'Seule une cagnotte sans paiement confirmé peut être supprimée.',
+            ], 422);
+        }
+
+        DB::transaction(function () use ($cagnotte) {
+            $commandeIds = $cagnotte->transactions()
+                ->whereNotNull('commande_id')
+                ->pluck('commande_id');
+
+            if ($commandeIds->isNotEmpty()) {
+                Commande::whereIn('id', $commandeIds)
+                    ->where('statut', 'en_attente')
+                    ->update(['statut' => 'annulee']);
+            }
+
+            $cagnotte->delete();
+        });
+
+        return response()->json([
+            'message' => 'Cagnotte non payée supprimée.',
         ]);
     }
 

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import AdminIcon from './AdminIcon';
 import { adminService } from '../../services/adminService';
+import { resolveImageUrl } from '../../data/clientStore';
 
 export default function AdminCarouselView({ onShowToast }) {
   const [carousels, setCarousels] = useState([]);
@@ -70,7 +71,7 @@ export default function AdminCarouselView({ onShowToast }) {
       description: item.description || '',
       kicker: item.kicker || '',
       imageFile: null,
-      imagePreview: item.image_url || '',
+      imagePreview: resolveImageUrl(item.image_url) || '',
       texte_bouton: item.texte_bouton || '',
       lien: item.lien || '',
       produit_id: item.produit_id ? String(item.produit_id) : '',
@@ -890,7 +891,7 @@ export default function AdminCarouselView({ onShowToast }) {
                         >
                           {item.image_url ? (
                             <img
-                              src={item.image_url}
+                              src={resolveImageUrl(item.image_url)}
                               alt={item.titre}
                               style={{
                                 width: '100%',

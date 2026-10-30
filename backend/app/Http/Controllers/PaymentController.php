@@ -14,6 +14,7 @@ use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 
@@ -34,6 +35,13 @@ class PaymentController extends Controller
             'moyen_paiement' => 'nullable|string',
             'user_id' => 'nullable',
         ]);
+
+        $isCod = $request->input('moyen_paiement') === 'livraison';
+        if (! $isCod && (! config('services.feexpay.shop_id') || ! config('services.feexpay.api_key'))) {
+            return response()->json([
+                'message' => 'Le paiement FeexPay n’est pas configuré. Veuillez réessayer plus tard.',
+            ], 503);
+        }
 
         $user = $request->user('sanctum');
         if (!$user && $request->filled('user_id')) {
@@ -224,28 +232,89 @@ class PaymentController extends Controller
     {
         $request->validate([
             'reference' => 'required|string',
-            'status' => 'required|string',
+            'transaction_id' => 'required|string',
         ]);
 
         $reference = $request->input('reference');
-        $status = strtolower($request->input('status'));
-        $transactionId = $request->input('transaction_id') ?? $reference;
-        $amount = (float) $request->input('amount', 0);
-        $userId = $request->user('sanctum')?->id ?? $request->input('user_id');
+        $transactionId = $request->input('transaction_id');
         $network = $request->input('reseau') ?? $request->input('network') ?? 'MOBILE_MONEY';
         $clientEmail = $request->input('client_email') ?? $request->input('email');
 
-        if (in_array($status, ['successful', 'success', 'paid'])) {
-            $this->applySuccessfulPayment($reference, $amount, $transactionId, $network, $userId, $clientEmail);
+        $providerTransaction = $this->fetchFeexPayTransaction($transactionId);
+        if ($providerTransaction === null) {
             return response()->json([
-                'status' => 'success',
-                'message' => 'Paiement confirmé avec succès.',
-            ]);
+                'status' => 'unverified',
+                'message' => 'Impossible de vérifier le paiement auprès de FeexPay pour le moment.',
+            ], 503);
         }
 
+        $providerStatus = strtoupper((string) ($providerTransaction['status'] ?? $providerTransaction['statut'] ?? ''));
+        if (! in_array($providerStatus, ['SUCCESSFUL', 'SUCCESS', 'PAID'], true)) {
+            return response()->json([
+                'status' => 'pending',
+                'message' => 'FeexPay n’a pas encore confirmé ce paiement.',
+            ], 422);
+        }
+
+        $providerReference = $providerTransaction['custom_id']
+            ?? $providerTransaction['customId']
+            ?? $providerTransaction['custom_reference']
+            ?? null;
+        if ($providerReference === null || (string) $providerReference !== $reference) {
+            return response()->json([
+                'status' => 'unverified',
+                'message' => 'La référence du paiement ne correspond pas à cette commande.',
+            ], 422);
+        }
+
+        $isDeposit = preg_match('/^DEP_CAG_(\d+)_/', $reference, $matches) === 1;
+        $userId = null;
+        $amount = (float) ($providerTransaction['amount'] ?? $providerTransaction['montant'] ?? 0);
+
+        if ($isDeposit) {
+            $cagnotte = Cagnotte::find((int) $matches[1]);
+            if (! $cagnotte || $cagnotte->statut === 'annulee') {
+                return response()->json([
+                    'status' => 'unverified',
+                    'message' => 'Cette cagnotte n’accepte pas ce paiement.',
+                ], 422);
+            }
+
+            $remaining = max(0, (float) $cagnotte->prix_unitaire - (float) $cagnotte->montant_verse);
+            if ($amount <= 0 || $amount > $remaining) {
+                return response()->json([
+                    'status' => 'unverified',
+                    'message' => 'Le montant confirmé par FeexPay ne correspond pas au solde de la cagnotte.',
+                ], 422);
+            }
+            $userId = $cagnotte->utilisateur_id;
+        } else {
+            $commande = Commande::where('reference', $reference)->first();
+            if (! $commande || (!str_starts_with($reference, 'CMD_CAG_') && !str_starts_with($reference, 'CMD_CASH_'))) {
+                return response()->json([
+                    'status' => 'unverified',
+                    'message' => 'Aucune commande en attente ne correspond à ce paiement.',
+                ], 422);
+            }
+
+            $expectedAmount = (float) $commande->prix_total;
+            if ($amount > 0 && abs($amount - $expectedAmount) > 0.01) {
+                return response()->json([
+                    'status' => 'unverified',
+                    'message' => 'Le montant confirmé par FeexPay ne correspond pas à la commande.',
+                ], 422);
+            }
+            $amount = $expectedAmount;
+            $userId = $commande->utilisateur_id;
+        }
+
+        $this->applySuccessfulPayment($reference, $amount, $transactionId, $network, $userId, $clientEmail);
+
         return response()->json([
-            'status' => 'ignored',
-            'message' => 'Statut de paiement non validé.',
+            'status' => 'success',
+            'message' => 'Paiement confirmé par FeexPay.',
+            'amount' => $amount,
+            'transaction_id' => $transactionId,
         ]);
     }
 
@@ -257,21 +326,61 @@ class PaymentController extends Controller
         $data = $request->all();
         Log::info('Webhook FeexPay reçu :', $data);
 
-        $status = strtolower($data['status'] ?? '');
         $reference = $data['reference'] ?? $data['custom_id'] ?? $data['customId'] ?? null;
-        $transactionId = $data['transaction_id'] ?? $data['id'] ?? $reference;
-        $amount = (float) ($data['amount'] ?? 0);
+        $transactionId = $data['transaction_id'] ?? $data['id'] ?? null;
         $network = $data['reseau'] ?? $data['network'] ?? 'MOBILE_MONEY';
         $clientEmail = $data['email'] ?? null;
 
-        if (!$reference) {
+        if (! $reference || ! $transactionId) {
             Log::warning('Webhook FeexPay sans référence valide', $data);
-            return response()->json(['status' => 'error', 'message' => 'Référence manquante.'], 400);
+
+            return response()->json(['status' => 'error', 'message' => 'Référence ou transaction manquante.'], 400);
         }
 
-        if (in_array($status, ['successful', 'success', 'paid'])) {
+        $providerTransaction = $this->fetchFeexPayTransaction((string) $transactionId);
+        if ($providerTransaction === null) {
+            return response()->json(['status' => 'unverified'], 503);
+        }
+
+        $status = strtoupper((string) ($providerTransaction['status'] ?? $providerTransaction['statut'] ?? ''));
+        $providerReference = $providerTransaction['custom_id']
+            ?? $providerTransaction['customId']
+            ?? $providerTransaction['custom_reference']
+            ?? null;
+        if ($providerReference === null || (string) $providerReference !== (string) $reference) {
+            Log::warning('Référence du webhook différente de celle vérifiée auprès de FeexPay.', [
+                'reference' => $reference,
+                'provider_reference' => $providerReference,
+            ]);
+
+            return response()->json(['status' => 'unverified'], 422);
+        }
+
+        if (in_array($status, ['SUCCESSFUL', 'SUCCESS', 'PAID'], true)) {
+            $amount = (float) ($providerTransaction['amount'] ?? $providerTransaction['montant'] ?? 0);
+            if ($amount <= 0) {
+                return response()->json(['status' => 'unverified'], 422);
+            }
+            if (preg_match('/^DEP_CAG_(\d+)_/', (string) $reference, $matches) === 1) {
+                $cagnotte = Cagnotte::find((int) $matches[1]);
+                $remaining = $cagnotte
+                    ? max(0, (float) $cagnotte->prix_unitaire - (float) $cagnotte->montant_verse)
+                    : 0;
+                if (!$cagnotte || $cagnotte->statut === 'annulee' || $amount > $remaining) {
+                    return response()->json(['status' => 'unverified'], 422);
+                }
+            } else {
+                $commande = Commande::where('reference', $reference)->first();
+                if (
+                    !$commande
+                    || (!str_starts_with((string) $reference, 'CMD_CAG_') && !str_starts_with((string) $reference, 'CMD_CASH_'))
+                    || abs($amount - (float) $commande->prix_total) > 0.01
+                ) {
+                    return response()->json(['status' => 'unverified'], 422);
+                }
+            }
             $this->applySuccessfulPayment($reference, $amount, $transactionId, $network, null, $clientEmail);
-        } elseif (in_array($status, ['failed', 'cancelled'])) {
+        } elseif (in_array($status, ['FAILED', 'CANCELLED'], true)) {
             $commande = Commande::where('reference', $reference)->first();
             if ($commande && $commande->statut === 'en_attente') {
                 $commande->update(['statut' => 'echouee']);
@@ -279,6 +388,49 @@ class PaymentController extends Controller
         }
 
         return response()->json(['status' => 'success'], 200);
+    }
+
+    /**
+     * Retrieve transaction status from FeexPay; browser- and webhook-supplied statuses are untrusted.
+     */
+    private function fetchFeexPayTransaction(string $transactionId): ?array
+    {
+        $apiKey = config('services.feexpay.api_key');
+        if (! $apiKey || ! config('services.feexpay.shop_id')) {
+            return null;
+        }
+
+        $baseUrl = config('services.feexpay.mode') === 'LIVE'
+            ? 'https://api-v2.feexpay.me'
+            : 'https://sandbox-api.feexpay.me';
+
+        try {
+            $response = Http::withToken($apiKey)
+                ->acceptJson()
+                ->timeout(10)
+                ->get($baseUrl.'/api/transactions/public/single/status/'.rawurlencode($transactionId));
+        } catch (\Throwable $e) {
+            Log::warning('Vérification FeexPay indisponible : '.$e->getMessage());
+
+            return null;
+        }
+
+        if (! $response->successful()) {
+            Log::warning('FeexPay a refusé la vérification de transaction.', [
+                'http_status' => $response->status(),
+            ]);
+
+            return null;
+        }
+
+        $payload = $response->json();
+        if (! is_array($payload)) {
+            return null;
+        }
+
+        $transaction = $payload['data'] ?? $payload['transaction'] ?? $payload;
+
+        return is_array($transaction) ? $transaction : null;
     }
 
     /**
@@ -290,8 +442,24 @@ class PaymentController extends Controller
         $resolvedCagnotte = null;
         $resolvedUser = null;
         $finalAmount = 0.0;
+        $alreadyProcessed = false;
 
-        DB::transaction(function () use ($reference, $amount, $transactionId, $network, $userId, &$resolvedCommande, &$resolvedCagnotte, &$resolvedUser, &$finalAmount) {
+        DB::transaction(function () use ($reference, $amount, $transactionId, $network, $userId, &$resolvedCommande, &$resolvedCagnotte, &$resolvedUser, &$finalAmount, &$alreadyProcessed) {
+            $existingTransaction = Transaction::with(['commande.utilisateur', 'cagnotte.produit', 'cagnotte.utilisateur'])
+                ->where('reference_externe', $transactionId)
+                ->whereIn('statut', ['succes', 'reussi'])
+                ->first();
+
+            if ($existingTransaction) {
+                $alreadyProcessed = true;
+                $resolvedCommande = $existingTransaction->commande;
+                $resolvedCagnotte = $existingTransaction->cagnotte;
+                $resolvedUser = $resolvedCommande?->utilisateur ?? $resolvedCagnotte?->utilisateur;
+                $finalAmount = (float) $existingTransaction->montant;
+
+                return;
+            }
+
             $isCash = str_starts_with($reference, 'CMD_CASH_');
             $isDeposit = str_starts_with($reference, 'DEP_CAG_');
 
@@ -325,6 +493,7 @@ class PaymentController extends Controller
                     $resolvedCagnotte = $cagnotte;
                     $resolvedUser = $userId ? User::find($userId) : null;
                 }
+
                 return;
             }
 
@@ -380,6 +549,10 @@ class PaymentController extends Controller
                 $resolvedUser = $commande->utilisateur ?? ($userId ? User::find($userId) : null);
             }
         });
+
+        if ($alreadyProcessed) {
+            return;
+        }
 
         // Enregistrement de la notification interne pour le client
         if ($resolvedUser) {

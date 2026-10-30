@@ -81,6 +81,7 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
     // Authentification & Profil
     Route::get('/me', [AuthController::class, 'me']);
     Route::post('/logout', [AuthController::class, 'logout']);
+    Route::delete('cagnottes/{cagnotte}/non-payee', [CagnotteController::class, 'destroyUnpaid']);
 
     /*
     |--------------------------------------------------------------------------

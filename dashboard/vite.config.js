@@ -62,10 +62,38 @@ export default defineConfig({
       workbox: {
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
         // Mettre en cache uniquement les fichiers statiques, jamais les appels API ni les données financières
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,webp,jpg,jpeg,woff,woff2}'],
+        globPatterns: ['**/*.{html,ico,woff,woff2}'],
         navigateFallback: '/index.html',
         navigateFallbackDenylist: [/^\/api/, /^\/sanctum/, /^\/transactions/],
         runtimeCaching: [
+          {
+            urlPattern: /\/assets\/.*\.(?:css|js|woff2?)$/i,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'takapay-app-assets',
+              expiration: {
+                maxEntries: 100,
+                maxAgeSeconds: 60 * 60 * 24 * 30,
+              },
+              cacheableResponse: {
+                statuses: [0, 200],
+              },
+            },
+          },
+          {
+            urlPattern: /\/(?:assets|storage)\/.*\.(?:avif|gif|jpe?g|png|svg|webp)(?:\?.*)?$/i,
+            handler: 'StaleWhileRevalidate',
+            options: {
+              cacheName: 'takapay-images',
+              expiration: {
+                maxEntries: 100,
+                maxAgeSeconds: 60 * 60 * 24 * 30,
+              },
+              cacheableResponse: {
+                statuses: [0, 200],
+              },
+            },
+          },
           {
             urlPattern: /^https:\/\/fonts\.(?:googleapis|gstatic)\.com\/.*/i,
             handler: 'CacheFirst',

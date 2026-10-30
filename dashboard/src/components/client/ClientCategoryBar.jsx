@@ -1,7 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
 import { TAKAPAY_CATEGORIES } from '../../data/takapayCategories';
-import { rebuildCategories } from '../../data/clientStore';
-import { adminService } from '../../services/adminService';
 
 /**
  * Barre de navigation des catégories et sous-catégories Takapay
@@ -28,16 +26,6 @@ export default function ClientCategoryBar({
   useEffect(() => {
     const handleUpdate = () => setCatTick((t) => t + 1);
     window.addEventListener('takapay_categories_updated', handleUpdate);
-
-    if (TAKAPAY_CATEGORIES.length === 0) {
-      adminService.getCategories().then((cats) => {
-        if (Array.isArray(cats) && cats.length > 0) {
-          rebuildCategories(cats);
-          setCatTick((t) => t + 1);
-        }
-      }).catch(() => {});
-    }
-
     return () => window.removeEventListener('takapay_categories_updated', handleUpdate);
   }, []);
 

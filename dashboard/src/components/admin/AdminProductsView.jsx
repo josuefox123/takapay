@@ -4,13 +4,13 @@ import { adminService } from '../../services/adminService';
 import { resolveImageUrl } from '../../data/clientStore';
 
 export default function AdminProductsView({ onShowToast }) {
-  const [produits, setProduits] = useState([]);
+  const [produits, setProduits] = useState(() => adminService.getCachedProduits());
   const [categories, setCategories] = useState([]);
   const [sousCategories, setSousCategories] = useState([]);
   const [promotions, setPromotions] = useState([]);
   const [search, setSearch] = useState('');
   const [selectedCat, setSelectedCat] = useState('tous');
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => adminService.getCachedProduits().length === 0);
   const [submitting, setSubmitting] = useState(false);
 
   // Mode de vue : 'list' | 'create' | 'edit' | 'categories'
@@ -112,6 +112,13 @@ export default function AdminProductsView({ onShowToast }) {
 
   useEffect(() => {
     let isMounted = true;
+    const refreshProducts = () => {
+      if (document.visibilityState !== 'visible') return;
+      adminService.getProduits().then((list) => {
+        if (isMounted) setProduits(list);
+      });
+    };
+
     Promise.all([
       adminService.getProduits(),
       adminService.getSousCategories(),
@@ -138,9 +145,13 @@ export default function AdminProductsView({ onShowToast }) {
         setLoading(false);
       }
     });
+    const refreshInterval = window.setInterval(refreshProducts, 60000);
+    window.addEventListener('focus', refreshProducts);
 
     return () => {
       isMounted = false;
+      window.clearInterval(refreshInterval);
+      window.removeEventListener('focus', refreshProducts);
     };
   }, []);
 
@@ -188,7 +199,7 @@ export default function AdminProductsView({ onShowToast }) {
           chemin: event.target.result,
           nom_fichier: file.name,
           position: images.length + fileIdx + 1,
-          is_principal: images.length === 0 && fileIdx === 0,
+          is_principal: editingProductId ? fileIdx === 0 : images.length === 0 && fileIdx === 0,
         });
         loadedCount++;
         if (loadedCount === files.length) {
@@ -207,6 +218,22 @@ export default function AdminProductsView({ onShowToast }) {
     e.target.value = '';
   };
 
+  const handleReplaceImageSelect = (e, imageIndex) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      setImages((prev) => prev.map((img, idx) => (
+        idx === imageIndex
+          ? { ...img, chemin: event.target.result, nom_fichier: file.name }
+          : img
+      )));
+      onShowToast('Photo remplacée. Enregistrez le produit pour confirmer.');
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
   const handleSetPrincipalImage = (index) => {
     setImages((prev) =>
       prev.map((img, idx) => ({
@@ -421,14 +448,17 @@ export default function AdminProductsView({ onShowToast }) {
       ? [{ chemin: item.im, is_principal: true, position: 1 }]
       : [];
 
-    setImages(
-      rawImgs.map((img, idx) => ({
-        chemin: typeof img === 'string' ? resolveImageUrl(img) : (img.url || resolveImageUrl(img.chemin)),
-        nom_fichier: typeof img === 'string' ? img : (img.nom_fichier || img.chemin || `image-${idx + 1}.jpg`),
-        position: idx + 1,
-        is_principal: img.is_principal === true || img.is_principal === 1 || idx === 0,
-      }))
-    );
+    const loadedImages = rawImgs.map((img, idx) => ({
+      id: typeof img === 'string' ? null : (img.id || null),
+      chemin: typeof img === 'string' ? resolveImageUrl(img) : (img.url || resolveImageUrl(img.chemin)),
+      nom_fichier: typeof img === 'string' ? img : (img.nom_fichier || img.chemin || `image-${idx + 1}.jpg`),
+      position: typeof img === 'string' ? idx + 1 : (img.position || idx + 1),
+      is_principal: typeof img !== 'string' && (img.is_principal === true || img.is_principal === 1 || img.is_principal === '1'),
+    }));
+    if (loadedImages.length > 0 && !loadedImages.some((img) => img.is_principal)) {
+      loadedImages[0].is_principal = true;
+    }
+    setImages(loadedImages);
 
     // Vidéo
     if (item.video) {
@@ -1046,7 +1076,7 @@ export default function AdminProductsView({ onShowToast }) {
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', marginBottom: '12px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
                       {cat.image ? (
-                        <img src={cat.image} alt={cat.nom} style={{ width: '42px', height: '42px', borderRadius: '10px', objectFit: 'cover', flexShrink: 0 }} />
+                        <img src={resolveImageUrl(cat.image)} alt={cat.nom} style={{ width: '42px', height: '42px', borderRadius: '10px', objectFit: 'cover', flexShrink: 0 }} />
                       ) : (
                         <div style={{ width: '42px', height: '42px', borderRadius: '10px', background: 'var(--soft)', display: 'grid', placeItems: 'center', fontSize: '20px', flexShrink: 0 }}>
                           📦
@@ -1111,7 +1141,7 @@ export default function AdminProductsView({ onShowToast }) {
                       >
                         {s.image && (
                           <img
-                            src={s.image}
+                            src={resolveImageUrl(s.image)}
                             alt={s.nom}
                             style={{ width: '18px', height: '18px', borderRadius: '4px', objectFit: 'cover' }}
                           />
@@ -2235,7 +2265,13 @@ export default function AdminProductsView({ onShowToast }) {
                       aspectRatio: '1',
                     }}
                   >
-                    <img
+                    <input
+                      id={`product-image-replace-${idx}`}
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => handleReplaceImageSelect(e, idx)}
+                      style={{ display: 'none' }}
+                    />                    <img
                       src={img.chemin}
                       alt={`Photo ${idx + 1}`}
                       style={{ width: '100%', height: '100%', objectFit: 'cover' }}
@@ -2263,6 +2299,28 @@ export default function AdminProductsView({ onShowToast }) {
                       {img.is_principal ? '★ Principale' : '☆ Définir'}
                     </button>
 
+                    {/* Remplacer uniquement cette photo */}
+                    <button
+                      type="button"
+                      onClick={() => document.getElementById(`product-image-replace-${idx}`)?.click()}
+                      title="Choisir une nouvelle image pour remplacer celle-ci"
+                      aria-label={`Remplacer la photo ${idx + 1}`}
+                      style={{
+                        position: 'absolute',
+                        left: '6px',
+                        bottom: '6px',
+                        background: 'rgba(0,0,0,0.72)',
+                        color: '#fff',
+                        border: 'none',
+                        borderRadius: '6px',
+                        padding: '4px 7px',
+                        fontSize: '11px',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      ↻ Remplacer
+                    </button>
                     {/* Bouton Supprimer */}
                     <button
                       type="button"

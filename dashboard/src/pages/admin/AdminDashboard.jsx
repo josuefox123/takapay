@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { lazy, Suspense, useCallback, useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import AdminSidebar from '../../components/admin/AdminSidebar';
 import AdminKpiCards from '../../components/admin/AdminKpiCards';
@@ -8,16 +8,16 @@ import AdminRecentTransactions from '../../components/admin/AdminRecentTransacti
 import AdminWatchlist from '../../components/admin/AdminWatchlist';
 import AdminToast from '../../components/admin/AdminToast';
 
-import AdminProductsView from '../../components/admin/AdminProductsView';
-import AdminPromotionsView from '../../components/admin/AdminPromotionsView';
-import AdminCarouselView from '../../components/admin/AdminCarouselView';
-import AdminCagnottesView from '../../components/admin/AdminCagnottesView';
-import AdminCommandesView from '../../components/admin/AdminCommandesView';
-import AdminDocumentsView from '../../components/admin/AdminDocumentsView';
-import AdminUsersView from '../../components/admin/AdminUsersView';
-import AdminTransactionsView from '../../components/admin/AdminTransactionsView';
-import AdminLivraisonsView from '../../components/admin/AdminLivraisonsView';
-import AdminSupportView from '../../components/admin/AdminSupportView';
+const AdminProductsView = lazy(() => import('../../components/admin/AdminProductsView'));
+const AdminPromotionsView = lazy(() => import('../../components/admin/AdminPromotionsView'));
+const AdminCarouselView = lazy(() => import('../../components/admin/AdminCarouselView'));
+const AdminCagnottesView = lazy(() => import('../../components/admin/AdminCagnottesView'));
+const AdminCommandesView = lazy(() => import('../../components/admin/AdminCommandesView'));
+const AdminDocumentsView = lazy(() => import('../../components/admin/AdminDocumentsView'));
+const AdminUsersView = lazy(() => import('../../components/admin/AdminUsersView'));
+const AdminTransactionsView = lazy(() => import('../../components/admin/AdminTransactionsView'));
+const AdminLivraisonsView = lazy(() => import('../../components/admin/AdminLivraisonsView'));
+const AdminSupportView = lazy(() => import('../../components/admin/AdminSupportView'));
 
 import { adminService } from '../../services/adminService';
 import './admin.css';
@@ -124,31 +124,42 @@ export default function AdminDashboard() {
     return () => clearInterval(interval);
   }, []);
 
-  const showToast = (message) => {
+  const showToast = useCallback((message) => {
     setToastMessage(message);
     setToastVisible(true);
     setTimeout(() => setToastVisible(false), 2400);
-  };
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
+    if (activeTab !== 'dashboard') return () => { isMounted = false; };
 
-    adminService
-      .getDashboardStats()
-      .then((data) => {
-        if (isMounted) {
-          setStats(data);
-          if (data?.kpis) setKpis(data.kpis);
-        }
-      })
-      .catch(() => {
-        if (isMounted) showToast('Impossible de charger les statistiques');
-      });
+    const refreshStats = () => {
+      adminService
+        .getDashboardStats()
+        .then((data) => {
+          if (isMounted) {
+            setStats(data);
+            if (data?.kpis) setKpis(data.kpis);
+          }
+        })
+        .catch(() => {
+          if (isMounted) showToast('Impossible de charger les statistiques');
+        });
+    };
+
+    refreshStats();
+    const refreshInterval = window.setInterval(() => {
+      if (document.visibilityState === 'visible') refreshStats();
+    }, 30000);
+    window.addEventListener('focus', refreshStats);
 
     return () => {
       isMounted = false;
+      window.clearInterval(refreshInterval);
+      window.removeEventListener('focus', refreshStats);
     };
-  }, []);
+  }, [activeTab, showToast]);
 
   const handleLogout = () => {
     adminService.logout();
@@ -178,6 +189,7 @@ export default function AdminDashboard() {
         />
 
         <main className="admin-main">
+          <Suspense fallback={<div role="status" style={{ padding: 24 }}>Chargement de la page…</div>}>
           {activeTab === 'dashboard' && (
             <>
               <h1 className="admin-header-title">Bonjour, {prenom}</h1>
@@ -242,6 +254,7 @@ export default function AdminDashboard() {
           {activeTab === 'livraisons' && (
             <AdminLivraisonsView onShowToast={showToast} />
           )}
+          </Suspense>
         </main>
       </div>
 

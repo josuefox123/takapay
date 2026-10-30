@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import ClientHeroCarousel from './ClientHeroCarousel';
 import ClientProductCard from './ClientProductCard';
 import { PRODUCTS, TAKAPAY_CATEGORIES, rebuildCategories } from '../../data/clientStore';
-import { adminService } from '../../services/adminService';
 
 export default function ClientHomeView({
   products = [],
@@ -16,15 +15,12 @@ export default function ClientHomeView({
   ));
 
   useEffect(() => {
-    let isMounted = true;
-    adminService.getCategories().then((cats) => {
-      if (!isMounted) return;
-      if (Array.isArray(cats) && cats.length > 0) {
-        rebuildCategories(cats);
-        setCategories([...TAKAPAY_CATEGORIES]);
-      }
-    }).catch(() => {});
-    return () => { isMounted = false; };
+    const handleCategoriesUpdated = (event) => {
+      if (Array.isArray(event.detail)) rebuildCategories(event.detail);
+      setCategories([...TAKAPAY_CATEGORIES]);
+    };
+    window.addEventListener('takapay_categories_updated', handleCategoriesUpdated);
+    return () => window.removeEventListener('takapay_categories_updated', handleCategoriesUpdated);
   }, []);
 
   const displayProducts = Array.isArray(products) && products.length > 0 ? products : PRODUCTS;
