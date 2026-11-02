@@ -1,8 +1,76 @@
-import { formatFCFA, discountPercentage, PRODUCTS } from '../../data/clientStore';
+import React, { useState, useEffect, useMemo } from 'react';
+import { formatFCFA, discountPercentage, resolveImageUrl, PRODUCTS } from '../../data/clientStore';
+import adminService from '../../services/adminService';
+import welcomeBannerImg from '../../assets/imagetakapay.webp';
 
-export default function ClientWelcomeModal({ isOpen, onClose, onSelectProduct, onShowAllPromos }) {
-  const deals = PRODUCTS.filter((p) => p.o).slice(0, 3);
-  if (!isOpen || deals.length === 0) return null;
+export default function ClientWelcomeModal({ isOpen, onClose, onSelectProduct, onShowAllPromos, products = [] }) {
+  const [dbCarousels, setDbCarousels] = useState(() => {
+    try {
+      const cached = localStorage.getItem('takapay_public_carousels');
+      const parsed = cached ? JSON.parse(cached) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    if (!isOpen) return;
+    let isMounted = true;
+    adminService
+      .getCarousels(false)
+      .then((data) => {
+        if (isMounted && Array.isArray(data)) {
+          setDbCarousels(data);
+          try {
+            localStorage.setItem('takapay_public_carousels', JSON.stringify(data));
+          } catch {
+            // Ignorer
+          }
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      isMounted = false;
+    };
+  }, [isOpen]);
+
+  // Bannière carrousel vedette provenant du backend
+  const activeBanner = useMemo(() => {
+    if (!Array.isArray(dbCarousels) || dbCarousels.length === 0) return null;
+    return dbCarousels.find((c) => c.is_actif !== false && (c.image_url || c.image)) || dbCarousels[0];
+  }, [dbCarousels]);
+
+  // Produits en promotion réels venant de la base de données
+  const deals = useMemo(() => {
+    const list = Array.isArray(products) && products.length > 0 ? products : PRODUCTS;
+    const discounted = list.filter((p) => p && p.o && Number(p.o) > Number(p.p));
+    if (discounted.length > 0) return discounted.slice(0, 3);
+    return list.slice(0, 3);
+  }, [products]);
+
+  if (!isOpen) return null;
+
+  const bannerImgSrc = activeBanner?.image_url || activeBanner?.image
+    ? resolveImageUrl(activeBanner.image_url || activeBanner.image)
+    : welcomeBannerImg;
+
+  const handleAction = () => {
+    onClose();
+    const prodId = activeBanner?.produit_id || activeBanner?.produit?.id || (deals.length > 0 ? deals[0].id : null);
+    if (prodId && typeof onSelectProduct === 'function') {
+      onSelectProduct(prodId);
+    } else if (activeBanner?.lien) {
+      if (activeBanner.lien.startsWith('http://') || activeBanner.lien.startsWith('https://')) {
+        window.open(activeBanner.lien, '_blank');
+      } else if (typeof onShowAllPromos === 'function') {
+        onShowAllPromos();
+      }
+    } else if (typeof onShowAllPromos === 'function') {
+      onShowAllPromos();
+    }
+  };
 
   return (
     <div
@@ -30,7 +98,7 @@ export default function ClientWelcomeModal({ isOpen, onClose, onSelectProduct, o
           background: '#ffffff',
           color: '#1b1716',
           borderRadius: '24px',
-          maxWidth: '820px',
+          maxWidth: '760px',
           width: '100%',
           maxHeight: '90vh',
           overflowY: 'auto',
@@ -38,22 +106,41 @@ export default function ClientWelcomeModal({ isOpen, onClose, onSelectProduct, o
           position: 'relative',
         }}
       >
-        {/* Photo de campagne */}
+        {/* Photo de campagne venant du backend carrousel */}
         <div
           className="welcome-photo"
-          role="img"
-          aria-label="Sélection d'articles en promotion"
+          role="button"
+          tabIndex={0}
+          onClick={handleAction}
+          title={activeBanner?.titre || 'Découvrir la promotion'}
           style={{
-            minHeight: '260px',
-            background: 'linear-gradient(180deg, rgba(0,0,0,0.05), rgba(0,0,0,0.25)), url("/assets/campaign-deals.jpg") center/cover no-repeat',
+            minHeight: '220px',
+            maxHeight: '320px',
+            cursor: 'pointer',
+            position: 'relative',
+            overflow: 'hidden',
+            background: '#1b1716',
           }}
-        />
+        >
+          <img
+            src={bannerImgSrc}
+            alt={activeBanner?.titre || 'Campagne Takapay'}
+            style={{
+              width: '100%',
+              height: '100%',
+              minHeight: '220px',
+              maxHeight: '320px',
+              objectFit: 'cover',
+              display: 'block',
+            }}
+          />
+        </div>
 
         {/* Contenu et offres avec contraste garanti */}
         <div
           className="welcome-copy"
           style={{
-            padding: '28px 32px',
+            padding: '24px 28px',
             background: '#ffffff',
             color: '#1b1716',
             position: 'relative',
@@ -91,101 +178,100 @@ export default function ClientWelcomeModal({ isOpen, onClose, onSelectProduct, o
               fontWeight: 800,
               letterSpacing: '1.2px',
               textTransform: 'uppercase',
-              color: 'var(--r)',
+              color: 'var(--r, #dc2626)',
               marginBottom: '6px',
             }}
           >
-            🔥 OFFRES DU MOMENT
+            {activeBanner?.kicker || (deals.length > 0 && deals[0].o ? '🔥 PROMOTION DU MOMENT' : '🔥 OFFRE DU MOMENT')}
           </span>
 
           <h2
             id="welcome-title"
             style={{
-              fontSize: '24px',
+              fontSize: '22px',
               fontWeight: 800,
               color: '#1b1716',
               margin: '0 0 8px',
-              lineHeight: 1.2,
+              lineHeight: 1.25,
             }}
           >
-            Des réductions exclusives sur vos articles favoris
+            {activeBanner?.titre || (deals.length > 0 ? deals[0].n : 'Des réductions exclusives sur vos articles favoris')}
           </h2>
 
           <p
             style={{
               margin: '0 0 16px',
               color: '#4b443f',
-              fontSize: '14px',
+              fontSize: '13.5px',
               lineHeight: 1.5,
             }}
           >
-            Profitez des prix barrés et commencez votre cagnotte dès aujourd'hui à votre propre rythme.
+            {activeBanner?.description || (deals.length > 0 && deals[0].d ? deals[0].d : 'Profitez des prix barrés et commencez votre cagnotte dès aujourd’hui à votre propre rythme.')}
           </p>
 
-          <div className="welcome-deals" style={{ display: 'grid', gap: '10px', marginBottom: '18px' }}>
-            {deals.map((p) => {
-              const disc = discountPercentage(p);
-              return (
-                <button
-                  key={p.id}
-                  type="button"
-                  className="welcome-deal"
-                  onClick={() => {
-                    onClose();
-                    onSelectProduct(p.id);
-                  }}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '12px',
-                    padding: '10px 14px',
-                    borderRadius: '14px',
-                    border: '1.5px solid #ece5df',
-                    background: '#fffdfb',
-                    textAlign: 'left',
-                    cursor: 'pointer',
-                  }}
-                >
-                  <img
-                    src={p.im}
-                    alt={p.n}
-                    style={{ width: '52px', height: '52px', objectFit: 'cover', borderRadius: '10px' }}
-                  />
-                  <div className="welcome-deal-copy" style={{ flex: 1, minWidth: 0 }}>
-                    <b style={{ fontSize: '14px', color: '#1b1716', display: 'block' }}>{p.n}</b>
-                    <small style={{ color: '#6b6661', fontSize: '12px', marginTop: '2px', display: 'block' }}>
-                      <strong style={{ color: 'var(--r)', fontWeight: 800 }}>{formatFCFA(p.p)}</strong>
-                      <s style={{ marginLeft: '6px', color: '#9c938f' }}>{formatFCFA(p.o)}</s>
-                    </small>
-                  </div>
-                  <span
+          {deals.length > 0 && (
+            <div className="welcome-deals" style={{ display: 'grid', gap: '8px', marginBottom: '18px' }}>
+              {deals.map((p) => {
+                const disc = discountPercentage(p);
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    className="welcome-deal"
+                    onClick={() => {
+                      onClose();
+                      onSelectProduct(p.id);
+                    }}
                     style={{
-                      fontSize: '12px',
-                      fontWeight: 800,
-                      color: '#ffffff',
-                      background: 'var(--r)',
-                      padding: '4px 10px',
-                      borderRadius: '99px',
-                      whiteSpace: 'nowrap',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '12px',
+                      padding: '8px 12px',
+                      borderRadius: '12px',
+                      border: '1.5px solid #ece5df',
+                      background: '#fffdfb',
+                      textAlign: 'left',
+                      cursor: 'pointer',
                     }}
                   >
-                    −{disc}%
-                  </span>
-                </button>
-              );
-            })}
-          </div>
+                    <img
+                      src={p.im}
+                      alt={p.n}
+                      style={{ width: '48px', height: '48px', objectFit: 'cover', borderRadius: '8px' }}
+                    />
+                    <div className="welcome-deal-copy" style={{ flex: 1, minWidth: 0 }}>
+                      <b style={{ fontSize: '13.5px', color: '#1b1716', display: 'block' }}>{p.n}</b>
+                      <small style={{ color: '#6b6661', fontSize: '11.5px', marginTop: '2px', display: 'block' }}>
+                        <strong style={{ color: 'var(--r, #dc2626)', fontWeight: 800 }}>{formatFCFA(p.p)}</strong>
+                        <s style={{ marginLeft: '6px', color: '#9c938f' }}>{formatFCFA(p.o)}</s>
+                      </small>
+                    </div>
+                    <span
+                      style={{
+                        fontSize: '11px',
+                        fontWeight: 800,
+                        color: '#ffffff',
+                        background: 'var(--r, #dc2626)',
+                        padding: '3px 8px',
+                        borderRadius: '99px',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      −{disc}%
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
 
           <button
             type="button"
             className="client-btn"
-            style={{ width: '100%', padding: '14px', fontSize: '15px' }}
-            onClick={() => {
-              onClose();
-              onShowAllPromos();
-            }}
+            style={{ width: '100%', padding: '14px', fontSize: '15px', fontWeight: 800 }}
+            onClick={handleAction}
           >
-            Découvrir toutes les promotions
+            {activeBanner?.texte_bouton?.trim() || (activeBanner?.produit ? `Découvrir ${activeBanner.produit.nom || 'l’article'} →` : (deals.length > 0 ? `Découvrir ${deals[0].n || 'l’article'} →` : 'Découvrir toutes les promotions →'))}
           </button>
         </div>
       </div>

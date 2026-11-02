@@ -109,11 +109,13 @@ export default function AppHome({ initialTab = 'home' }) {
     }, 3200);
   };
 
-  // Affichage du modal promo après 500ms si non vu cette session
+  // Affichage du modal promo après 500ms si non vu cette session (ou paramètre ?welcome=1 / ?promo=1)
   useEffect(() => {
     try {
+      const searchParams = new URLSearchParams(location.search);
+      const forceWelcome = searchParams.get('welcome') === '1';
       const seen = sessionStorage.getItem('takapay-welcome-seen');
-      if (!seen) {
+      if (!seen || forceWelcome) {
         const timer = setTimeout(() => {
           setShowWelcome(true);
           sessionStorage.setItem('takapay-welcome-seen', 'true');
@@ -123,7 +125,7 @@ export default function AppHome({ initialTab = 'home' }) {
     } catch {
       // Ignorer
     }
-  }, []);
+  }, [location.search]);
 
   // Synchronisation bidirectionnelle avec les routes URL
   useEffect(() => {
@@ -331,6 +333,9 @@ export default function AppHome({ initialTab = 'home' }) {
     loadLiveProducts();
 
     const handleProductsUpdated = () => {
+      try {
+        sessionStorage.removeItem('takapay-welcome-seen');
+      } catch { /* ignore */ }
       refreshProductsFromStore();
       loadLiveProducts();
     };
@@ -745,6 +750,7 @@ export default function AppHome({ initialTab = 'home' }) {
       {/* Modal Popup des promotions du moment */}
       <ClientWelcomeModal
         isOpen={showWelcome}
+        products={productsList}
         onClose={() => setShowWelcome(false)}
         onSelectProduct={handleOpenProduct}
         onShowAllPromos={handleSelectPromo}
