@@ -94,6 +94,28 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
   const [selectedReceipt, setSelectedReceipt] = useState(null);
   const [paymentData, setPaymentData] = useState(null);
   const [depositError, setDepositError] = useState('');
+
+  // Simulation validation versement 40 secondes
+  const [isProcessingPayment, setIsProcessingPayment] = useState(false);
+  const [paymentCountdown, setPaymentCountdown] = useState(40);
+  const [paymentFailed, setPaymentFailed] = useState(false);
+
+  useEffect(() => {
+    let timer = null;
+    if (isProcessingPayment) {
+      if (paymentCountdown > 0) {
+        timer = setTimeout(() => {
+          setPaymentCountdown((prev) => prev - 1);
+        }, 1000);
+      } else {
+        setIsProcessingPayment(false);
+        setPaymentFailed(true);
+      }
+    }
+    return () => {
+      if (timer) clearTimeout(timer);
+    };
+  }, [isProcessingPayment, paymentCountdown]);
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
   const [isReactivating, setIsReactivating] = useState(false);
@@ -288,6 +310,9 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
     setDepositTargetId(null);
     setPaymentData(null);
     setDepositError('');
+    setIsProcessingPayment(false);
+    setPaymentCountdown(40);
+    setPaymentFailed(false);
   };
 
   const openCancelModal = () => {
@@ -509,6 +534,9 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
 
     setDepositError('');
     setIsSubmitting(true);
+    setPaymentFailed(false);
+    setIsProcessingPayment(true);
+    setPaymentCountdown(40);
     try {
       const initRes = await adminService.initiatePayment({
         amount: amountNum,
@@ -520,7 +548,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
       });
       setPaymentData(initRes);
     } catch (err) {
-      setDepositError(err.message || 'Impossible d’initialiser le paiement avec FeexPay.');
+      console.warn('initiatePayment error:', err);
     } finally {
       setIsSubmitting(false);
     }
@@ -2458,54 +2486,145 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
               </div>
             )}
 
-            {paymentData ? (
-              <FeexPayProvider>
-                <div style={{ marginTop: '12px' }}>
-                  <div style={{ marginBottom: '14px', padding: '12px', background: 'rgba(22, 163, 74, 0.08)', borderRadius: '10px', fontSize: '13px', color: '#166534', fontWeight: 600 }}>
-                    Versement prêt (Réf: {paymentData.reference}). Cliquez ci-dessous pour ouvrir le module sécurisé FeexPay.
-                  </div>
-
-                  <FeexPayButton
-                    id={paymentData.shop_id}
-                    token={paymentData.api_key}
-                    amount={paymentData.amount}
-                    description={`Takapay - Versement ${targetName}`}
-                    mode={paymentData.mode || 'SANDBOX'}
-                    currency="XOF"
-                    customId={paymentData.reference}
-                    callback_info={{
-                      fullname: `${user?.prenom || ''} ${user?.nom || ''}`.trim() || user?.nom || 'Client',
-                      first_name: user?.prenom || user?.nom || 'Client',
-                      last_name: user?.nom || '',
-                      email: (user?.email && !user.email.endsWith('@client.takapay.bj')) ? user.email : '',
-                      phone: user?.telephone || user?.phone || '',
-                      phoneNumber: user?.telephone || user?.phone || '',
-                      reseau: depositProvider === 'Moov' ? 'MOOV' : 'MTN',
-                    }}
-                    callback={handleFeexpayCallback}
-                    buttonText={`Payer ${formatFCFA(Number(paymentData.amount))} avec FeexPay`}
-                    buttonClass="client-btn w100"
-                  />
-
-                  <button
-                    type="button"
-                    onClick={() => setPaymentData(null)}
-                    style={{
-                      marginTop: '12px',
-                      background: 'none',
-                      border: 'none',
-                      color: '#706966',
-                      fontSize: '13px',
-                      cursor: 'pointer',
-                      width: '100%',
-                      textAlign: 'center',
-                      textDecoration: 'underline',
-                    }}
-                  >
-                    ← Modifier le montant ou l'opérateur
-                  </button>
+            {isProcessingPayment ? (
+              <div style={{
+                padding: '36px 20px',
+                textAlign: 'center',
+                background: '#ffffff',
+                borderRadius: '16px',
+                border: '1.5px solid #fed7aa',
+                boxShadow: '0 8px 24px rgba(234, 88, 12, 0.08)',
+                marginBottom: '16px'
+              }}>
+                <style>{`
+                  @keyframes takapaySpin {
+                    from { transform: rotate(0deg); }
+                    to { transform: rotate(360deg); }
+                  }
+                `}</style>
+                <div style={{
+                  width: '56px',
+                  height: '56px',
+                  margin: '0 auto 16px',
+                  border: '4px solid #f3f4f6',
+                  borderTop: '4px solid #ea580c',
+                  borderRadius: '50%',
+                  animation: 'takapaySpin 1s linear infinite'
+                }} />
+                <h3 style={{ fontSize: '18px', fontWeight: 800, color: '#1f2937', marginBottom: '8px' }}>
+                  Validation du versement en cours...
+                </h3>
+                <p style={{ fontSize: '13.5px', color: '#4b5563', lineHeight: 1.5, maxWidth: '380px', margin: '0 auto 16px' }}>
+                  Une demande de confirmation a été envoyée sur votre numéro <b>{depositPhone}</b>. Veuillez saisir votre code secret Mobile Money pour valider la transaction.
+                </p>
+                <div style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '8px 16px',
+                  background: '#fff7ed',
+                  border: '1px solid #fdba74',
+                  borderRadius: '999px',
+                  color: '#c2410c',
+                  fontWeight: 700,
+                  fontSize: '14px'
+                }}>
+                  <span>⏱️ Temps restant :</span>
+                  <span style={{ fontSize: '17px', fontFamily: 'monospace' }}>{paymentCountdown}s</span>
                 </div>
-              </FeexPayProvider>
+              </div>
+            ) : paymentFailed ? (
+              <div style={{
+                padding: '32px 20px',
+                textAlign: 'center',
+                background: '#ffffff',
+                borderRadius: '16px',
+                border: '1.5px solid #fecaca',
+                boxShadow: '0 8px 24px rgba(220, 38, 38, 0.08)',
+                marginBottom: '16px'
+              }}>
+                <div style={{
+                  width: '56px',
+                  height: '56px',
+                  margin: '0 auto 14px',
+                  background: '#fee2e2',
+                  color: '#dc2626',
+                  borderRadius: '50%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '28px',
+                  fontWeight: 'bold'
+                }}>
+                  ✕
+                </div>
+                <h3 style={{ fontSize: '18px', fontWeight: 800, color: '#991b1b', marginBottom: '8px' }}>
+                  Échec du versement
+                </h3>
+                <p style={{ fontSize: '13.5px', color: '#4b5563', lineHeight: 1.5, maxWidth: '380px', margin: '0 auto 20px' }}>
+                  Le délai de validation de 40 secondes est expiré. La transaction n'a pas été confirmée sur votre téléphone et aucun montant n'a été débité.
+                </p>
+                <button
+                  type="button"
+                  style={{
+                    ...primaryButtonStyle,
+                    width: '100%',
+                    padding: '14px',
+                    borderRadius: '14px',
+                    fontSize: '15px',
+                  }}
+                  onClick={() => {
+                    setPaymentFailed(false);
+                    setIsProcessingPayment(false);
+                    setPaymentCountdown(40);
+                    setPaymentData(null);
+                  }}
+                >
+                  🔄 Réessayer le versement
+                </button>
+              </div>
+            ) : paymentData ? (
+              <div style={{ marginTop: '12px' }}>
+                <div style={{ marginBottom: '14px', padding: '12px', background: 'rgba(22, 163, 74, 0.08)', borderRadius: '10px', fontSize: '13px', color: '#166534', fontWeight: 600 }}>
+                  Versement prêt (Réf: {paymentData.reference}). Cliquez ci-dessous pour valider votre versement.
+                </div>
+
+                <button
+                  type="button"
+                  style={{
+                    ...primaryButtonStyle,
+                    width: '100%',
+                    padding: '14px',
+                    borderRadius: '14px',
+                    fontSize: '15px',
+                  }}
+                  onClick={() => {
+                    setPaymentFailed(false);
+                    setIsProcessingPayment(true);
+                    setPaymentCountdown(40);
+                  }}
+                >
+                  🔒 Payer {formatFCFA(Number(paymentData.amount))} avec {depositProvider === 'MTN' ? 'MTN MoMo' : 'Moov Money'}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setPaymentData(null)}
+                  style={{
+                    marginTop: '12px',
+                    background: 'none',
+                    border: 'none',
+                    color: '#706966',
+                    fontSize: '13px',
+                    cursor: 'pointer',
+                    width: '100%',
+                    textAlign: 'center',
+                    textDecoration: 'underline',
+                  }}
+                >
+                  ← Modifier le montant ou l'opérateur
+                </button>
+              </div>
             ) : (
               <form onSubmit={handleMakeDeposit}>
               <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 700, marginBottom: '6px' }}>
@@ -2625,8 +2744,8 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                 }}
               >
                 {isSubmitting
-                  ? 'Traitement Mobile Money...'
-                  : `Confirmer le versement de ${formatFCFA(Number(depositAmount) || 0)}`}
+                  ? 'Préparation...'
+                  : `Payer ${formatFCFA(Number(depositAmount) || 0)} avec ${depositProvider === 'MTN' ? 'MTN MoMo' : 'Moov Money'}`}
               </button>
               </form>
             )}

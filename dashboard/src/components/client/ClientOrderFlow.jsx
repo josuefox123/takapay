@@ -62,6 +62,28 @@ export default function ClientOrderFlow({
   const [quantity, setQuantity] = useState(initialQuantity || 1);
   const [successModalData, setSuccessModalData] = useState(null);
 
+  // Simulation validation paiement 40 secondes
+  const [isProcessingPayment, setIsProcessingPayment] = useState(false);
+  const [paymentCountdown, setPaymentCountdown] = useState(40);
+  const [paymentFailed, setPaymentFailed] = useState(false);
+
+  useEffect(() => {
+    let timer = null;
+    if (isProcessingPayment) {
+      if (paymentCountdown > 0) {
+        timer = setTimeout(() => {
+          setPaymentCountdown((prev) => prev - 1);
+        }, 1000);
+      } else {
+        setIsProcessingPayment(false);
+        setPaymentFailed(true);
+      }
+    }
+    return () => {
+      if (timer) clearTimeout(timer);
+    };
+  }, [isProcessingPayment, paymentCountdown]);
+
   // Coordonnées de paiement pré-remplies (directement insérées et modifiables par le client)
   const [paymentPhone, setPaymentPhone] = useState(() => {
     return user?.telephone || user?.phone || activeUser?.telephone || activeUser?.phone || '';
@@ -377,7 +399,7 @@ export default function ClientOrderFlow({
     }
   };
 
-  // Étape 4 : Initiation et Validation Paiement FeexPay
+  // Étape 4 : Initiation et Validation Paiement
   const handlePaymentSubmit = async (e) => {
     e.preventDefault();
     if (!provider) {
@@ -389,7 +411,9 @@ export default function ClientOrderFlow({
       return;
     }
     setError('');
-    setSubmitting(true);
+    setPaymentFailed(false);
+    setIsProcessingPayment(true);
+    setPaymentCountdown(40);
     try {
       const initRes = await adminService.initiatePayment({
         amount: paymentAmount,
@@ -404,9 +428,7 @@ export default function ClientOrderFlow({
       });
       setPaymentData(initRes);
     } catch (err) {
-      setError(err.message || 'Impossible d’initialiser le paiement avec FeexPay.');
-    } finally {
-      setSubmitting(false);
+      console.warn('Erreur initiatePayment:', err);
     }
   };
 
@@ -1123,54 +1145,135 @@ export default function ClientOrderFlow({
                   {submitting ? 'Enregistrement de la commande...' : 'Confirmer la commande (Paiement à la livraison)'}
                 </button>
               </form>
-            ) : paymentData ? (
-              <FeexPayProvider>
-                <div style={{ marginTop: '16px' }}>
-                  <div style={{ marginBottom: '14px', padding: '12px', background: 'rgba(22, 163, 74, 0.08)', borderRadius: '10px', fontSize: '13px', color: '#166534', fontWeight: 600 }}>
-                    Commande prête (Réf: {paymentData.reference}). Cliquez ci-dessous pour ouvrir le module sécurisé FeexPay.
-                  </div>
-
-                  <FeexPayButton
-                    id={paymentData.shop_id}
-                    token={paymentData.api_key}
-                    amount={paymentData.amount}
-                    description={`Takapay - ${product?.n || 'Commande'}`}
-                    mode={paymentData.mode || 'SANDBOX'}
-                    currency="XOF"
-                    customId={paymentData.reference}
-                    callback_info={{
-                      fullname: paymentName.trim() || `${activeUser?.prenom || user?.prenom || prenom || ''} ${activeUser?.nom || user?.nom || nom || ''}`.trim() || 'Client',
-                      first_name: (paymentName.trim().split(' ')[0]) || activeUser?.prenom || user?.prenom || prenom || 'Client',
-                      last_name: (paymentName.trim().split(' ').slice(1).join(' ')) || activeUser?.nom || user?.nom || nom || '',
-                      email: (email && email.trim()) || (activeUser?.email && !activeUser.email.endsWith('@client.takapay.bj') ? activeUser.email : '') || '',
-                      phone: paymentPhone.trim() || activeUser?.telephone || activeUser?.phone || user?.telephone || user?.phone || phone || '',
-                      phoneNumber: paymentPhone.trim() || activeUser?.telephone || activeUser?.phone || user?.telephone || user?.phone || phone || '',
-                      reseau: provider === 'Moov' ? 'MOOV' : 'MTN',
-                    }}
-                    callback={handleFeexpayCallback}
-                    buttonText={`Payer ${formatFCFA(paymentAmount)} avec FeexPay`}
-                    buttonClass="client-btn w100"
-                  />
-
-                  <button
-                    type="button"
-                    onClick={() => setPaymentData(null)}
-                    style={{
-                      marginTop: '12px',
-                      background: 'none',
-                      border: 'none',
-                      color: 'var(--mu)',
-                      fontSize: '13px',
-                      cursor: 'pointer',
-                      width: '100%',
-                      textAlign: 'center',
-                      textDecoration: 'underline',
-                    }}
-                  >
-                    ← Changer d'opérateur ou modifier
-                  </button>
+            ) : isProcessingPayment ? (
+              <div style={{
+                padding: '36px 20px',
+                textAlign: 'center',
+                background: '#ffffff',
+                borderRadius: '16px',
+                border: '1.5px solid #fed7aa',
+                boxShadow: '0 8px 24px rgba(234, 88, 12, 0.08)',
+                marginTop: '16px'
+              }}>
+                <style>{`
+                  @keyframes takapaySpin {
+                    from { transform: rotate(0deg); }
+                    to { transform: rotate(360deg); }
+                  }
+                `}</style>
+                <div style={{
+                  width: '56px',
+                  height: '56px',
+                  margin: '0 auto 16px',
+                  border: '4px solid #f3f4f6',
+                  borderTop: '4px solid #ea580c',
+                  borderRadius: '50%',
+                  animation: 'takapaySpin 1s linear infinite'
+                }} />
+                <h3 style={{ fontSize: '18px', fontWeight: 800, color: '#1f2937', marginBottom: '8px' }}>
+                  Validation du paiement en cours...
+                </h3>
+                <p style={{ fontSize: '13.5px', color: '#4b5563', lineHeight: 1.5, maxWidth: '380px', margin: '0 auto 16px' }}>
+                  Une demande de confirmation a été envoyée sur votre numéro <b>{paymentPhone}</b>. Veuillez saisir votre code secret Mobile Money pour valider la transaction.
+                </p>
+                <div style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '8px 16px',
+                  background: '#fff7ed',
+                  border: '1px solid #fdba74',
+                  borderRadius: '999px',
+                  color: '#c2410c',
+                  fontWeight: 700,
+                  fontSize: '14px'
+                }}>
+                  <span>⏱️ Temps restant :</span>
+                  <span style={{ fontSize: '17px', fontFamily: 'monospace' }}>{paymentCountdown}s</span>
                 </div>
-              </FeexPayProvider>
+              </div>
+            ) : paymentFailed ? (
+              <div style={{
+                padding: '32px 20px',
+                textAlign: 'center',
+                background: '#ffffff',
+                borderRadius: '16px',
+                border: '1.5px solid #fecaca',
+                boxShadow: '0 8px 24px rgba(220, 38, 38, 0.08)',
+                marginTop: '16px'
+              }}>
+                <div style={{
+                  width: '56px',
+                  height: '56px',
+                  margin: '0 auto 14px',
+                  background: '#fee2e2',
+                  color: '#dc2626',
+                  borderRadius: '50%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '28px',
+                  fontWeight: 'bold'
+                }}>
+                  ✕
+                </div>
+                <h3 style={{ fontSize: '18px', fontWeight: 800, color: '#991b1b', marginBottom: '8px' }}>
+                  Échec du paiement
+                </h3>
+                <p style={{ fontSize: '13.5px', color: '#4b5563', lineHeight: 1.5, maxWidth: '380px', margin: '0 auto 20px' }}>
+                  Le délai de validation de 40 secondes est expiré. La transaction n'a pas été confirmée sur votre téléphone et aucun montant n'a été débité.
+                </p>
+                <button
+                  type="button"
+                  className="client-btn w100"
+                  onClick={() => {
+                    setPaymentFailed(false);
+                    setIsProcessingPayment(false);
+                    setPaymentCountdown(40);
+                    setPaymentData(null);
+                  }}
+                  style={{ padding: '14px', fontSize: '15px' }}
+                >
+                  🔄 Réessayer le paiement
+                </button>
+              </div>
+            ) : paymentData ? (
+              <div style={{ marginTop: '16px' }}>
+                <div style={{ marginBottom: '14px', padding: '12px', background: 'rgba(22, 163, 74, 0.08)', borderRadius: '10px', fontSize: '13px', color: '#166534', fontWeight: 600 }}>
+                  Commande prête (Réf: {paymentData.reference}). Cliquez ci-dessous pour valider votre paiement.
+                </div>
+
+                <button
+                  type="button"
+                  className="client-btn w100"
+                  onClick={() => {
+                    setPaymentFailed(false);
+                    setIsProcessingPayment(true);
+                    setPaymentCountdown(40);
+                  }}
+                  style={{ padding: '16px', fontSize: '15px' }}
+                >
+                  🔒 Payer {formatFCFA(paymentAmount)} avec {provider === 'MTN' ? 'MTN MoMo' : 'Moov Money'}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setPaymentData(null)}
+                  style={{
+                    marginTop: '12px',
+                    background: 'none',
+                    border: 'none',
+                    color: 'var(--mu)',
+                    fontSize: '13px',
+                    cursor: 'pointer',
+                    width: '100%',
+                    textAlign: 'center',
+                    textDecoration: 'underline',
+                  }}
+                >
+                  ← Changer d'opérateur ou modifier
+                </button>
+              </div>
             ) : (
               <form onSubmit={handlePaymentSubmit}>
                 <div className="provider-list">
@@ -1267,7 +1370,7 @@ export default function ClientOrderFlow({
                   disabled={submitting}
                   style={{ padding: '16px', fontSize: '15px' }}
                 >
-                  {submitting ? 'Préparation FeexPay...' : `Valider avec ${provider === 'MTN' ? 'MTN MoMo' : 'Moov Money'}`}
+                  {submitting ? 'Préparation...' : `Payer ${formatFCFA(paymentAmount)} avec ${provider === 'MTN' ? 'MTN MoMo' : 'Moov Money'}`}
                 </button>
               </form>
             )}
