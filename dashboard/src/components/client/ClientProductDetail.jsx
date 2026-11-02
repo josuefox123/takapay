@@ -407,7 +407,10 @@ export default function ClientProductDetail({
   const colorText = chosenColor?.name || (typeof chosenColor === 'string' ? chosenColor : '');
 
   // Message personnalisé pour WhatsApp envoyé directement au 0198741111 (+2290198741111)
+  // L'URL de la photo en tête de message permet à WhatsApp d'afficher la photo en haut (cliquable) avec le texte en dessous
   const whatsappMessage = [
+    absoluteImageUrl || window.location.href,
+    ``,
     `Bonjour Takapay ! 👋`,
     `Je suis très intéressé(e) par l'article *"${product.n || product.nom || 'Article'}"* et je souhaite avoir plus d'informations.`,
     ``,
@@ -416,8 +419,7 @@ export default function ClientProductDetail({
     colorText ? `• *Couleur / Variante :* ${colorText}` : null,
     (clientNom || clientTel) ? `• *Client :* ${[clientNom, clientTel].filter(Boolean).join(' - ')}` : null,
     ``,
-    `🔗 *Lien de l'article :* ${window.location.href}`,
-    absoluteImageUrl ? `📸 *Photo de l'article :* ${absoluteImageUrl}` : null,
+    `🔗 *Lien de la fiche produit :* ${window.location.href}`,
     ``,
     `Pouvez-vous me renseigner sur sa disponibilité, les délais et les modalités de livraison ? Merci !`,
   ].filter((line) => line !== null).join('\n');
