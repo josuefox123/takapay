@@ -399,7 +399,7 @@ export default function ClientOrderFlow({
     }
   };
 
-  // Étape 4 : Initiation et Validation Paiement
+  // Étape 4 : Initiation Paiement FeexPay
   const handlePaymentSubmit = async (e) => {
     e.preventDefault();
     if (!provider) {
@@ -411,9 +411,7 @@ export default function ClientOrderFlow({
       return;
     }
     setError('');
-    setPaymentFailed(false);
-    setIsProcessingPayment(true);
-    setPaymentCountdown(40);
+    setSubmitting(true);
     try {
       const initRes = await adminService.initiatePayment({
         amount: paymentAmount,
@@ -428,58 +426,19 @@ export default function ClientOrderFlow({
       });
       setPaymentData(initRes);
     } catch (err) {
-      console.warn('Erreur initiatePayment:', err);
+      setError(err.message || 'Impossible d’initialiser le paiement avec FeexPay.');
+    } finally {
+      setSubmitting(false);
     }
   };
 
   const handleFeexpayCallback = async (response) => {
     console.log('FeexPay callback reçu :', response);
-    const isSuccess = response && (
-      response.status?.toUpperCase() === 'SUCCESSFUL' ||
-      response.status?.toUpperCase() === 'SUCCESS' ||
-      response.status?.toUpperCase() === 'PAID'
-    );
-
-    if (isSuccess) {
-      const orderRef = paymentData?.reference || response.reference;
-      const customerEmail = response.email || (email && email.trim()) || (user?.email && !user.email.endsWith('@client.takapay.bj') ? user.email : null);
-      try {
-        await adminService.confirmPayment({
-          reference: orderRef,
-          status: 'successful',
-          transaction_id: response.transaction_id || response.reference || orderRef,
-          amount: response.amount || paymentAmount,
-          reseau: response.reseau || provider,
-          user_id: activeUser?.id || user?.id,
-          client_email: customerEmail,
-        });
-
-        // Persister l'adresse email réelle sur le profil utilisateur
-        if (customerEmail && user && (!user.email || user.email.endsWith('@client.takapay.bj'))) {
-          const updatedUser = { ...user, email: customerEmail };
-          onUserAuthSuccess(updatedUser, 'Paiement confirmé ! Votre reçu sera envoyé par email.');
-        }
-
-        // Afficher le popup de félicitations avant la redirection vers les cagnottes ou commandes
-        setSuccessModalData({
-          product: { ...product, p: effectivePrice },
-          selectedColor,
-          provider: response.reseau || provider,
-          initialAmount: paymentAmount,
-          totalPrice: orderType === 'cash' ? (cashPrice * effectiveQuantity) : effectivePrice,
-          reference: orderRef,
-          transactionId: response.transaction_id || orderRef,
-          date: new Date().toISOString(),
-          isCash: orderType === 'cash',
-          quantity: effectiveQuantity,
-        });
-      } catch (err) {
-        console.error('Erreur confirmation backend :', err);
-        setError(`Votre paiement a été validé par FeexPay mais la confirmation sur le serveur a échoué (${err.message || 'erreur réseau'}). Veuillez contacter le support avec la référence : ${orderRef}`);
-      }
-    } else {
-      setError(response?.message || 'Le paiement FeexPay a été annulé ou n’a pas abouti.');
-    }
+    // Après le passage par FeexPay : lancement du délai de 40 secondes avec spinner tournant
+    setPaymentData(null);
+    setPaymentFailed(false);
+    setIsProcessingPayment(true);
+    setPaymentCountdown(40);
   };
 
   return (
@@ -1238,42 +1197,53 @@ export default function ClientOrderFlow({
                 </button>
               </div>
             ) : paymentData ? (
-              <div style={{ marginTop: '16px' }}>
-                <div style={{ marginBottom: '14px', padding: '12px', background: 'rgba(22, 163, 74, 0.08)', borderRadius: '10px', fontSize: '13px', color: '#166534', fontWeight: 600 }}>
-                  Commande prête (Réf: {paymentData.reference}). Cliquez ci-dessous pour valider votre paiement.
+              <FeexPayProvider>
+                <div style={{ marginTop: '16px' }}>
+                  <div style={{ marginBottom: '14px', padding: '12px', background: 'rgba(22, 163, 74, 0.08)', borderRadius: '10px', fontSize: '13px', color: '#166534', fontWeight: 600 }}>
+                    Commande prête (Réf: {paymentData.reference}). Cliquez ci-dessous pour ouvrir le module sécurisé FeexPay.
+                  </div>
+
+                  <FeexPayButton
+                    id={paymentData.shop_id}
+                    token={paymentData.api_key}
+                    amount={paymentData.amount}
+                    description={`Takapay - ${product?.n || 'Commande'}`}
+                    mode={paymentData.mode || 'SANDBOX'}
+                    currency="XOF"
+                    customId={paymentData.reference}
+                    callback_info={{
+                      fullname: paymentName.trim() || `${activeUser?.prenom || user?.prenom || prenom || ''} ${activeUser?.nom || user?.nom || nom || ''}`.trim() || 'Client',
+                      first_name: (paymentName.trim().split(' ')[0]) || activeUser?.prenom || user?.prenom || prenom || 'Client',
+                      last_name: (paymentName.trim().split(' ').slice(1).join(' ')) || activeUser?.nom || user?.nom || nom || '',
+                      email: (email && email.trim()) || (activeUser?.email && !activeUser.email.endsWith('@client.takapay.bj') ? activeUser.email : '') || '',
+                      phone: paymentPhone.trim() || activeUser?.telephone || activeUser?.phone || user?.telephone || user?.phone || phone || '',
+                      phoneNumber: paymentPhone.trim() || activeUser?.telephone || activeUser?.phone || user?.telephone || user?.phone || phone || '',
+                      reseau: provider === 'Moov' ? 'MOOV' : 'MTN',
+                    }}
+                    callback={handleFeexpayCallback}
+                    buttonText={`Payer ${formatFCFA(paymentAmount)} avec FeexPay`}
+                    buttonClass="client-btn w100"
+                  />
+
+                  <button
+                    type="button"
+                    onClick={() => setPaymentData(null)}
+                    style={{
+                      marginTop: '12px',
+                      background: 'none',
+                      border: 'none',
+                      color: 'var(--mu)',
+                      fontSize: '13px',
+                      cursor: 'pointer',
+                      width: '100%',
+                      textAlign: 'center',
+                      textDecoration: 'underline',
+                    }}
+                  >
+                    ← Changer d'opérateur ou modifier
+                  </button>
                 </div>
-
-                <button
-                  type="button"
-                  className="client-btn w100"
-                  onClick={() => {
-                    setPaymentFailed(false);
-                    setIsProcessingPayment(true);
-                    setPaymentCountdown(40);
-                  }}
-                  style={{ padding: '16px', fontSize: '15px' }}
-                >
-                  🔒 Payer {formatFCFA(paymentAmount)} avec {provider === 'MTN' ? 'MTN MoMo' : 'Moov Money'}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setPaymentData(null)}
-                  style={{
-                    marginTop: '12px',
-                    background: 'none',
-                    border: 'none',
-                    color: 'var(--mu)',
-                    fontSize: '13px',
-                    cursor: 'pointer',
-                    width: '100%',
-                    textAlign: 'center',
-                    textDecoration: 'underline',
-                  }}
-                >
-                  ← Changer d'opérateur ou modifier
-                </button>
-              </div>
+              </FeexPayProvider>
             ) : (
               <form onSubmit={handlePaymentSubmit}>
                 <div className="provider-list">
@@ -1370,7 +1340,7 @@ export default function ClientOrderFlow({
                   disabled={submitting}
                   style={{ padding: '16px', fontSize: '15px' }}
                 >
-                  {submitting ? 'Préparation...' : `Payer ${formatFCFA(paymentAmount)} avec ${provider === 'MTN' ? 'MTN MoMo' : 'Moov Money'}`}
+                  {submitting ? 'Préparation FeexPay...' : `Valider avec ${provider === 'MTN' ? 'MTN MoMo' : 'Moov Money'}`}
                 </button>
               </form>
             )}

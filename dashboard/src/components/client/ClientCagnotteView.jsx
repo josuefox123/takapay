@@ -534,9 +534,6 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
 
     setDepositError('');
     setIsSubmitting(true);
-    setPaymentFailed(false);
-    setIsProcessingPayment(true);
-    setPaymentCountdown(40);
     try {
       const initRes = await adminService.initiatePayment({
         amount: amountNum,
@@ -548,7 +545,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
       });
       setPaymentData(initRes);
     } catch (err) {
-      console.warn('initiatePayment error:', err);
+      setDepositError(err.message || 'Impossible d’initialiser le paiement avec FeexPay.');
     } finally {
       setIsSubmitting(false);
     }
@@ -556,88 +553,11 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
 
   const handleFeexpayCallback = async (response) => {
     console.log('FeexPay callback reçu (cagnotte) :', response);
-    const isSuccess = response && (
-      response.status?.toUpperCase() === 'SUCCESSFUL' ||
-      response.status?.toUpperCase() === 'SUCCESS' ||
-      response.status?.toUpperCase() === 'PAID'
-    );
-
-    if (isSuccess) {
-      const orderRef = paymentData?.reference || response.reference;
-      const amountNum = parseInt(depositAmount, 10) || Number(response.amount) || 0;
-      const customerEmail = response.email || user?.email || null;
-
-      try {
-        await adminService.confirmPayment({
-          reference: orderRef,
-          status: 'successful',
-          transaction_id: response.transaction_id || response.reference || orderRef,
-          amount: amountNum,
-          reseau: response.reseau || depositProvider,
-          user_id: user?.id,
-          client_email: customerEmail,
-        });
-      } catch (err) {
-        console.warn('Erreur confirmation backend :', err);
-      }
-
-      // Mise à jour de la cagnotte en local
-      const target = targetCagnotte;
-      const targetTotal = Number(target.prixTotal) || 1;
-      const newPaid = (Number(target.montantVerse) || 0) + amountNum;
-      const newRemaining = Math.max(0, targetTotal - newPaid);
-      const newPercent = Math.min(100, Math.round((newPaid / targetTotal) * 100));
-
-      const now = new Date();
-      const dateFormatted =
-        now.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' }) +
-        ' ' +
-        now.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
-
-      const newTx = {
-        id: `tx-${Date.now()}`,
-        reference: orderRef,
-        titre: 'Versement',
-        methode: response.reseau || (depositProvider === 'MTN' ? 'MTN Mobile Money' : 'Moov Money'),
-        date: dateFormatted,
-        montant: amountNum,
-        statut: 'Réussi',
-        type: 'versement',
-        periode: 'aujourdhui',
-        telephone: depositPhone,
-        client: clientName,
-      };
-
-      const isCompleted = newPercent >= 100;
-      const updatedCagnotte = {
-        ...target,
-        montantVerse: newPaid,
-        resteAPayer: newRemaining,
-        pourcentage: newPercent,
-        statut: isCompleted ? 'completed' : 'active',
-        transactions: [newTx, ...(target.transactions || [])],
-      };
-
-      const updatedList = cagnottesList.map((c) =>
-        String(c.id) === String(target.id) ? updatedCagnotte : c
-      );
-      setCagnottesList(updatedList);
-      try {
-        localStorage.setItem('takapay_backend_cagnottes', JSON.stringify(updatedList));
-        window.dispatchEvent(new CustomEvent('takapay_cagnotte_updated'));
-      } catch {
-        // Ignorer
-      }
-
-      closeDeposit();
-      onShowToast?.(
-        isCompleted
-          ? `🎉 Bravo ! Votre cagnotte "${target.product?.n}" est désormais financée à 100% !`
-          : `Versement de ${formatFCFA(amountNum)} validé avec succès par FeexPay !`
-      );
-    } else {
-      setDepositError(response?.message || 'Le paiement FeexPay a été annulé ou n’a pas abouti.');
-    }
+    // Après le passage par FeexPay : lancement du délai de 40 secondes avec spinner tournant
+    setPaymentData(null);
+    setPaymentFailed(false);
+    setIsProcessingPayment(true);
+    setPaymentCountdown(40);
   };
 
   // ---------- Rendu ----------
@@ -2584,47 +2504,53 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                 </button>
               </div>
             ) : paymentData ? (
-              <div style={{ marginTop: '12px' }}>
-                <div style={{ marginBottom: '14px', padding: '12px', background: 'rgba(22, 163, 74, 0.08)', borderRadius: '10px', fontSize: '13px', color: '#166534', fontWeight: 600 }}>
-                  Versement prêt (Réf: {paymentData.reference}). Cliquez ci-dessous pour valider votre versement.
+              <FeexPayProvider>
+                <div style={{ marginTop: '12px' }}>
+                  <div style={{ marginBottom: '14px', padding: '12px', background: 'rgba(22, 163, 74, 0.08)', borderRadius: '10px', fontSize: '13px', color: '#166534', fontWeight: 600 }}>
+                    Versement prêt (Réf: {paymentData.reference}). Cliquez ci-dessous pour ouvrir le module sécurisé FeexPay.
+                  </div>
+
+                  <FeexPayButton
+                    id={paymentData.shop_id}
+                    token={paymentData.api_key}
+                    amount={paymentData.amount}
+                    description={`Takapay - Versement ${targetName}`}
+                    mode={paymentData.mode || 'SANDBOX'}
+                    currency="XOF"
+                    customId={paymentData.reference}
+                    callback_info={{
+                      fullname: `${user?.prenom || ''} ${user?.nom || ''}`.trim() || user?.nom || 'Client',
+                      first_name: user?.prenom || user?.nom || 'Client',
+                      last_name: user?.nom || '',
+                      email: (user?.email && !user.email.endsWith('@client.takapay.bj')) ? user.email : '',
+                      phone: user?.telephone || user?.phone || '',
+                      phoneNumber: user?.telephone || user?.phone || '',
+                      reseau: depositProvider === 'Moov' ? 'MOOV' : 'MTN',
+                    }}
+                    callback={handleFeexpayCallback}
+                    buttonText={`Payer ${formatFCFA(Number(paymentData.amount))} avec FeexPay`}
+                    buttonClass="client-btn w100"
+                  />
+
+                  <button
+                    type="button"
+                    onClick={() => setPaymentData(null)}
+                    style={{
+                      marginTop: '12px',
+                      background: 'none',
+                      border: 'none',
+                      color: '#706966',
+                      fontSize: '13px',
+                      cursor: 'pointer',
+                      width: '100%',
+                      textAlign: 'center',
+                      textDecoration: 'underline',
+                    }}
+                  >
+                    ← Modifier le montant ou l'opérateur
+                  </button>
                 </div>
-
-                <button
-                  type="button"
-                  style={{
-                    ...primaryButtonStyle,
-                    width: '100%',
-                    padding: '14px',
-                    borderRadius: '14px',
-                    fontSize: '15px',
-                  }}
-                  onClick={() => {
-                    setPaymentFailed(false);
-                    setIsProcessingPayment(true);
-                    setPaymentCountdown(40);
-                  }}
-                >
-                  🔒 Payer {formatFCFA(Number(paymentData.amount))} avec {depositProvider === 'MTN' ? 'MTN MoMo' : 'Moov Money'}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setPaymentData(null)}
-                  style={{
-                    marginTop: '12px',
-                    background: 'none',
-                    border: 'none',
-                    color: '#706966',
-                    fontSize: '13px',
-                    cursor: 'pointer',
-                    width: '100%',
-                    textAlign: 'center',
-                    textDecoration: 'underline',
-                  }}
-                >
-                  ← Modifier le montant ou l'opérateur
-                </button>
-              </div>
+              </FeexPayProvider>
             ) : (
               <form onSubmit={handleMakeDeposit}>
               <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 700, marginBottom: '6px' }}>
@@ -2744,8 +2670,8 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                 }}
               >
                 {isSubmitting
-                  ? 'Préparation...'
-                  : `Payer ${formatFCFA(Number(depositAmount) || 0)} avec ${depositProvider === 'MTN' ? 'MTN MoMo' : 'Moov Money'}`}
+                  ? 'Préparation FeexPay...'
+                  : `Confirmer le versement de ${formatFCFA(Number(depositAmount) || 0)}`}
               </button>
               </form>
             )}
