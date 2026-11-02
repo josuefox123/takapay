@@ -42,7 +42,7 @@ export default function ClientHeroCarousel({
   const slides = useMemo(() => {
     // 1. Si l'administrateur a configuré des bannières carrousel dans la base, on les utilise en priorité
     if (dbCarousels.length > 0) {
-      return dbCarousels.map((item) => {
+      return dbCarousels.slice(0, 4).map((item) => {
         const hasProd = item.produit;
 
         return {
