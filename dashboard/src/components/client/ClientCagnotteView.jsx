@@ -589,9 +589,9 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
 
     if (!isSuccess) {
       setPaymentData(null);
-      setPaymentFailed(false);
-      setIsProcessingPayment(true);
-      setPaymentCountdown(20);
+      setIsProcessingPayment(false);
+      setPaymentCountdown(0);
+      setPaymentFailed(true);
       return;
     }
 
@@ -2603,10 +2603,10 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                   ✕
                 </div>
                 <h3 style={{ fontSize: '18px', fontWeight: 800, color: '#991b1b', marginBottom: '8px' }}>
-                  Échec du versement
+                  Versement non finalisé
                 </h3>
                 <p style={{ fontSize: '13.5px', color: '#4b5563', lineHeight: 1.5, maxWidth: '380px', margin: '0 auto 20px' }}>
-                  Aucune confirmation n’a été reçue dans le délai. Vérifiez le statut du versement dans votre historique avant de réessayer afin d’éviter un double paiement.
+                  La transaction a été annulée ou n'a pas pu être validée. Aucun montant n'a été débité. Vous pouvez relancer le versement dès maintenant.
                 </p>
                 <button
                   type="button"
@@ -2620,11 +2620,11 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                   onClick={() => {
                     setPaymentFailed(false);
                     setIsProcessingPayment(false);
-                    setPaymentCountdown(20);
+                    setPaymentCountdown(0);
                     setPaymentData(null);
                   }}
                 >
-                  🔄 Réessayer le versement
+                  🔄 Relancer le versement
                 </button>
               </div>
             ) : (
