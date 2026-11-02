@@ -438,39 +438,6 @@ export default function ClientProductDetail({
 
   const whatsappUrl = `https://wa.me/2290198741111?text=${encodeURIComponent(whatsappMessage)}`;
 
-  // Gestion du partage WhatsApp : attache la photo réelle sur mobile via Web Share API
-  const handleShareWhatsApp = async (e) => {
-    if (typeof navigator !== 'undefined' && navigator.share && resolvedImg) {
-      if (e && e.preventDefault) e.preventDefault();
-      try {
-        const response = await fetch(resolvedImg);
-        if (response.ok) {
-          const blob = await response.blob();
-          const mimeType = blob.type || 'image/jpeg';
-          const ext = mimeType.includes('png') ? 'png' : mimeType.includes('webp') ? 'webp' : 'jpg';
-          const file = new File([blob], `takapay-${product?.id || 'article'}.${ext}`, { type: mimeType });
-
-          if (navigator.canShare && navigator.canShare({ files: [file] })) {
-            await navigator.share({
-              files: [file],
-              title: product?.n || 'Article TakaPay',
-              text: whatsappMessage,
-            });
-            return;
-          }
-        }
-      } catch (err) {
-        if (err.name !== 'AbortError') {
-          window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
-        }
-        return;
-      }
-    }
-    if (e && e.defaultPrevented) {
-      window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
-    }
-  };
-
   // 1er versement minimum pour la cagnotte (10% par défaut)
   const basePrice = Number(product.p) > 0 ? Number(product.p) : 1;
   const priceRatio = currentPrice / basePrice;
@@ -1203,7 +1170,6 @@ export default function ClientProductDetail({
 
             <a
               href={whatsappUrl}
-              onClick={handleShareWhatsApp}
               target="_blank"
               rel="noopener noreferrer"
               style={{
@@ -1283,7 +1249,6 @@ export default function ClientProductDetail({
             </p>
             <a
               href={whatsappUrl}
-              onClick={handleShareWhatsApp}
               target="_blank"
               rel="noopener noreferrer"
               style={{
