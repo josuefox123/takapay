@@ -93,6 +93,14 @@ class PaymentController extends Controller
         // Cas 2 : Nouvelle commande (Achat au comptant ou Démarrage cagnotte)
         elseif ($produitId) {
             $produit = Produit::with(['parametreProduit.promotion'])->findOrFail($produitId);
+
+            // Vérification stricte du stock disponible
+            if ($produit->stock <= 0) {
+                return response()->json([
+                    'message' => 'Désolé, cet article est actuellement en rupture de stock.',
+                ], 422);
+            }
+
             $param = $produit->parametreProduit;
 
             $promoPct = (float) ($param?->promotion?->pourcentage_promo ?? 0);
@@ -104,6 +112,11 @@ class PaymentController extends Controller
             $fullProductPrice = $prixTotal > 0 ? $prixTotal : $prixCash;
 
             if ($typePaiement === 'cash') {
+                if ($quantite > $produit->stock) {
+                    return response()->json([
+                        'message' => "Désolé, la quantité demandée dépasse le stock disponible ({$produit->stock}).",
+                    ], 422);
+                }
                 // Paiement comptant : le montant est STRICTEMENT imposé par le catalogue et multiplié par la quantité
                 $unitCash = $prixCash > 0 ? $prixCash : $fullProductPrice;
                 $amount = $unitCash * max(1, $quantite);
@@ -111,14 +124,14 @@ class PaymentController extends Controller
                 $reference = ($request->input('moyen_paiement') === 'livraison' ? 'CMD_COD_' : 'CMD_CASH_') . time() . '_' . rand(1000, 9999);
             } else {
                 $quantite = 1;
-                // Cagnotte : vérifier le 1er versement plancher en tenant compte des réductions promotionnelles
+                // Cagnotte : vérifier le 1er versement plancher en tenant compte des réductions promotionnelles (arrondi au plancher sans ajout de 1 F)
                 $rawMin = (float) ($param?->prix_minimum ?? 0);
                 $prixMinimum = $rawMin > 0
-                    ? ($promoPct > 0 ? round($rawMin * (1 - $promoPct / 100)) : $rawMin)
-                    : round($fullProductPrice * 0.1);
+                    ? ($promoPct > 0 ? floor($rawMin * (1 - $promoPct / 100)) : floor($rawMin))
+                    : floor($fullProductPrice * 0.1);
 
-                // Autoriser également si le montant correspond au moins à l'Offre 10% du prix remisé
-                $deposit10 = round($fullProductPrice * 0.10);
+                // Autoriser également si le montant correspond au moins à l'Offre 10% du prix remisé (arrondi au plancher)
+                $deposit10 = floor($fullProductPrice * 0.10);
                 if ($deposit10 > 0 && $requestedAmount >= $deposit10) {
                     $prixMinimum = min($prixMinimum, $requestedAmount);
                 }
@@ -132,7 +145,8 @@ class PaymentController extends Controller
                 $reference = 'CMD_CAG_' . time() . '_' . rand(1000, 9999);
             }
 
-            $isCod = $request->input('moyen_paiement') === 'livraison';
+            $isCod = in_array(strtolower((string) $request->input('moyen_paiement')), ['livraison', 'cod', 'especes'])
+                || in_array(strtolower((string) $request->input('mode_reglement')), ['livraison', 'cod', 'especes']);
 
             if ($user || $isCod) {
                 $createdData = DB::transaction(function () use ($user, $reference, $amount, $fullProductPrice, $produitId, $quantite, $isCod, $request, $typePaiement, $produit) {
@@ -176,6 +190,9 @@ class PaymentController extends Controller
                             'coordonnees_gps' => $request->input('coordonnees_gps') ?? $request->input('delivery_coords'),
                         ]);
 
+                        // Décrémentation du stock pour la commande enregistrée à la livraison
+                        $produit->decrement('stock', $quantite);
+
                         Transaction::create([
                             'commande_id' => $cmd?->id,
                             'cagnotte_id' => $cag->id,
@@ -211,7 +228,8 @@ class PaymentController extends Controller
             }
         }
 
-        $isCod = $request->input('moyen_paiement') === 'livraison';
+        $isCod = in_array(strtolower((string) $request->input('moyen_paiement')), ['livraison', 'cod', 'especes'])
+            || in_array(strtolower((string) $request->input('mode_reglement')), ['livraison', 'cod', 'especes']);
 
         return response()->json([
             'shop_id' => config('services.feexpay.shop_id'),
@@ -371,6 +389,14 @@ class PaymentController extends Controller
                     ]);
                     $cagnotteId = $cagnotte->id;
                     $resolvedCagnotte = $cagnotte;
+
+                    // Décrémenter le stock du produit lorsqu'une cagnotte ou commande est démarrée
+                    $produitToUpdate = Produit::find($cmdProduit->produit_id);
+                    if ($produitToUpdate) {
+                        $qtyToDecrement = max(1, (int) ($cmdProduit->quantite ?? 1));
+                        $produitToUpdate->decrement('stock', $qtyToDecrement);
+                    }
+
                     if ($cagnotte->statut === 'terminee') {
                         $cagnotte->sendCagnottePreteNotification($clientEmail);
                     }

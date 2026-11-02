@@ -58,7 +58,21 @@ class CagnotteController extends Controller
      */
     public function store(StoreCagnotteRequest $request): JsonResponse
     {
-        $cagnotte = Cagnotte::create($request->validated());
+        $data = $request->validated();
+        if (!empty($data['produit_id'])) {
+            $produit = \App\Models\Produit::find($data['produit_id']);
+            if ($produit && $produit->stock <= 0) {
+                return response()->json([
+                    'message' => 'Désolé, cet article est actuellement en rupture de stock.',
+                ], 422);
+            }
+        }
+
+        $cagnotte = Cagnotte::create($data);
+
+        if ($cagnotte->produit) {
+            $cagnotte->produit->decrement('stock', 1);
+        }
 
         return (new CagnotteResource($cagnotte))
             ->response()
@@ -174,6 +188,11 @@ class CagnotteController extends Controller
             'date_demande_annulation' => now(),
         ]);
 
+        // Incrémentation du stock disponible car la commande / cagnotte est annulée
+        if ($cagnotte->produit) {
+            $cagnotte->produit->increment('stock', 1);
+        }
+
         if ($totalVerse > 0) {
             $cagnotte->transactions()->create([
                 'reference_externe' => 'REM-' . strtoupper(uniqid()),
@@ -202,6 +221,50 @@ class CagnotteController extends Controller
                 'telephone' => $telephone,
                 'delai' => '24H',
             ],
+            'cagnotte' => new CagnotteResource($cagnotte->load(['utilisateur', 'produit', 'transactions'])),
+        ]);
+    }
+
+    /**
+     * Rétablir une cagnotte annulée ou en cours d'annulation.
+     */
+    public function reactiver(Request $request, Cagnotte $cagnotte): JsonResponse
+    {
+        if (!in_array($cagnotte->statut, ['annulation_demandee', 'annulee'])) {
+            return response()->json([
+                'message' => 'Cette cagnotte ne peut pas être rétablie car elle n\'est pas annulée.',
+            ], 422);
+        }
+
+        // Vérification de stock disponible avant réactivation
+        $produit = $cagnotte->produit;
+        if ($produit && $produit->stock <= 0) {
+            return response()->json([
+                'message' => 'Impossible de rétablir cette cagnotte : cet article est actuellement en rupture de stock.',
+            ], 422);
+        }
+
+        $isCash = $cagnotte->moyen_paiement === 'livraison' || str_starts_with((string) ($cagnotte->transactions()->latest()->first()?->reference_externe ?? ''), 'CMD_COD_');
+        $nouveauStatut = $isCash ? 'en_attente' : 'en_cours';
+
+        $cagnotte->update([
+            'statut' => $nouveauStatut,
+            'montant_remboursement' => null,
+            'frais_annulation' => null,
+            'telephone_remboursement' => null,
+            'date_demande_annulation' => null,
+        ]);
+
+        // Nettoyage de la transaction de remboursement en attente
+        $cagnotte->transactions()->where('type', 'remboursement')->where('statut', 'en_attente')->delete();
+
+        // Décrémenter à nouveau le stock puisque la cagnotte redevient active
+        if ($produit) {
+            $produit->decrement('stock', 1);
+        }
+
+        return response()->json([
+            'message' => 'Cagnotte rétablie avec succès.',
             'cagnotte' => new CagnotteResource($cagnotte->load(['utilisateur', 'produit', 'transactions'])),
         ]);
     }

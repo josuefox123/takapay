@@ -82,14 +82,24 @@ export default function AdminCagnottesView() {
 
   useEffect(() => {
     let isMounted = true;
-    adminService.getCagnottes().then((data) => {
-      if (isMounted) {
-        setCagnottes(data);
-        setLoading(false);
-      }
-    });
+    const fetchCagnottes = () => {
+      adminService.getCagnottes().then((data) => {
+        if (isMounted && Array.isArray(data)) {
+          setCagnottes(data);
+          setLoading(false);
+        }
+      });
+    };
+
+    fetchCagnottes();
+
+    window.addEventListener('takapay_cagnotte_updated', fetchCagnottes);
+    window.addEventListener('storage', fetchCagnottes);
+
     return () => {
       isMounted = false;
+      window.removeEventListener('takapay_cagnotte_updated', fetchCagnottes);
+      window.removeEventListener('storage', fetchCagnottes);
     };
   }, []);
 

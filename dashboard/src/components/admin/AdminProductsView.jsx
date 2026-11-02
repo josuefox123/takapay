@@ -112,35 +112,53 @@ export default function AdminProductsView({ onShowToast }) {
 
   useEffect(() => {
     let isMounted = true;
-    Promise.all([
-      adminService.getProduits(),
-      adminService.getSousCategories(),
-      adminService.getPromotions(),
-      adminService.getCategories(),
-    ]).then(([prds, subCats, promos, cats]) => {
-      if (isMounted) {
-        setProduits(prds);
-        setSousCategories(subCats);
-        setPromotions(promos);
-        setCategories(cats);
-        if (cats.length > 0) {
-          const firstCatId = cats[0].id;
-          setTargetCatId(firstCatId);
-          const matchingSubs = subCats.filter(
-            (s) => String(s.categorie_id) === String(firstCatId) || String(s.categorie?.id) === String(firstCatId)
-          );
-          setForm((f) => ({
-            ...f,
-            categorie_id: f.categorie_id || firstCatId,
-            sous_categorie_id: f.sous_categorie_id || (matchingSubs[0]?.id || ''),
-          }));
+    const fetchAll = () => {
+      Promise.all([
+        adminService.getProduits(),
+        adminService.getSousCategories(),
+        adminService.getPromotions(),
+        adminService.getCategories(),
+      ]).then(([prds, subCats, promos, cats]) => {
+        if (isMounted) {
+          setProduits(prds);
+          setSousCategories(subCats);
+          setPromotions(promos);
+          setCategories(cats);
+          if (cats.length > 0) {
+            const firstCatId = cats[0].id;
+            setTargetCatId(firstCatId);
+            const matchingSubs = subCats.filter(
+              (s) => String(s.categorie_id) === String(firstCatId) || String(s.categorie?.id) === String(firstCatId)
+            );
+            setForm((f) => ({
+              ...f,
+              categorie_id: f.categorie_id || firstCatId,
+              sous_categorie_id: f.sous_categorie_id || (matchingSubs[0]?.id || ''),
+            }));
+          }
+          setLoading(false);
         }
-        setLoading(false);
-      }
-    });
+      });
+    };
+
+    fetchAll();
+
+    const handleSync = async () => {
+      try {
+        const prds = await adminService.getProduits();
+        if (isMounted && Array.isArray(prds)) setProduits(prds);
+      } catch { /* ignore */ }
+    };
+
+    window.addEventListener('takapay_products_updated', handleSync);
+    window.addEventListener('takapay_cagnotte_updated', handleSync);
+    window.addEventListener('storage', handleSync);
 
     return () => {
       isMounted = false;
+      window.removeEventListener('takapay_products_updated', handleSync);
+      window.removeEventListener('takapay_cagnotte_updated', handleSync);
+      window.removeEventListener('storage', handleSync);
     };
   }, []);
 
@@ -831,7 +849,7 @@ export default function AdminProductsView({ onShowToast }) {
   });
 
   // Calcul auto des suggestions financières
-  const autoMinStart = form.prix_total ? Math.round(Number(form.prix_total) * 0.1) : 0;
+  const autoMinStart = form.prix_total ? Math.floor(Number(form.prix_total) * 0.1) : 0;
   const dureeDispo = Math.max(1, Number(form.duree || 6));
   const autoEch =
     form.prix_total

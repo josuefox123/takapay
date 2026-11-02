@@ -148,7 +148,7 @@ export const mapAdminProductToClient = (p) => {
     im: primaryImg,
     images: imageList,
     video: p.video ? (typeof p.video === 'string' ? resolveImageUrl(p.video) : (p.video.chemin ? resolveImageUrl(p.video.chemin) : p.video)) : null,
-    stockCount: p.stock !== undefined ? Number(p.stock) : 15,
+    stockCount: (p.stock !== undefined && p.stock !== null) ? Number(p.stock) : (p.stockCount !== undefined ? Number(p.stockCount) : 0),
     availabilityDuration: p.duree ? `${p.duree} mois de disponibilité` : 'Disponible',
     duree: Number(p.duree || 6),
     d: p.description || p.d || 'Article de qualité certifiée disponible sur TakaPay.',
@@ -213,7 +213,7 @@ export const mapAdminProductToClient = (p) => {
     seuilLivraison: seuilLivraisonVal,
     payment: {
       mode: param.mode_paiement === 'libre' ? 'libre' : 'echelon',
-      minimumStart: Number(param.prix_minimum || Math.round(price * 0.1)),
+      minimumStart: Number(param.prix_minimum ? Math.floor(Number(param.prix_minimum)) : Math.floor(price * 0.1)),
       installmentAmount: param.mode_paiement === 'libre' ? null : Number(param.prix_echelonne || Math.round(price / Math.max(1, p.duree || 6))),
       frequency: param.mode_paiement === 'libre' ? null : (param.frequence || 'mensuelle'),
       estimatedEnd: param.mode_paiement === 'libre' ? null : `${p.duree || 6} mois`,

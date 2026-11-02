@@ -70,6 +70,7 @@ export default function ClientProductDetail({
   }, [user]);
 
   const handleChoosePayNow = () => {
+    if (isOutOfStock) return;
     setShowPaymentModal(false);
     setPaymentModalStep('choice');
     onStartOrder(product, chosenColor, {
@@ -79,6 +80,7 @@ export default function ClientProductDetail({
   };
 
   const handleChoosePayOnDelivery = () => {
+    if (isOutOfStock) return;
     setPaymentModalStep('delivery_form');
   };
 
@@ -172,6 +174,9 @@ export default function ClientProductDetail({
       if (initRes?.reference) orderRef = initRes.reference;
     } catch (err) {
       console.warn('Backend initiation COD fallback to local:', err);
+      setDeliveryError(err?.message || "Impossible d'enregistrer la commande. Cet article n'est peut-être plus disponible.");
+      setDeliverySubmitting(false);
+      return;
     }
 
     const orderData = {
@@ -397,8 +402,8 @@ export default function ClientProductDetail({
   const basePrice = Number(product.p) > 0 ? Number(product.p) : 1;
   const priceRatio = currentPrice / basePrice;
   const minStart = hasCustomPrice
-    ? Math.round(currentPrice * 0.1)
-    : (pay.minimumStart ? Math.round(pay.minimumStart * priceRatio) : Math.round(currentPrice * 0.1));
+    ? Math.floor(currentPrice * 0.1)
+    : (pay.minimumStart ? Math.floor(pay.minimumStart * priceRatio) : Math.floor(currentPrice * 0.1));
 
   // Catégorie et sous-catégorie sécurisées
   const categoryName =
@@ -414,6 +419,8 @@ export default function ClientProductDetail({
     product.sous_categorie_nom ||
     (typeof product.sous_categorie === 'string' ? product.sous_categorie : product.sous_categorie?.nom) ||
     'Article';
+
+  const isOutOfStock = product?.stockCount !== null && product?.stockCount !== undefined && Number(product.stockCount) <= 0;
 
   return (
     <div className="page-shell">
@@ -591,9 +598,29 @@ export default function ClientProductDetail({
             <span style={{ fontSize: '12px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.8px', color: 'var(--r)' }}>
               {product.brand || categoryName} · {subcategoryName}
             </span>
-            <span className="stock-tag" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '11.5px', padding: '4px 12px' }}>
-              <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#16a34a', display: 'inline-block' }} />
-              {product.stockCount !== null ? `${product.stockCount} en stock` : 'Disponible'}
+            <span
+              className="stock-tag"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                fontSize: '11.5px',
+                padding: '4px 12px',
+                background: isOutOfStock ? '#fee2e2' : undefined,
+                color: isOutOfStock ? '#dc2626' : undefined,
+                borderColor: isOutOfStock ? '#fca5a5' : undefined,
+              }}
+            >
+              <span
+                style={{
+                  width: '7px',
+                  height: '7px',
+                  borderRadius: '50%',
+                  background: isOutOfStock ? '#dc2626' : '#16a34a',
+                  display: 'inline-block',
+                }}
+              />
+              {isOutOfStock ? 'Rupture de stock' : (product.stockCount !== null ? `${product.stockCount} en stock` : 'Disponible')}
             </span>
           </div>
 
@@ -1093,22 +1120,25 @@ export default function ClientProductDetail({
             <button
               type="button"
               className="client-btn"
+              disabled={isOutOfStock}
               style={{
                 width: '100%',
                 fontSize: '15px',
                 padding: '12px 16px',
                 borderRadius: '12px',
                 fontWeight: 800,
-                background: 'var(--r)',
-                boxShadow: '0 4px 14px rgba(220, 38, 38, 0.3)',
+                background: isOutOfStock ? '#9ca3af' : 'var(--r)',
+                boxShadow: isOutOfStock ? 'none' : '0 4px 14px rgba(220, 38, 38, 0.3)',
                 display: 'inline-flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 gap: '8px',
-                cursor: 'pointer',
+                cursor: isOutOfStock ? 'not-allowed' : 'pointer',
                 height: '46px',
+                opacity: isOutOfStock ? 0.75 : 1,
               }}
               onClick={() => {
+                if (isOutOfStock) return;
                 if (orderMode === 'cash') {
                   setShowPaymentModal(true);
                   setPaymentModalStep('choice');
@@ -1122,8 +1152,25 @@ export default function ClientProductDetail({
                 }
               }}
             >
-              <span>Passer ma commande</span>
+              <span>{isOutOfStock ? 'Rupture de stock' : 'Passer ma commande'}</span>
             </button>
+            {isOutOfStock && (
+              <div
+                style={{
+                  marginTop: '10px',
+                  padding: '8px 12px',
+                  borderRadius: '8px',
+                  background: '#fee2e2',
+                  color: '#dc2626',
+                  fontSize: '12.5px',
+                  fontWeight: 600,
+                  textAlign: 'center',
+                  border: '1px solid #fca5a5',
+                }}
+              >
+                Cet article est actuellement en rupture de stock.
+              </div>
+            )}
           </div>
 
           <p className="auth-footnote" style={{ marginTop: '12px', textAlign: 'center', fontSize: '11.5px', color: 'var(--mu)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
@@ -1313,7 +1360,9 @@ export default function ClientProductDetail({
               </div>
               <div style={{ padding: '12px 14px', background: 'var(--sf)', borderRadius: '12px', border: '1px solid var(--bd)' }}>
                 <small style={{ color: 'var(--mu)', display: 'block', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase' }}>Disponibilité</small>
-                <b style={{ color: 'var(--tx)', fontSize: '13.5px' }}>{product.stockCount !== null ? `${product.stockCount} unités disponibles` : 'Disponible immédiatement'}</b>
+                <b style={{ color: isOutOfStock ? '#dc2626' : 'var(--tx)', fontSize: '13.5px' }}>
+                  {isOutOfStock ? 'Actuellement en rupture de stock' : (product.stockCount !== null ? `${product.stockCount} unités disponibles` : 'Disponible immédiatement')}
+                </b>
               </div>
             </div>
           </div>

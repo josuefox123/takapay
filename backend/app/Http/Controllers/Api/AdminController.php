@@ -272,7 +272,7 @@ class AdminController extends Controller
             $ref = ! empty($validated['reference']) ? $validated['reference'] : ('PRD-'.str_pad($produit->id, 4, '0', STR_PAD_LEFT));
             $prixTotal = (float) $validated['prix_total'];
             $dureeMois = max(1, (int) $produit->duree);
-            $prixMin = isset($validated['prix_minimum']) && $validated['prix_minimum'] > 0 ? (float) $validated['prix_minimum'] : round($prixTotal * 0.1);
+            $prixMin = isset($validated['prix_minimum']) && $validated['prix_minimum'] > 0 ? (float) $validated['prix_minimum'] : floor($prixTotal * 0.1);
             $prixEch = isset($validated['prix_echelonne']) && $validated['prix_echelonne'] > 0 ? (float) $validated['prix_echelonne'] : round(($prixTotal - $prixMin) / $dureeMois);
             $prixCash = isset($validated['prix_cash']) && $validated['prix_cash'] > 0 ? (float) $validated['prix_cash'] : $prixTotal;
             $seuil = isset($validated['seuil_livraison']) && $validated['seuil_livraison'] > 0 ? (float) $validated['seuil_livraison'] : round($prixTotal * 0.4);
