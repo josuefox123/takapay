@@ -14,7 +14,7 @@ export default function ClientProductDetail({
   onSelectCategory,
   onSelectSubcategory,
 }) {
-  const product = propProduct || PRODUCTS.find((p) => p.id === Number(productId)) || PRODUCTS[0];
+  const product = propProduct || PRODUCTS.find((p) => String(p.id) === String(productId)) || PRODUCTS[0] || {};
   const [selectedGallery, setSelectedGallery] = useState(() => {
     const hasImgs = ((Array.isArray(product?.images) && product.images.length > 0) ? product.images : (product?.im ? [product.im] : [])).filter(Boolean).length > 0;
     return (!hasImgs && product?.video) ? 'video' : 0;
@@ -252,36 +252,36 @@ export default function ClientProductDetail({
 
   // Suggestions d'articles après la zone inférieure (même catégorie ou catalogue complémentaire)
   const categoryArticles = PRODUCTS.filter(
-    (p) => p.id !== product.id && (p.subcategory === product.subcategory || p.c === product.c)
+    (p) => p && product?.id && p.id !== product.id && (p.subcategory === product.subcategory || p.c === product.c)
   );
   const otherArticles = PRODUCTS.filter(
-    (p) => p.id !== product.id && p.subcategory !== product.subcategory && p.c !== product.c
+    (p) => p && product?.id && p.id !== product.id && p.subcategory !== product.subcategory && p.c !== product.c
   );
   const proposalArticles = [...categoryArticles, ...otherArticles].slice(0, 6);
 
-  const colors = product.colors || [];
+  const colors = product?.colors || [];
   const chosenColor = colors[selectedColor] || colors[0];
 
   // Paramètres & promotion éventuelle sur le produit
-  const param = product.parametre_produit || {};
-  const promo = param.promotion || product.promotion;
+  const param = product?.parametre_produit || {};
+  const promo = param.promotion || product?.promotion;
   const promoPercent = promo ? Number(promo.pourcentage_promo || 0) : 0;
 
-  const rawProductPrice = Number(param.prix_total || product.prix_total || product.prix || product.p || 0);
-  const rawCashPrice = Number(param.prix_cash || product.prix_cash || rawProductPrice);
+  const rawProductPrice = Number(param.prix_total || product?.prix_total || product?.prix || product?.p || 0);
+  const rawCashPrice = Number(param.prix_cash || product?.prix_cash || rawProductPrice);
 
   // Prix de base garanti avec application de la promotion si non encore appliquée
-  const resolvedBasePrice = (promoPercent > 0 && !product.o && rawProductPrice > 0)
+  const resolvedBasePrice = (promoPercent > 0 && !product?.o && rawProductPrice > 0)
     ? Math.round(rawProductPrice * (1 - promoPercent / 100))
-    : Number(product.p || rawProductPrice || 0);
+    : Number(product?.p || rawProductPrice || 0);
 
-  const resolvedCashPrice = (promoPercent > 0 && !product.o && rawCashPrice > 0)
+  const resolvedCashPrice = (promoPercent > 0 && !product?.o && rawCashPrice > 0)
     ? Math.round(rawCashPrice * (1 - promoPercent / 100))
-    : Number(product.prix_cash || product.payment?.prixCash || resolvedBasePrice);
+    : Number(product?.prix_cash || product?.payment?.prixCash || resolvedBasePrice);
 
-  const resolvedOldPrice = (promoPercent > 0 && !product.o && rawProductPrice > 0)
+  const resolvedOldPrice = (promoPercent > 0 && !product?.o && rawProductPrice > 0)
     ? rawProductPrice
-    : product.o;
+    : product?.o;
 
   // Calcul du prix dynamique selon la couleur sélectionnée
   const hasCustomPrice = Boolean(chosenColor?.hasCustomPrice && chosenColor?.price);
@@ -388,13 +388,26 @@ export default function ClientProductDetail({
     }
   };
 
+  // Résolution d'une URL de base accessible sur le réseau (LAN en dev, domaine en prod)
+  const getPublicBaseUrl = () => {
+    let origin = window.location.origin;
+    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+      origin = origin.replace(/localhost|127\.0\.0\.1/, '192.168.100.210');
+    }
+    return origin;
+  };
+
+  const productPublicUrl = `${getPublicBaseUrl()}/app/produits/${product?.id || 1}`;
+
   // Image URL absolue pour affichage et prévisualisation WhatsApp
   const selectedImgSrc = currentImage || (images && images[0]) || product?.im || '';
   const resolvedImg = selectedImgSrc ? resolveImageUrl(selectedImgSrc) : '';
   const absoluteImageUrl = resolvedImg
     ? (resolvedImg.startsWith('http://') || resolvedImg.startsWith('https://')
-        ? resolvedImg
-        : `${window.location.origin}${resolvedImg.startsWith('/') ? '' : '/'}${resolvedImg}`)
+        ? (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+            ? resolvedImg.replace(/localhost|127\.0\.0\.1/, '192.168.100.210')
+            : resolvedImg)
+        : `${getPublicBaseUrl()}${resolvedImg.startsWith('/') ? '' : '/'}${resolvedImg}`)
     : '';
 
   const clientNom = deliveryCustomerName || (user?.prenom || user?.nom ? `${user.prenom || ''} ${user.nom || ''}`.trim() : (user?.n || ''));
@@ -407,24 +420,56 @@ export default function ClientProductDetail({
   const colorText = chosenColor?.name || (typeof chosenColor === 'string' ? chosenColor : '');
 
   // Message personnalisé pour WhatsApp envoyé directement au 0198741111 (+2290198741111)
-  // L'URL de la photo en tête de message permet à WhatsApp d'afficher la photo en haut (cliquable) avec le texte en dessous
   const whatsappMessage = [
-    absoluteImageUrl || window.location.href,
-    ``,
     `Bonjour Takapay ! 👋`,
-    `Je suis très intéressé(e) par l'article *"${product.n || product.nom || 'Article'}"* et je souhaite avoir plus d'informations.`,
+    `Je suis très intéressé(e) par l'article *"${product?.n || product?.nom || 'Article'}"* et je souhaite avoir plus d'informations.`,
     ``,
     `📋 *DÉTAILS DE MON CHOIX :*`,
     `• *Formule :* ${modeText}`,
     colorText ? `• *Couleur / Variante :* ${colorText}` : null,
     (clientNom || clientTel) ? `• *Client :* ${[clientNom, clientTel].filter(Boolean).join(' - ')}` : null,
     ``,
-    `🔗 *Lien de la fiche produit :* ${window.location.href}`,
+    `🔗 *Lien direct de l'article :*`,
+    productPublicUrl,
+    absoluteImageUrl ? `\n🖼️ *Photo de l'article :*\n${absoluteImageUrl}` : null,
     ``,
     `Pouvez-vous me renseigner sur sa disponibilité, les délais et les modalités de livraison ? Merci !`,
   ].filter((line) => line !== null).join('\n');
 
   const whatsappUrl = `https://wa.me/2290198741111?text=${encodeURIComponent(whatsappMessage)}`;
+
+  // Gestion du partage WhatsApp : attache la photo réelle sur mobile via Web Share API
+  const handleShareWhatsApp = async (e) => {
+    if (typeof navigator !== 'undefined' && navigator.share && resolvedImg) {
+      if (e && e.preventDefault) e.preventDefault();
+      try {
+        const response = await fetch(resolvedImg);
+        if (response.ok) {
+          const blob = await response.blob();
+          const mimeType = blob.type || 'image/jpeg';
+          const ext = mimeType.includes('png') ? 'png' : mimeType.includes('webp') ? 'webp' : 'jpg';
+          const file = new File([blob], `takapay-${product?.id || 'article'}.${ext}`, { type: mimeType });
+
+          if (navigator.canShare && navigator.canShare({ files: [file] })) {
+            await navigator.share({
+              files: [file],
+              title: product?.n || 'Article TakaPay',
+              text: whatsappMessage,
+            });
+            return;
+          }
+        }
+      } catch (err) {
+        if (err.name !== 'AbortError') {
+          window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
+        }
+        return;
+      }
+    }
+    if (e && e.defaultPrevented) {
+      window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
+    }
+  };
 
   // 1er versement minimum pour la cagnotte (10% par défaut)
   const basePrice = Number(product.p) > 0 ? Number(product.p) : 1;
@@ -1158,6 +1203,7 @@ export default function ClientProductDetail({
 
             <a
               href={whatsappUrl}
+              onClick={handleShareWhatsApp}
               target="_blank"
               rel="noopener noreferrer"
               style={{
@@ -1237,6 +1283,7 @@ export default function ClientProductDetail({
             </p>
             <a
               href={whatsappUrl}
+              onClick={handleShareWhatsApp}
               target="_blank"
               rel="noopener noreferrer"
               style={{
@@ -1279,7 +1326,7 @@ export default function ClientProductDetail({
                 <span>Copier le lien</span>
               </button>
               <a
-                href={`https://api.whatsapp.com/send?text=${encodeURIComponent(`Regarde cet article sur Takapay : ${product.n} - ${window.location.href}`)}`}
+                href={`https://api.whatsapp.com/send?text=${encodeURIComponent(`Regarde cet article sur Takapay : ${product?.n || ''} - ${productPublicUrl}`)}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="aside-share-btn"
