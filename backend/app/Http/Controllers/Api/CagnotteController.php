@@ -12,6 +12,7 @@ use App\Models\Notification;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -108,6 +109,50 @@ class CagnotteController extends Controller
 
         return response()->json([
             'message' => 'Cagnotte supprimée avec succès.'
+        ]);
+    }
+
+    /**
+     * Supprimer une cagnotte non payée appartenant au client connecté.
+     */
+    public function destroyUnpaid(Request $request, Cagnotte $cagnotte): JsonResponse
+    {
+        $user = $request->user('sanctum');
+        abort_unless($user && ($user->isAdmin() || $cagnotte->utilisateur_id === $user->id), 404);
+
+        $hasSuccessfulPayment = $cagnotte->transactions()
+            ->whereIn('statut', ['succes', 'reussi'])
+            ->exists();
+        $isCashOnDelivery = strtolower((string) $cagnotte->moyen_paiement) === 'livraison'
+            || $cagnotte->transactions()->where('type', 'paiement_livraison')->exists();
+
+        if (
+            (float) $cagnotte->montant_verse > 0
+            || $hasSuccessfulPayment
+            || $isCashOnDelivery
+            || in_array($cagnotte->statut, ['terminee', 'annulee', 'annulation_demandee'], true)
+        ) {
+            return response()->json([
+                'message' => 'Seule une cagnotte sans paiement confirmé peut être supprimée.',
+            ], 422);
+        }
+
+        DB::transaction(function () use ($cagnotte) {
+            $commandeIds = $cagnotte->transactions()
+                ->whereNotNull('commande_id')
+                ->pluck('commande_id');
+
+            if ($commandeIds->isNotEmpty()) {
+                Commande::whereIn('id', $commandeIds)
+                    ->where('statut', 'en_attente')
+                    ->update(['statut' => 'annulee']);
+            }
+
+            $cagnotte->delete();
+        });
+
+        return response()->json([
+            'message' => 'Cagnotte non payée supprimée.',
         ]);
     }
 
@@ -232,7 +277,7 @@ class CagnotteController extends Controller
     {
         if (!in_array($cagnotte->statut, ['annulation_demandee', 'annulee'])) {
             return response()->json([
-                'message' => 'Cette cagnotte ne peut pas être rétablie car elle n\'est pas annulée.',
+                'message' => 'Seule une cagnotte annulée ou en attente de remboursement peut être rétablie.',
             ], 422);
         }
 
@@ -244,11 +289,12 @@ class CagnotteController extends Controller
             ], 422);
         }
 
+        $inputStatut = $request->input('statut');
         $isCash = $cagnotte->moyen_paiement === 'livraison' || str_starts_with((string) ($cagnotte->transactions()->latest()->first()?->reference_externe ?? ''), 'CMD_COD_');
-        $nouveauStatut = $isCash ? 'en_attente' : 'en_cours';
+        $newStatut = ($inputStatut === 'en_attente' || $isCash) ? 'en_attente' : 'en_cours';
 
         $cagnotte->update([
-            'statut' => $nouveauStatut,
+            'statut' => $newStatut,
             'montant_remboursement' => null,
             'frais_annulation' => null,
             'telephone_remboursement' => null,
@@ -264,8 +310,9 @@ class CagnotteController extends Controller
         }
 
         return response()->json([
-            'message' => 'Cagnotte rétablie avec succès.',
-            'cagnotte' => new CagnotteResource($cagnotte->load(['utilisateur', 'produit', 'transactions'])),
+            'success' => true,
+            'message' => 'Votre cagnotte a été rétablie avec succès.',
+            'cagnotte' => new CagnotteResource($cagnotte->fresh()->load(['utilisateur', 'produit', 'transactions'])),
         ]);
     }
 

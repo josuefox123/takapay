@@ -24,6 +24,8 @@ class ProduitResource extends JsonResource
             'description' => $this->description,
             'stock' => $this->stock,
             'duree' => $this->duree,
+            'garantie_duree' => $this->garantie_duree,
+            'garantie_unite' => $this->garantie_unite,
             'couleur' => $this->couleur,
             'video' => $this->video,
             'has_active_cagnotte' => (bool) (($this->cagnottes_actives_count ?? $this->cagnottes()->whereIn('statut', ['en_cours', 'active'])->count()) > 0),

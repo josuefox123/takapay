@@ -11,7 +11,7 @@ import ClientProfileView from '../../components/client/ClientProfileView';
 import ClientNotificationsView from '../../components/client/ClientNotificationsView';
 import ClientWelcomeModal from '../../components/client/ClientWelcomeModal';
 import ClientCookieBanner from '../../components/client/ClientCookieBanner';
-import { PRODUCTS, DEFAULT_CLIENT_USER, mapAdminProductToClient, getMergedProducts, refreshProductsFromStore, createCagnotteFromOrder, getStoredCagnottes, mapBackendCagnotteToClient, rebuildCategories } from '../../data/clientStore';
+import { PRODUCTS, DEFAULT_CLIENT_USER, mapAdminProductToClient, getMergedProducts, getCachedLiveProducts, refreshProductsFromStore, createCagnotteFromOrder, getStoredCagnottes, mapBackendCagnotteToClient } from '../../data/clientStore';
 import { adminService } from '../../services/adminService';
 import FloatingActionButtons from '../../components/public/FloatingActionButtons';
 import './client.css';
@@ -27,7 +27,10 @@ export default function AppHome({ initialTab = 'home' }) {
   const [previousView, setPreviousView] = useState('home');
 
   // Produits synchronisés en temps réel avec la base de données et le tableau de bord admin
-  const [productsList, setProductsList] = useState(getMergedProducts);
+  const [productsList, setProductsList] = useState(() => {
+    const cached = getCachedLiveProducts();
+    return cached.length > 0 ? cached : getMergedProducts();
+  });
 
   if (initialTab !== prevInitialTab) {
     setPrevInitialTab(initialTab);
@@ -267,17 +270,7 @@ export default function AppHome({ initialTab = 'home' }) {
     };
   }, [user]);
 
-  // Chargement initial des catégories depuis l'API
-  useEffect(() => {
-    adminService.getCategories().then((cats) => {
-      if (Array.isArray(cats) && cats.length > 0) {
-        rebuildCategories(cats);
-        window.dispatchEvent(new CustomEvent('takapay_categories_updated', { detail: cats }));
-      }
-    }).catch(() => {});
-  }, []);
-
-  // Synchronisation des cagnottes réelles de l'utilisateur connecté depuis le backend
+  // Synchronisation en direct avec la base de données et le tableau de bord admin
   useEffect(() => {
     let isMounted = true;
     if (!user?.id) {
@@ -345,12 +338,19 @@ export default function AppHome({ initialTab = 'home' }) {
     window.addEventListener('takapay_products_updated', handleProductsUpdated);
     window.addEventListener('takapay_cagnotte_updated', handleProductsUpdated);
     window.addEventListener('storage', handleProductsUpdated);
+    window.addEventListener('focus', handleProductsUpdated);
+
+    const refreshInterval = window.setInterval(() => {
+      if (document.visibilityState === 'visible') loadLiveProducts();
+    }, 60000);
 
     return () => {
       isMounted = false;
+      window.clearInterval(refreshInterval);
       window.removeEventListener('takapay_products_updated', handleProductsUpdated);
       window.removeEventListener('takapay_cagnotte_updated', handleProductsUpdated);
       window.removeEventListener('storage', handleProductsUpdated);
+      window.removeEventListener('focus', handleProductsUpdated);
     };
   }, []);
 
@@ -636,43 +636,58 @@ export default function AppHome({ initialTab = 'home' }) {
             />
           )}
 
-          {view === 'product' && (
-            <ClientProductDetail
-              productId={activeProductId}
-              product={productsList.find((p) => p.id === Number(activeProductId)) || PRODUCTS.find((p) => p.id === Number(activeProductId))}
-              user={user}
-              onShowToast={showToast}
-              onBack={() => {
-                if (window.history.state && window.history.state.idx > 0) {
-                  navigate(-1);
-                } else if (previousView === 'home') {
-                  setView('home');
-                  navigate('/app');
-                } else if (previousView === 'subcat' && isFavoritesOnly) {
-                  setView('subcat');
-                  navigate('/app/favoris');
-                } else if (previousView === 'subcat' && selectedSubCat) {
-                  setView('subcat');
-                  if (selectedCat && selectedCat !== 'Tous') {
-                    navigate(`/app/categories/${encodeURIComponent(selectedCat)}?sub=${encodeURIComponent(selectedSubCat)}`);
+          {view === 'product' && (() => {
+            const currentItem =
+              productsList.find((p) => String(p.id) === String(activeProductId)) ||
+              PRODUCTS.find((p) => String(p.id) === String(activeProductId));
+
+            if (!currentItem && productsList.length === 0) {
+              return (
+                <div style={{ minHeight: '60vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '2rem', textAlign: 'center' }}>
+                  <div style={{ width: '40px', height: '40px', border: '3px solid #e5e7eb', borderTopColor: '#c62828', borderRadius: '50%', animation: 'spin 1s linear infinite', marginBottom: '14px' }} />
+                  <p style={{ color: '#4b5563', fontWeight: 600, fontSize: '1rem' }}>Chargement de l'article Takapay...</p>
+                </div>
+              );
+            }
+
+            return (
+              <ClientProductDetail
+                productId={activeProductId}
+                product={currentItem || productsList[0] || PRODUCTS[0]}
+                user={user}
+                onShowToast={showToast}
+                onBack={() => {
+                  if (window.history.state && window.history.state.idx > 0) {
+                    navigate(-1);
+                  } else if (previousView === 'home') {
+                    setView('home');
+                    navigate('/app');
+                  } else if (previousView === 'subcat' && isFavoritesOnly) {
+                    setView('subcat');
+                    navigate('/app/favoris');
+                  } else if (previousView === 'subcat' && selectedSubCat) {
+                    setView('subcat');
+                    if (selectedCat && selectedCat !== 'Tous') {
+                      navigate(`/app/categories/${encodeURIComponent(selectedCat)}?sub=${encodeURIComponent(selectedSubCat)}`);
+                    } else {
+                      navigate(`/app/produits?sub=${encodeURIComponent(selectedSubCat)}`);
+                    }
+                  } else if (selectedCat && selectedCat !== 'Tous') {
+                    setView('shop');
+                    navigate(`/app/categories/${encodeURIComponent(selectedCat)}`);
                   } else {
-                    navigate(`/app/produits?sub=${encodeURIComponent(selectedSubCat)}`);
+                    setView('shop');
+                    navigate('/app/produits');
                   }
-                } else if (selectedCat && selectedCat !== 'Tous') {
-                  setView('shop');
-                  navigate(`/app/categories/${encodeURIComponent(selectedCat)}`);
-                } else {
-                  setView('shop');
-                  navigate('/app/produits');
-                }
-              }}
-              onStartOrder={handleStartOrder}
-              onSelectProduct={handleOpenProduct}
-              onGoHome={() => handleSelectTab('home')}
-              onSelectCategory={handleSelectCategory}
-              onSelectSubcategory={handleSelectSubcategory}
-            />
-          )}
+                }}
+                onStartOrder={handleStartOrder}
+                onSelectProduct={handleOpenProduct}
+                onGoHome={() => handleSelectTab('home')}
+                onSelectCategory={handleSelectCategory}
+                onSelectSubcategory={handleSelectSubcategory}
+              />
+            );
+          })()}
 
           {view === 'order' && (
             <ClientOrderFlow

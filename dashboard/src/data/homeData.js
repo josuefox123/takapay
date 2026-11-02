@@ -14,7 +14,7 @@ export const heroData = {
   titleLine1: "Épargnez à votre rythme.",
   titleLine2: "Achetez en confiance.",
   description:
-    "Takapay vous permet de régler vos achats par versements, avec des paiements sécurisés et un suivi clair de chaque contribution.",
+    "Choisissez la cotisation libre ou le paiement comptant. Vos paiements sont sécurisés et chaque contribution est suivie.",
   ctaButton: {
     label: "Comment ça marche ?",
     href: "#comment-ca-marche",
@@ -40,17 +40,17 @@ export const stepsData = {
     {
       number: "02",
       icon: "coins",
-      title: "Faites grandir la cagnotte",
+      title: "Choisissez comment payer",
       description:
-        "Versez quand vous le souhaitez ou suivez un rythme planifié. Chaque article a sa propre cagnotte.",
+        "Cotisez librement au montant et au moment qui vous conviennent, ou payez le prix comptant en une fois. Chaque article a sa propre cagnotte.",
       accent: true,
     },
     {
       number: "03",
       icon: "spark",
-      title: "Récupérez votre article",
+      title: "Recevez votre article après paiement complet",
       description:
-        "Dès que le seuil de livraison est atteint, choisissez de récupérer votre article ou de continuer jusqu’au solde.",
+        "Pour une cotisation libre, votre article est prêt lorsque le prix total est atteint. En paiement comptant, il est réglé en une fois. La livraison est organisée après paiement intégral.",
       accent: false,
     },
   ],
@@ -60,21 +60,21 @@ export const waysToPayData = {
   eyebrow: "MODES DE PAIEMENT",
   title: "Deux façons de payer",
   description:
-    "Vos revenus ne tombent pas toujours le même jour : planifiez vos versements, ou versez quand vous le pouvez.",
+    "Choisissez la formule qui vous convient : cotisez librement jusqu’au prix total ou réglez votre achat comptant en une seule fois.",
   options: [
-    {
-      id: "planifie",
-      icon: "calendar",
-      title: "Je planifie",
-      description:
-        "Suivez un rythme de versements et avancez étape après étape vers votre article.",
-    },
     {
       id: "libre",
       icon: "spark",
-      title: "Je fais à ma façon",
+      title: "Cotisation libre",
       description:
-        "Versez quand vous le pouvez, au montant qui vous convient. Votre cagnotte vous attend.",
+        "Versez quand vous le souhaitez et au montant qui vous convient, jusqu’à atteindre le prix total de l’article.",
+    },
+    {
+      id: "comptant",
+      icon: "coins",
+      title: "Paiement comptant",
+      description:
+        "Réglez le prix total en une seule fois pour finaliser votre commande.",
     },
   ],
 };
@@ -112,24 +112,39 @@ export const faqData = {
   title: "Questions fréquentes",
   items: [
     {
-      question: "Takapay est-il un crédit ?",
+      question: "Quels modes de paiement sont proposés ?",
       answer:
-        "Non. Takapay repose sur une épargne progressive dédiée à l’achat d’un article, sans intérêts ni pénalités. Ce n’est pas une offre de crédit.",
+        "Vous pouvez choisir la cotisation libre, en versant le montant que vous souhaitez jusqu’à atteindre le prix total, ou le paiement comptant, réglé en une seule fois.",
     },
     {
-      question: "Dois-je cotiser chaque semaine ?",
+      question: "En cotisation libre, dois-je respecter un calendrier ?",
       answer:
-        "Cela dépend du mode : en mode planifié, vous suivez des échéances ; en mode libre, vous versez quand vous le souhaitez, selon vos possibilités.",
+        "Non. Vous choisissez quand effectuer vos versements et leur montant. Votre cagnotte progresse à chaque paiement confirmé, jusqu’au prix total de l’article.",
     },
     {
-      question: "Quand puis-je recevoir mon article ?",
+      question: "Quand mon article est-il prêt à être livré ?",
       answer:
-        "Quand la cagnotte atteint le seuil de livraison fixé pour l’article. Selon l’article, ce seuil peut correspondre au prix total. Vous pouvez choisir d’attendre et continuer les versements jusqu’au solde.",
+        "Après le paiement intégral du prix de l’article. En cotisation libre, cela signifie que le total de la cagnotte doit atteindre le prix affiché ; en paiement comptant, le règlement se fait en une fois. Les modalités de livraison sont ensuite précisées pour votre commande.",
+    },
+    {
+      question: "Un paiement en attente ou échoué est-il ajouté à ma cagnotte ?",
+      answer:
+        "Non. Seuls les paiements confirmés sont comptabilisés. Consultez le statut de la transaction et l’historique de votre cagnotte pour vérifier qu’un versement a bien été pris en compte.",
     },
     {
       question: "Le prix de l’article peut-il changer après mon premier versement ?",
       answer:
         "Le prix est figé au lancement de la cagnotte. Si le prix du produit change ensuite, votre cagnotte conserve le prix défini au départ.",
+    },
+    {
+      question: "Quelle garantie est proposée sur un article ?",
+      answer:
+        "La durée de garantie dépend de l’article. Consultez sa fiche produit : lorsqu’une garantie spécifique est proposée, sa durée y est indiquée. Aucune durée générale ne s’applique à tous les articles.",
+    },
+    {
+      question: "Takapay est-il un crédit ?",
+      answer:
+        "Non. La cotisation libre vous permet de mettre progressivement de côté pour un achat, sans intérêts ni pénalités. Vous pouvez aussi payer l’article comptant ; Takapay ne propose pas de crédit.",
     },
   ],
 };

@@ -1,4 +1,24 @@
 const API_BASE = '/api';
+const DASHBOARD_STATS_UPDATE_KEY = 'takapay_dashboard_stats_updated';
+const DASHBOARD_STATS_UPDATE_EVENT = 'takapay:dashboard-stats-updated';
+
+const readCachedList = (key) => {
+  try {
+    const value = localStorage.getItem(key);
+    const parsed = value ? JSON.parse(value) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
+
+const writeCachedList = (key, list) => {
+  try {
+    localStorage.setItem(key, JSON.stringify(list));
+  } catch {
+    // Le cache reste facultatif si le stockage local est indisponible.
+  }
+};
 
 const EMPTY_STATS = {
   kpis: {
@@ -23,6 +43,10 @@ export const adminService = {
 
   getClientToken() {
     return localStorage.getItem('takapay_client_token') || localStorage.getItem('takapay_admin_token');
+  },
+
+  getCachedProduits() {
+    return readCachedList('takapay_backend_products');
   },
 
   async initiatePayment(payload) {
@@ -59,6 +83,14 @@ export const adminService = {
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       throw new Error(data.message || 'Erreur lors de la confirmation du paiement.');
+    }
+    if (data.status === 'success') {
+      window.dispatchEvent(new Event(DASHBOARD_STATS_UPDATE_EVENT));
+      try {
+        localStorage.setItem(DASHBOARD_STATS_UPDATE_KEY, String(Date.now()));
+      } catch {
+        // La mise à jour immédiate entre onglets reste facultative.
+      }
     }
     return data;
   },
@@ -477,13 +509,14 @@ export const adminService = {
         const json = await res.json();
         const list = json.data || json;
         if (Array.isArray(list)) {
+          if (!all) writeCachedList('takapay_public_carousels', list);
           return list;
         }
       }
     } catch (_e) {
       void _e;
     }
-    return [];
+    return all ? [] : readCachedList('takapay_public_carousels');
   },
 
   async createCarousel(formData) {
@@ -565,26 +598,24 @@ export const adminService = {
 
   async getDashboardStats() {
     const token = this.getToken();
-    if (token) {
-      try {
-        const res = await fetch(`${API_BASE}/admin/stats`, {
+    if (!token) {
+      throw new Error('Session administrateur expirée. Veuillez vous reconnecter.');
+    }
+    const res = await fetch(`${API_BASE}/admin/stats`, {
           headers: {
             Authorization: `Bearer ${token}`,
             Accept: 'application/json',
           },
         });
-        if (res.ok) {
-          const data = await res.json();
-          return {
-            ...EMPTY_STATS,
-            ...data,
-          };
-        }
-      } catch {
-        // Échec API : on affiche l'état vide plutôt que des données inventées
-      }
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.message || `Impossible de charger les statistiques (${res.status}).`);
     }
-    return EMPTY_STATS;
+
+    return {
+      ...EMPTY_STATS,
+      ...data,
+    };
   },
 
   // 1. GESTION DES PRODUITS
@@ -660,13 +691,14 @@ export const adminService = {
         const json = await res.json();
         const list = json.data || json;
         if (Array.isArray(list)) {
+          writeCachedList('takapay_backend_products', list);
           return list;
         }
       }
     } catch {
       // Fallback
     }
-    return [];
+    return readCachedList('takapay_backend_products');
   },
 
   async deleteProduit(produitId) {
@@ -763,6 +795,7 @@ export const adminService = {
         const json = await res.json();
         const apiList = json.data || json;
         if (Array.isArray(apiList)) {
+          writeCachedList('takapay_backend_categories', apiList);
           return apiList;
         }
       }
@@ -770,7 +803,7 @@ export const adminService = {
       void _error;
     }
 
-    return [];
+    return readCachedList('takapay_backend_categories');
   },
 
   async createCategorie(payload) {
@@ -989,6 +1022,22 @@ export const adminService = {
       void _error;
     }
     return [];
+  },
+
+  async deleteUnpaidCagnotte(cagnotteId) {
+    const token = this.getClientToken();
+    const res = await fetch(`${API_BASE}/cagnottes/${cagnotteId}/non-payee`, {
+      method: 'DELETE',
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        Accept: 'application/json',
+      },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data.message || 'Impossible de supprimer cette cagnotte.');
+    }
+    return data;
   },
 
   // 3. GESTION DES DOCUMENTS KYC

@@ -192,7 +192,7 @@
                     Cotisation 100% terminée
                 </span>
             </div>
-            
+
             <p style="font-size: 16px; margin-top: 0; line-height: 1.5;">
                 Bonjour <strong>{{ $user->prenom ?? $user->nom ?? 'Cher Client' }}</strong>,
             </p>

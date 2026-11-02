@@ -4,13 +4,13 @@ import { adminService } from '../../services/adminService';
 import { resolveImageUrl } from '../../data/clientStore';
 
 export default function AdminProductsView({ onShowToast }) {
-  const [produits, setProduits] = useState([]);
+  const [produits, setProduits] = useState(() => adminService.getCachedProduits());
   const [categories, setCategories] = useState([]);
   const [sousCategories, setSousCategories] = useState([]);
   const [promotions, setPromotions] = useState([]);
   const [search, setSearch] = useState('');
   const [selectedCat, setSelectedCat] = useState('tous');
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => adminService.getCachedProduits().length === 0);
   const [submitting, setSubmitting] = useState(false);
 
   // Mode de vue : 'list' | 'create' | 'edit' | 'categories'
@@ -40,6 +40,8 @@ export default function AdminProductsView({ onShowToast }) {
     description: '',
     stock: 10,
     duree: 6, // Durée de disponibilité de l'article (mois)
+    garantie_duree: '',
+    garantie_unite: 'mois',
     reference: '',
     prix_total: '',
     prix_cash: '',
@@ -112,53 +114,52 @@ export default function AdminProductsView({ onShowToast }) {
 
   useEffect(() => {
     let isMounted = true;
-    const fetchAll = () => {
-      Promise.all([
-        adminService.getProduits(),
-        adminService.getSousCategories(),
-        adminService.getPromotions(),
-        adminService.getCategories(),
-      ]).then(([prds, subCats, promos, cats]) => {
-        if (isMounted) {
-          setProduits(prds);
-          setSousCategories(subCats);
-          setPromotions(promos);
-          setCategories(cats);
-          if (cats.length > 0) {
-            const firstCatId = cats[0].id;
-            setTargetCatId(firstCatId);
-            const matchingSubs = subCats.filter(
-              (s) => String(s.categorie_id) === String(firstCatId) || String(s.categorie?.id) === String(firstCatId)
-            );
-            setForm((f) => ({
-              ...f,
-              categorie_id: f.categorie_id || firstCatId,
-              sous_categorie_id: f.sous_categorie_id || (matchingSubs[0]?.id || ''),
-            }));
-          }
-          setLoading(false);
-        }
+    const refreshProducts = () => {
+      if (document.visibilityState !== 'visible') return;
+      adminService.getProduits().then((list) => {
+        if (isMounted && Array.isArray(list)) setProduits(list);
       });
     };
 
-    fetchAll();
+    Promise.all([
+      adminService.getProduits(),
+      adminService.getSousCategories(),
+      adminService.getPromotions(),
+      adminService.getCategories(),
+    ]).then(([prds, subCats, promos, cats]) => {
+      if (isMounted) {
+        setProduits(prds);
+        setSousCategories(subCats);
+        setPromotions(promos);
+        setCategories(cats);
+        if (cats.length > 0) {
+          const firstCatId = cats[0].id;
+          setTargetCatId(firstCatId);
+          const matchingSubs = subCats.filter(
+            (s) => String(s.categorie_id) === String(firstCatId) || String(s.categorie?.id) === String(firstCatId)
+          );
+          setForm((f) => ({
+            ...f,
+            categorie_id: f.categorie_id || firstCatId,
+            sous_categorie_id: f.sous_categorie_id || (matchingSubs[0]?.id || ''),
+          }));
+        }
+        setLoading(false);
+      }
+    });
 
-    const handleSync = async () => {
-      try {
-        const prds = await adminService.getProduits();
-        if (isMounted && Array.isArray(prds)) setProduits(prds);
-      } catch { /* ignore */ }
-    };
-
-    window.addEventListener('takapay_products_updated', handleSync);
-    window.addEventListener('takapay_cagnotte_updated', handleSync);
-    window.addEventListener('storage', handleSync);
+    const refreshInterval = window.setInterval(refreshProducts, 60000);
+    window.addEventListener('focus', refreshProducts);
+    window.addEventListener('takapay_products_updated', refreshProducts);
+    window.addEventListener('takapay_cagnotte_updated', refreshProducts);
+    window.addEventListener('storage', refreshProducts);
 
     return () => {
       isMounted = false;
-      window.removeEventListener('takapay_products_updated', handleSync);
-      window.removeEventListener('takapay_cagnotte_updated', handleSync);
-      window.removeEventListener('storage', handleSync);
+      window.clearInterval(refreshInterval);
+      window.removeEventListener('focus', refreshProducts);
+      window.removeEventListener('takapay_products_updated', refreshProducts);
+      window.removeEventListener('takapay_cagnotte_updated', refreshProducts);
     };
   }, []);
 
@@ -206,7 +207,7 @@ export default function AdminProductsView({ onShowToast }) {
           chemin: event.target.result,
           nom_fichier: file.name,
           position: images.length + fileIdx + 1,
-          is_principal: images.length === 0 && fileIdx === 0,
+          is_principal: editingProductId ? fileIdx === 0 : images.length === 0 && fileIdx === 0,
         });
         loadedCount++;
         if (loadedCount === files.length) {
@@ -225,6 +226,22 @@ export default function AdminProductsView({ onShowToast }) {
     e.target.value = '';
   };
 
+  const handleReplaceImageSelect = (e, imageIndex) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      setImages((prev) => prev.map((img, idx) => (
+        idx === imageIndex
+          ? { ...img, chemin: event.target.result, nom_fichier: file.name }
+          : img
+      )));
+      onShowToast('Photo remplacée. Enregistrez le produit pour confirmer.');
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
   const handleSetPrincipalImage = (index) => {
     setImages((prev) =>
       prev.map((img, idx) => ({
@@ -338,6 +355,8 @@ export default function AdminProductsView({ onShowToast }) {
       description: '',
       stock: 10,
       duree: 6,
+      garantie_duree: '',
+      garantie_unite: 'mois',
       reference: '',
       prix_total: '',
       prix_cash: '',
@@ -426,6 +445,8 @@ export default function AdminProductsView({ onShowToast }) {
       description: item.description || '',
       stock: item.stock !== undefined ? item.stock : 10,
       duree: item.duree !== undefined ? item.duree : 6,
+      garantie_duree: item.garantie_duree ?? '',
+      garantie_unite: item.garantie_unite || 'mois',
       reference: param.reference || '',
       prix_total: param.prix_total !== undefined ? param.prix_total : '',
       prix_cash: param.prix_cash !== undefined ? param.prix_cash : '',
@@ -446,14 +467,17 @@ export default function AdminProductsView({ onShowToast }) {
       ? [{ chemin: item.im, is_principal: true, position: 1 }]
       : [];
 
-    setImages(
-      rawImgs.map((img, idx) => ({
-        chemin: typeof img === 'string' ? resolveImageUrl(img) : (img.url || resolveImageUrl(img.chemin)),
-        nom_fichier: typeof img === 'string' ? img : (img.nom_fichier || img.chemin || `image-${idx + 1}.jpg`),
-        position: idx + 1,
-        is_principal: img.is_principal === true || img.is_principal === 1 || idx === 0,
-      }))
-    );
+    const loadedImages = rawImgs.map((img, idx) => ({
+      id: typeof img === 'string' ? null : (img.id || null),
+      chemin: typeof img === 'string' ? resolveImageUrl(img) : (img.url || resolveImageUrl(img.chemin)),
+      nom_fichier: typeof img === 'string' ? img : (img.nom_fichier || img.chemin || `image-${idx + 1}.jpg`),
+      position: typeof img === 'string' ? idx + 1 : (img.position || idx + 1),
+      is_principal: typeof img !== 'string' && (img.is_principal === true || img.is_principal === 1 || img.is_principal === '1'),
+    }));
+    if (loadedImages.length > 0 && !loadedImages.some((img) => img.is_principal)) {
+      loadedImages[0].is_principal = true;
+    }
+    setImages(loadedImages);
 
     // Vidéo
     if (item.video) {
@@ -486,6 +510,9 @@ export default function AdminProductsView({ onShowToast }) {
     }
     if (form.duree === '' || form.duree === null || Number(form.duree) < 1) {
       errs.duree = "La durée de disponibilité de l'article doit être d'au moins 1 mois.";
+    }
+    if (form.garantie_duree !== '' && (!Number.isInteger(Number(form.garantie_duree)) || Number(form.garantie_duree) < 1 || Number(form.garantie_duree) > 1200)) {
+      errs.garantie_duree = 'La durée de garantie doit être comprise entre 1 et 1200.';
     }
     return errs;
   };
@@ -576,6 +603,8 @@ export default function AdminProductsView({ onShowToast }) {
         prix_cash: cleanNum(form.prix_cash),
         stock: cleanNum(form.stock) ?? 0,
         duree: cleanNum(form.duree) ?? 6,
+        garantie_duree: form.garantie_duree === '' ? null : cleanNum(form.garantie_duree),
+        garantie_unite: form.garantie_duree === '' ? null : form.garantie_unite,
         seuil_livraison: form.mode_paiement === 'libre' ? null : cleanNum(form.seuil_livraison),
         promotion_id: form.promotion_id ? Number(form.promotion_id) : null,
         couleur: finalColorsStr,
@@ -1078,7 +1107,7 @@ export default function AdminProductsView({ onShowToast }) {
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', marginBottom: '12px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
                       {cat.image ? (
-                        <img src={cat.image} alt={cat.nom} style={{ width: '42px', height: '42px', borderRadius: '10px', objectFit: 'cover', flexShrink: 0 }} />
+                        <img src={resolveImageUrl(cat.image)} alt={cat.nom} style={{ width: '42px', height: '42px', borderRadius: '10px', objectFit: 'cover', flexShrink: 0 }} />
                       ) : (
                         <div style={{ width: '42px', height: '42px', borderRadius: '10px', background: 'var(--soft)', display: 'grid', placeItems: 'center', fontSize: '20px', flexShrink: 0 }}>
                           📦
@@ -1143,7 +1172,7 @@ export default function AdminProductsView({ onShowToast }) {
                       >
                         {s.image && (
                           <img
-                            src={s.image}
+                            src={resolveImageUrl(s.image)}
                             alt={s.nom}
                             style={{ width: '18px', height: '18px', borderRadius: '4px', objectFit: 'cover' }}
                           />
@@ -1740,6 +1769,51 @@ export default function AdminProductsView({ onShowToast }) {
 
               <div className="admin-field" style={{ margin: 0 }}>
                 <label style={{ fontSize: '14px', fontWeight: 700, marginBottom: '6px', display: 'block' }}>
+                  Garantie de l'article (facultative)
+                </label>
+                <div style={{ display: 'grid', gridTemplateColumns: 'minmax(90px, 1fr) minmax(110px, 1fr)', gap: '8px' }}>
+                  <input
+                    type="number"
+                    min="1"
+                    max="1200"
+                    placeholder="Durée"
+                    value={form.garantie_duree}
+                    onChange={(e) => {
+                      setForm({ ...form, garantie_duree: e.target.value });
+                      if (errors.garantie_duree) setErrors((prev) => ({ ...prev, garantie_duree: null }));
+                    }}
+                    aria-label="Durée de garantie"
+                    style={{
+                      width: '100%',
+                      padding: '13px 16px',
+                      borderRadius: '12px',
+                      border: errors.garantie_duree ? '2px solid #dc2626' : '1.5px solid var(--line)',
+                      fontSize: '15px',
+                    }}
+                  />
+                  <select
+                    value={form.garantie_unite}
+                    onChange={(e) => setForm({ ...form, garantie_unite: e.target.value })}
+                    aria-label="Unité de la garantie"
+                    style={{ width: '100%', padding: '13px 12px', borderRadius: '12px', border: '1.5px solid var(--line)', fontSize: '15px' }}
+                  >
+                    <option value="jours">Jour(s)</option>
+                    <option value="mois">Mois</option>
+                    <option value="ans">An(s)</option>
+                  </select>
+                </div>
+                <span style={{ fontSize: '12px', color: 'var(--mut)', marginTop: '4px', display: 'block' }}>
+                  Indiquez une durée pour afficher la garantie sur la fiche client. Laissez vide si aucune garantie spécifique n'est proposée.
+                </span>
+                {errors.garantie_duree && (
+                  <span style={{ color: '#dc2626', fontSize: '13px', fontWeight: 600, marginTop: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    ⚠ {errors.garantie_duree}
+                  </span>
+                )}
+              </div>
+
+              <div className="admin-field" style={{ margin: 0 }}>
+                <label style={{ fontSize: '14px', fontWeight: 700, marginBottom: '6px', display: 'block' }}>
                   Référence produit (optionnelle)
                 </label>
                 <input
@@ -2074,7 +2148,13 @@ export default function AdminProductsView({ onShowToast }) {
                       aspectRatio: '1',
                     }}
                   >
-                    <img
+                    <input
+                      id={`product-image-replace-${idx}`}
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => handleReplaceImageSelect(e, idx)}
+                      style={{ display: 'none' }}
+                    />                    <img
                       src={img.chemin}
                       alt={`Photo ${idx + 1}`}
                       style={{ width: '100%', height: '100%', objectFit: 'cover' }}
@@ -2102,6 +2182,28 @@ export default function AdminProductsView({ onShowToast }) {
                       {img.is_principal ? '★ Principale' : '☆ Définir'}
                     </button>
 
+                    {/* Remplacer uniquement cette photo */}
+                    <button
+                      type="button"
+                      onClick={() => document.getElementById(`product-image-replace-${idx}`)?.click()}
+                      title="Choisir une nouvelle image pour remplacer celle-ci"
+                      aria-label={`Remplacer la photo ${idx + 1}`}
+                      style={{
+                        position: 'absolute',
+                        left: '6px',
+                        bottom: '6px',
+                        background: 'rgba(0,0,0,0.72)',
+                        color: '#fff',
+                        border: 'none',
+                        borderRadius: '6px',
+                        padding: '4px 7px',
+                        fontSize: '11px',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      ↻ Remplacer
+                    </button>
                     {/* Bouton Supprimer */}
                     <button
                       type="button"

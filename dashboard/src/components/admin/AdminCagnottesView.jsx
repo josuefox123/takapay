@@ -82,24 +82,42 @@ export default function AdminCagnottesView() {
 
   useEffect(() => {
     let isMounted = true;
-    const fetchCagnottes = () => {
+    let isRefreshing = false;
+    const refreshCagnottes = () => {
+      if (isRefreshing) return;
+      isRefreshing = true;
+
       adminService.getCagnottes().then((data) => {
         if (isMounted && Array.isArray(data)) {
           setCagnottes(data);
           setLoading(false);
         }
+      }).finally(() => {
+        isRefreshing = false;
       });
     };
+    const handleStorageUpdate = (event) => {
+      if (!event.key || event.key === 'takapay_dashboard_stats_updated' || event.key === 'takapay_cagnotte_updated') {
+        refreshCagnottes();
+      }
+    };
 
-    fetchCagnottes();
-
-    window.addEventListener('takapay_cagnotte_updated', fetchCagnottes);
-    window.addEventListener('storage', fetchCagnottes);
+    refreshCagnottes();
+    const refreshInterval = window.setInterval(() => {
+      if (document.visibilityState === 'visible') refreshCagnottes();
+    }, 15000);
+    window.addEventListener('focus', refreshCagnottes);
+    window.addEventListener('storage', handleStorageUpdate);
+    window.addEventListener('takapay_cagnotte_updated', refreshCagnottes);
+    window.addEventListener('takapay:dashboard-stats-updated', refreshCagnottes);
 
     return () => {
       isMounted = false;
-      window.removeEventListener('takapay_cagnotte_updated', fetchCagnottes);
-      window.removeEventListener('storage', fetchCagnottes);
+      window.clearInterval(refreshInterval);
+      window.removeEventListener('focus', refreshCagnottes);
+      window.removeEventListener('storage', handleStorageUpdate);
+      window.removeEventListener('takapay_cagnotte_updated', refreshCagnottes);
+      window.removeEventListener('takapay:dashboard-stats-updated', refreshCagnottes);
     };
   }, []);
 

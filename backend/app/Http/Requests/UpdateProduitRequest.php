@@ -28,6 +28,8 @@ class UpdateProduitRequest extends FormRequest
             'description' => ['sometimes', 'nullable', 'string'],
             'stock' => ['sometimes', 'required', 'integer', 'min:0'],
             'duree' => ['sometimes', 'nullable', 'integer', 'min:0'],
+            'garantie_duree' => ['sometimes', 'nullable', 'integer', 'min:1', 'max:1200', 'required_with:garantie_unite'],
+            'garantie_unite' => ['sometimes', 'nullable', 'string', 'in:jours,mois,ans', 'required_with:garantie_duree'],
             'couleur' => ['sometimes', 'nullable', 'string'],
             'video' => ['sometimes', 'nullable'],
             'reference' => ['sometimes', 'nullable', 'string', 'max:255'],
@@ -40,6 +42,12 @@ class UpdateProduitRequest extends FormRequest
             'seuil_livraison' => ['sometimes', 'nullable', 'numeric', 'min:0'],
             'promotion_id' => ['sometimes', 'nullable', 'exists:promotions,id'],
             'images' => ['sometimes', 'nullable', 'array'],
+            'images.*' => ['array'],
+            'images.*.id' => ['sometimes', 'nullable', 'integer'],
+            'images.*.chemin' => ['nullable', 'string', 'max:15000000'],
+            'images.*.position' => ['sometimes', 'integer', 'min:1'],
+            'images.*.is_principal' => ['sometimes', 'boolean'],
+            'images.*.nom_fichier' => ['sometimes', 'nullable', 'string', 'max:255'],
         ];
     }
 }

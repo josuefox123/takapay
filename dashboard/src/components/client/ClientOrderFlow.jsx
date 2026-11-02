@@ -62,6 +62,28 @@ export default function ClientOrderFlow({
   const [quantity, setQuantity] = useState(initialQuantity || 1);
   const [successModalData, setSuccessModalData] = useState(null);
 
+  // Simulation validation paiement 40 secondes
+  const [isProcessingPayment, setIsProcessingPayment] = useState(false);
+  const [paymentCountdown, setPaymentCountdown] = useState(40);
+  const [paymentFailed, setPaymentFailed] = useState(false);
+
+  useEffect(() => {
+    let timer = null;
+    if (isProcessingPayment) {
+      if (paymentCountdown > 0) {
+        timer = setTimeout(() => {
+          setPaymentCountdown((prev) => prev - 1);
+        }, 1000);
+      } else {
+        setIsProcessingPayment(false);
+        setPaymentFailed(true);
+      }
+    }
+    return () => {
+      if (timer) clearTimeout(timer);
+    };
+  }, [isProcessingPayment, paymentCountdown]);
+
   // Coordonnées de paiement pré-remplies (directement insérées et modifiables par le client)
   const [paymentPhone, setPaymentPhone] = useState(() => {
     return user?.telephone || user?.phone || activeUser?.telephone || activeUser?.phone || '';
@@ -370,7 +392,7 @@ export default function ClientOrderFlow({
     }
   };
 
-  // Étape 4 : Initiation et Validation Paiement FeexPay
+  // Étape 4 : Initiation et Validation Paiement
   const handlePaymentSubmit = async (e) => {
     e.preventDefault();
     if (isOutOfStock) {
@@ -386,7 +408,11 @@ export default function ClientOrderFlow({
       return;
     }
     setError('');
-    setSubmitting(true);
+    setPaymentFailed(false);
+    setIsProcessingPayment(true);
+    setPaymentCountdown(40);
+
+    // Envoi de la commande en arrière-plan sans bloquer la rotation
     try {
       const initRes = await adminService.initiatePayment({
         amount: paymentAmount,
@@ -399,11 +425,9 @@ export default function ClientOrderFlow({
         client_nom: paymentName.trim(),
         client_email: (email && email.trim()) || null,
       });
-      setPaymentData(initRes);
+      if (initRes) setPaymentData(initRes);
     } catch (err) {
-      setError(err.message || 'Impossible d’initialiser le paiement avec FeexPay.');
-    } finally {
-      setSubmitting(false);
+      console.warn('initiatePayment background notice:', err);
     }
   };
 
@@ -415,50 +439,65 @@ export default function ClientOrderFlow({
       response.status?.toUpperCase() === 'PAID'
     );
 
-    if (isSuccess) {
-      const orderRef = paymentData?.reference || response.reference;
-      const customerEmail = response.email || (email && email.trim()) || (user?.email && !user.email.endsWith('@client.takapay.bj') ? user.email : null);
-      try {
-        await adminService.confirmPayment({
-          reference: orderRef,
-          status: 'successful',
-          transaction_id: response.transaction_id || response.reference || orderRef,
-          amount: response.amount || paymentAmount,
-          reseau: response.reseau || provider,
-          user_id: activeUser?.id || user?.id,
-          client_email: customerEmail,
-        });
+    if (!isSuccess) {
+      setPaymentData(null);
+      setPaymentFailed(false);
+      setIsProcessingPayment(true);
+      setPaymentCountdown(40);
+      return;
+    }
 
-        // Persister l'adresse email réelle sur le profil utilisateur
-        if (customerEmail && user && (!user.email || user.email.endsWith('@client.takapay.bj'))) {
-          const updatedUser = { ...user, email: customerEmail };
-          onUserAuthSuccess(updatedUser, 'Paiement confirmé ! Votre reçu sera envoyé par email.');
-        }
-
-        // Afficher le popup de félicitations avant la redirection vers les cagnottes ou commandes
-        setSuccessModalData({
-          product: { ...product, p: effectivePrice },
-          selectedColor,
-          provider: response.reseau || provider,
-          initialAmount: paymentAmount,
-          totalPrice: orderType === 'cash' ? (cashPrice * effectiveQuantity) : effectivePrice,
-          reference: orderRef,
-          transactionId: response.transaction_id || orderRef,
-          date: new Date().toISOString(),
-          isCash: orderType === 'cash',
-          quantity: effectiveQuantity,
-        });
-
-        try {
-          window.dispatchEvent(new CustomEvent('takapay_cagnotte_updated'));
-          window.dispatchEvent(new CustomEvent('takapay_products_updated'));
-        } catch { /* ignore */ }
-      } catch (err) {
-        console.error('Erreur confirmation backend :', err);
-        setError(`Votre paiement a été validé par FeexPay mais la confirmation sur le serveur a échoué (${err.message || 'erreur réseau'}). Veuillez contacter le support avec la référence : ${orderRef}`);
+    const orderRef = paymentData?.reference || response.reference;
+    const customerEmail = response.email || (email && email.trim()) || (user?.email && !user.email.endsWith('@client.takapay.bj') ? user.email : null);
+    try {
+      const confirmation = await adminService.confirmPayment({
+        reference: orderRef,
+        status: 'successful',
+        transaction_id: response.transaction_id || response.id || response.reference || orderRef,
+        amount: response.amount || paymentAmount,
+        reseau: response.reseau || provider,
+        user_id: activeUser?.id || user?.id,
+        client_email: customerEmail,
+      });
+      if (confirmation?.status !== 'success') {
+        throw new Error(confirmation?.message || 'FeexPay n’a pas confirmé le paiement.');
       }
-    } else {
-      setError(response?.message || 'Le paiement FeexPay a été annulé ou n’a pas abouti.');
+
+      // Persister l'adresse email réelle sur le profil utilisateur
+      if (customerEmail && user && (!user.email || user.email.endsWith('@client.takapay.bj'))) {
+        const updatedUser = { ...user, email: customerEmail };
+        onUserAuthSuccess(updatedUser, 'Paiement confirmé ! Votre reçu sera envoyé par email.');
+      }
+
+      setPaymentData(null);
+      setIsProcessingPayment(false);
+      setPaymentFailed(false);
+      setPaymentCountdown(40);
+
+      // Afficher le popup de félicitations avant la redirection vers les cagnottes ou commandes
+      setSuccessModalData({
+        product: { ...product, p: effectivePrice },
+        selectedColor,
+        provider: response.reseau || provider,
+        initialAmount: Number(confirmation.amount) || paymentAmount,
+        totalPrice: orderType === 'cash' ? (cashPrice * effectiveQuantity) : effectivePrice,
+        reference: orderRef,
+        transactionId: response.transaction_id || response.id || orderRef,
+        date: new Date().toISOString(),
+        isCash: orderType === 'cash',
+        quantity: effectiveQuantity,
+      });
+
+      try {
+        window.dispatchEvent(new CustomEvent('takapay_cagnotte_updated'));
+        window.dispatchEvent(new CustomEvent('takapay_products_updated'));
+      } catch { /* ignore */ }
+    } catch (err) {
+      console.error('Erreur confirmation backend :', err);
+      setPaymentData(null);
+      setIsProcessingPayment(false);
+      setPaymentFailed(false);
+      setError(`Le statut reçu de FeexPay n’a pas pu être vérifié par le serveur (${err.message || 'erreur réseau'}). La commande n’est pas encore confirmée. Référence : ${orderRef}`);
     }
   };
 
@@ -1130,6 +1169,51 @@ export default function ClientOrderFlow({
                   {isOutOfStock ? 'Article en rupture de stock' : submitting ? 'Enregistrement de la commande...' : 'Confirmer la commande (Paiement à la livraison)'}
                 </button>
               </form>
+            ) : paymentFailed ? (
+              <div style={{
+                padding: '32px 20px',
+                textAlign: 'center',
+                background: '#ffffff',
+                borderRadius: '16px',
+                border: '1.5px solid #fecaca',
+                boxShadow: '0 8px 24px rgba(220, 38, 38, 0.08)',
+                marginTop: '16px'
+              }}>
+                <div style={{
+                  width: '56px',
+                  height: '56px',
+                  margin: '0 auto 14px',
+                  background: '#fee2e2',
+                  color: '#dc2626',
+                  borderRadius: '50%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '28px',
+                  fontWeight: 'bold'
+                }}>
+                  ✕
+                </div>
+                <h3 style={{ fontSize: '18px', fontWeight: 800, color: '#991b1b', marginBottom: '8px' }}>
+                  Échec du paiement
+                </h3>
+                <p style={{ fontSize: '13.5px', color: '#4b5563', lineHeight: 1.5, maxWidth: '380px', margin: '0 auto 20px' }}>
+                  Aucune confirmation n’a été reçue dans le délai. Vérifiez le statut du paiement dans votre historique avant de réessayer afin d’éviter un double paiement.
+                </p>
+                <button
+                  type="button"
+                  className="client-btn w100"
+                  onClick={() => {
+                    setPaymentFailed(false);
+                    setIsProcessingPayment(false);
+                    setPaymentCountdown(40);
+                    setPaymentData(null);
+                  }}
+                  style={{ padding: '14px', fontSize: '15px' }}
+                >
+                  🔄 Réessayer le paiement
+                </button>
+              </div>
             ) : paymentData ? (
               <FeexPayProvider>
                 <div style={{ marginTop: '16px' }}>
@@ -1180,6 +1264,11 @@ export default function ClientOrderFlow({
               </FeexPayProvider>
             ) : (
               <form onSubmit={handlePaymentSubmit}>
+                {error && (
+                  <div style={{ color: '#dc2626', background: 'rgba(220,38,38,0.08)', padding: '10px 12px', borderRadius: '10px', fontSize: '13px', fontWeight: 600, marginBottom: '16px', textAlign: 'center' }}>
+                    {error}
+                  </div>
+                )}
                 <div className="provider-list">
                   <button
                     type="button"
@@ -1271,10 +1360,22 @@ export default function ClientOrderFlow({
                 <button
                   type="submit"
                   className="client-btn w100"
-                  disabled={submitting || isOutOfStock}
-                  style={{ padding: '16px', fontSize: '15px', background: isOutOfStock ? '#9ca3af' : undefined, cursor: isOutOfStock ? 'not-allowed' : undefined }}
+                  disabled={submitting || isProcessingPayment || isOutOfStock}
+                  style={{
+                    padding: '16px',
+                    fontSize: '15px',
+                    background: isOutOfStock ? '#9ca3af' : undefined,
+                    cursor: isOutOfStock ? 'not-allowed' : (submitting || isProcessingPayment) ? 'wait' : 'pointer',
+                    opacity: (submitting || isProcessingPayment) ? 0.8 : 1,
+                  }}
                 >
-                  {isOutOfStock ? 'Article en rupture de stock' : submitting ? 'Préparation FeexPay...' : `Valider avec ${provider === 'MTN' ? 'MTN MoMo' : 'Moov Money'}`}
+                  {isOutOfStock
+                    ? 'Article en rupture de stock'
+                    : isProcessingPayment
+                    ? 'Traitement en cours...'
+                    : submitting
+                    ? 'Préparation FeexPay...'
+                    : `Valider avec ${provider === 'MTN' ? 'MTN MoMo' : 'Moov Money'}`}
                 </button>
               </form>
             )}
