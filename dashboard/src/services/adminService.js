@@ -701,6 +701,25 @@ export const adminService = {
     return readCachedList('takapay_backend_products');
   },
 
+  async getAdminProduits() {
+    const token = this.getToken();
+    const res = await fetch(`${API_BASE}/admin/produits`, {
+      headers: {
+        ...(token ? { Authorization: 'Bearer ' + token } : {}),
+        Accept: 'application/json',
+      },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data.message || `Impossible de charger les produits (${res.status}).`);
+    }
+    const produits = data.data || data;
+    if (!Array.isArray(produits)) {
+      throw new Error('Réponse invalide lors du chargement des produits administrateur.');
+    }
+    return produits;
+  },
+
   async deleteProduit(produitId) {
     const token = this.getToken();
     const res = await fetch(`${API_BASE}/produits/${produitId}`, {
@@ -806,6 +825,25 @@ export const adminService = {
     return readCachedList('takapay_backend_categories');
   },
 
+  async getAdminCategories() {
+    const token = this.getToken();
+    const res = await fetch(`${API_BASE}/admin/categories`, {
+      headers: {
+        ...(token ? { Authorization: 'Bearer ' + token } : {}),
+        Accept: 'application/json',
+      },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data.message || `Impossible de charger les catégories (${res.status}).`);
+    }
+    const categories = data.data || data;
+    if (!Array.isArray(categories)) {
+      throw new Error('Réponse invalide lors du chargement des catégories administrateur.');
+    }
+    return categories;
+  },
+
   async createCategorie(payload) {
     const token = this.getToken();
     if (!token) {
@@ -839,6 +877,42 @@ export const adminService = {
     return { success: true, data: created };
   },
 
+  async updateCategorie(id, payload) {
+    const token = this.getToken();
+    if (!token) {
+      throw new Error("Session expirée. Veuillez vous reconnecter en tant qu'administrateur.");
+    }
+
+    const res = await fetch(`${API_BASE}/categories/${id}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer ' + token,
+        Accept: 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const response = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const error = new Error(
+        (response.errors && Object.values(response.errors).flat().join(' ')) ||
+          response.message ||
+          'Erreur lors de la modification de la catégorie.'
+      );
+      error.status = res.status;
+      error.errors = response.errors;
+      error.data = response;
+      throw error;
+    }
+
+    const updated = response.data || response;
+    window.dispatchEvent(
+      new CustomEvent('takapay_categories_updated', { detail: updated })
+    );
+    return { success: true, data: updated };
+  },
+
   async getSousCategories() {
     try {
       const res = await fetch(`${API_BASE}/sous-categories`, {
@@ -855,6 +929,25 @@ export const adminService = {
       void _error;
     }
     return [];
+  },
+
+  async getAdminSousCategories() {
+    const token = this.getToken();
+    const res = await fetch(`${API_BASE}/admin/sous-categories`, {
+      headers: {
+        ...(token ? { Authorization: 'Bearer ' + token } : {}),
+        Accept: 'application/json',
+      },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data.message || `Impossible de charger les sous-catégories (${res.status}).`);
+    }
+    const sousCategories = data.data || data;
+    if (!Array.isArray(sousCategories)) {
+      throw new Error('Réponse invalide lors du chargement des sous-catégories administrateur.');
+    }
+    return sousCategories;
   },
 
   async createSousCategorie(payload) {
@@ -888,6 +981,42 @@ export const adminService = {
       new CustomEvent('takapay_categories_updated', { detail: created })
     );
     return { success: true, data: created };
+  },
+
+  async updateSousCategorie(id, payload) {
+    const token = this.getToken();
+    if (!token) {
+      throw new Error("Session expirée. Veuillez vous reconnecter en tant qu'administrateur.");
+    }
+
+    const res = await fetch(`${API_BASE}/sous-categories/${id}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer ' + token,
+        Accept: 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const response = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const error = new Error(
+        (response.errors && Object.values(response.errors).flat().join(' ')) ||
+          response.message ||
+          'Erreur lors de la modification de la sous-catégorie.'
+      );
+      error.status = res.status;
+      error.errors = response.errors;
+      error.data = response;
+      throw error;
+    }
+
+    const updated = response.data || response;
+    window.dispatchEvent(
+      new CustomEvent('takapay_categories_updated', { detail: updated })
+    );
+    return { success: true, data: updated };
   },
 
   async deleteCategorie(id) {

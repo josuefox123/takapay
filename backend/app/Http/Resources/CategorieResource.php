@@ -31,6 +31,7 @@ class CategorieResource extends JsonResource
         return [
             'id' => $this->id,
             'nom' => $this->nom,
+            'actif' => $this->actif,
             'image' => $url,
             'nom_fichier' => $rawImage ? basename($rawImage) : null,
             'sous_categories' => SousCategorieResource::collection($this->whenLoaded('sousCategories')),

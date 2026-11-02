@@ -14,6 +14,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 class ProduitController extends Controller
 {
@@ -24,9 +25,32 @@ class ProduitController extends Controller
     {
         return ProduitResource::collection(
             Produit::with(['sousCategorie.categorie', 'parametreProduit.promotion', 'imageProduits'])
+                ->where(function ($query) {
+                    $query->whereHas('sousCategorie', fn ($subCategoryQuery) => $subCategoryQuery
+                        ->where('actif', true)
+                        ->whereHas('categorie', fn ($categoryQuery) => $categoryQuery->where('actif', true)))
+                        ->orWhereHas('cagnottes');
+                })
                 ->withCount(['cagnottes as cagnottes_actives_count' => function ($query) {
                     $query->whereIn('statut', ['en_cours', 'active']);
                 }])
+                ->withCount('cagnottes')
+                ->latest()
+                ->paginate(25)
+        );
+    }
+
+    /**
+     * Liste complète des produits pour le back-office, y compris ceux des catégories archivées.
+     */
+    public function adminIndex(): AnonymousResourceCollection
+    {
+        return ProduitResource::collection(
+            Produit::with(['sousCategorie.categorie', 'parametreProduit.promotion', 'imageProduits'])
+                ->withCount(['cagnottes as cagnottes_actives_count' => function ($query) {
+                    $query->whereIn('statut', ['en_cours', 'active']);
+                }])
+                ->withCount('cagnottes')
                 ->latest()
                 ->paginate(25)
         );
@@ -49,6 +73,10 @@ class ProduitController extends Controller
      */
     public function show(Produit $produit)
     {
+        $isInActiveCategory = $produit->sousCategorie?->actif
+            && $produit->sousCategorie?->categorie?->actif;
+        abort_unless($isInActiveCategory || $produit->cagnottes()->exists(), 404);
+
         return new ProduitResource($produit->load(['sousCategorie.categorie', 'parametreProduit.promotion', 'imageProduits']));
     }
 
@@ -64,11 +92,11 @@ class ProduitController extends Controller
         DB::transaction(function () use ($produit, $validated, &$deletedImagePaths) {
             $produitFields = ['nom', 'sous_categorie_id', 'description', 'stock', 'duree', 'garantie_duree', 'garantie_unite', 'couleur', 'video'];
             $produitData = array_intersect_key($validated, array_flip($produitFields));
-            if (!empty($produitData)) {
-                if (!empty($produitData['video']) && is_array($produitData['video'])) {
+            if (! empty($produitData)) {
+                if (! empty($produitData['video']) && is_array($produitData['video'])) {
                     $produitData['video'] = $produitData['video']['chemin'] ?? null;
                 }
-                if (!empty($produitData['video']) && is_string($produitData['video'])) {
+                if (! empty($produitData['video']) && is_string($produitData['video'])) {
                     if (str_starts_with($produitData['video'], 'blob:')) {
                         unset($produitData['video']);
                     } elseif (str_starts_with($produitData['video'], 'data:video/')) {
@@ -80,7 +108,7 @@ class ProduitController extends Controller
                             if (preg_match('#data:video/(webm|ogg|quicktime|mp4)#i', $header, $m)) {
                                 $ext = $m[1] === 'quicktime' ? 'mov' : $m[1];
                             }
-                            $videoFileName = 'video_'.time().'_'.\Illuminate\Support\Str::random(6).'.'.$ext;
+                            $videoFileName = 'video_'.time().'_'.Str::random(6).'.'.$ext;
                             Storage::disk('public')->put('produits/'.$videoFileName, $binary);
                             Storage::disk('public')->put($videoFileName, $binary);
                             $produitData['video'] = 'produits/'.$videoFileName;
@@ -92,19 +120,19 @@ class ProduitController extends Controller
 
             $paramFields = [
                 'reference', 'prix_total', 'prix_minimum', 'prix_echelonne',
-                'prix_cash', 'mode_paiement', 'frequence', 'seuil_livraison', 'promotion_id'
+                'prix_cash', 'mode_paiement', 'frequence', 'seuil_livraison', 'promotion_id',
             ];
             $paramData = array_intersect_key($validated, array_flip($paramFields));
 
-            if (!empty($paramData)) {
+            if (! empty($paramData)) {
                 if ($produit->parametreProduit) {
                     $produit->parametreProduit->update($paramData);
                 } else {
                     $paramData['produit_id'] = $produit->id;
                     if (empty($paramData['reference'])) {
-                        $paramData['reference'] = 'PRD-' . str_pad($produit->id, 4, '0', STR_PAD_LEFT);
+                        $paramData['reference'] = 'PRD-'.str_pad($produit->id, 4, '0', STR_PAD_LEFT);
                     }
-                    if (!isset($paramData['prix_total'])) {
+                    if (! isset($paramData['prix_total'])) {
                         $paramData['prix_total'] = 0;
                     }
                     ParametreProduit::create($paramData);
@@ -117,14 +145,14 @@ class ProduitController extends Controller
                 $keptImageIds = [];
 
                 foreach ($validated['images'] as $idx => $img) {
-                    if (!is_array($img)) {
+                    if (! is_array($img)) {
                         continue;
                     }
 
                     $position = isset($img['position']) ? (int) $img['position'] : ($idx + 1);
                     $isPrincipal = filter_var($img['is_principal'] ?? false, FILTER_VALIDATE_BOOLEAN);
                     $chemin = $img['chemin'] ?? null;
-                    $existingImage = !empty($img['id']) ? $existingImages->get((int) $img['id']) : null;
+                    $existingImage = ! empty($img['id']) ? $existingImages->get((int) $img['id']) : null;
                     $isDataImage = is_string($chemin) && preg_match('#^data:(?:image/|application/octet-stream)#i', $chemin);
 
                     if ($existingImage) {
@@ -148,6 +176,7 @@ class ProduitController extends Controller
 
                         $existingImage->update($attributes);
                         $keptImageIds[] = $existingImage->id;
+
                         continue;
                     }
 
@@ -171,7 +200,7 @@ class ProduitController extends Controller
                 }
 
                 foreach ($existingImages as $existingImage) {
-                    if (!in_array($existingImage->id, $keptImageIds, true)) {
+                    if (! in_array($existingImage->id, $keptImageIds, true)) {
                         $deletedImagePaths[] = $existingImage->chemin;
                         $existingImage->delete();
                     }
@@ -197,7 +226,7 @@ class ProduitController extends Controller
                 ->orWhere('chemin', $legacyFilename)
                 ->exists();
 
-            if (!$stillUsed) {
+            if (! $stillUsed) {
                 app(ImageStorageService::class)->delete($deletedPath);
             }
         }

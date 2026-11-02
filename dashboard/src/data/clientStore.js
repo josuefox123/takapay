@@ -135,6 +135,9 @@ export const mapAdminProductToClient = (p) => {
       ? p.sous_categorie
       : p.sous_categorie?.nom || p.subcategory || 'Articles');
 
+  const isArchivedCategory =
+    p.sous_categorie?.actif === false || p.sous_categorie?.categorie?.actif === false;
+
   let categoryName =
     p.categorie_nom ||
     p.sous_categorie?.categorie?.nom ||
@@ -175,6 +178,9 @@ export const mapAdminProductToClient = (p) => {
     images: imageList,
     video: p.video ? (typeof p.video === 'string' ? resolveImageUrl(p.video) : (p.video.chemin ? resolveImageUrl(p.video.chemin) : p.video)) : null,
     stockCount: (p.stock !== undefined && p.stock !== null) ? Number(p.stock) : (p.stockCount !== undefined ? Number(p.stockCount) : 0),
+    has_cagnotte: Boolean(p.has_cagnotte || Number(p.cagnottes_count) > 0),
+    has_active_cagnotte: Boolean(p.has_active_cagnotte || Number(p.cagnottes_actives_count) > 0),
+    categoryArchived: isArchivedCategory,
     availabilityDuration: p.duree ? `${p.duree} mois de disponibilité` : 'Disponible',
     duree: Number(p.duree || 6),
     garantie_duree: garantieDuree || null,

@@ -26,7 +26,22 @@ class CategorieController extends Controller
      */
     public function index(): AnonymousResourceCollection
     {
-        return CategorieResource::collection(Categorie::with('sousCategories')->orderBy('nom', 'asc')->get());
+        return CategorieResource::collection(
+            Categorie::where('actif', true)
+                ->with(['sousCategories' => fn ($query) => $query->where('actif', true)])
+                ->orderBy('nom')
+                ->get()
+        );
+    }
+
+    /**
+     * Liste complète des catégories pour le back-office, y compris les archives.
+     */
+    public function adminIndex(): AnonymousResourceCollection
+    {
+        return CategorieResource::collection(
+            Categorie::with('sousCategories')->orderBy('nom')->get()
+        );
     }
 
     /**
@@ -138,8 +153,10 @@ class CategorieController extends Controller
 
     public function sousCategories(Categorie $category): AnonymousResourceCollection
     {
+        abort_unless($category->actif, 404);
+
         return SousCategorieResource::collection(
-            $category->sousCategories()->get()
+            $category->sousCategories()->where('actif', true)->get()
         );
     }
 }

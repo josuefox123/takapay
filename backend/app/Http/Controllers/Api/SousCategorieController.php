@@ -19,7 +19,23 @@ class SousCategorieController extends Controller
 
     public function index(): AnonymousResourceCollection
     {
-        return SousCategorieResource::collection(SousCategorie::with('categorie')->orderBy('nom', 'asc')->get());
+        return SousCategorieResource::collection(
+            SousCategorie::where('actif', true)
+                ->whereHas('categorie', fn ($query) => $query->where('actif', true))
+                ->with('categorie')
+                ->orderBy('nom')
+                ->get()
+        );
+    }
+
+    /**
+     * Liste complète des sous-catégories pour le back-office.
+     */
+    public function adminIndex(): AnonymousResourceCollection
+    {
+        return SousCategorieResource::collection(
+            SousCategorie::with('categorie')->orderBy('nom')->get()
+        );
     }
 
     public function store(StoreSousCategorieRequest $request)
@@ -45,17 +61,26 @@ class SousCategorieController extends Controller
     public function update(UpdateSousCategorieRequest $request, SousCategorie $sous_category)
     {
         $data = $request->validated();
+        $oldPath = null;
         if (array_key_exists('image', $data)) {
             if ($data['image'] === null || $data['image'] === '') {
-                $this->images->delete($sous_category->image);
+                $oldPath = $sous_category->image;
                 $data['image'] = null;
             } else {
                 $preferredName = $request->input('nom_fichier') ?? ($request->file('image')?->getClientOriginalName()) ?? null;
-                $data['image'] = $this->images->process($data['image'], 'sous_categories', $sous_category->image, 'image', $preferredName);
+                $newPath = $this->images->process($data['image'], 'sous_categories', $sous_category->image, 'image', $preferredName);
+                if ($newPath !== $sous_category->image) {
+                    $oldPath = $sous_category->image;
+                }
+                $data['image'] = $newPath;
             }
         }
 
         $sous_category->update($data);
+
+        if ($oldPath !== null) {
+            $this->images->delete($oldPath);
+        }
 
         return new SousCategorieResource($sous_category->fresh());
     }
@@ -69,7 +94,7 @@ class SousCategorieController extends Controller
         $hasActiveCagnotte = Cagnotte::whereIn('produit_id', $produitIds)
             ->where(function ($q) {
                 $q->whereIn('statut', ['active', 'en_cours'])
-                  ->orWhere('montant_verse', '>', 0);
+                    ->orWhere('montant_verse', '>', 0);
             })
             ->exists();
 
@@ -105,6 +130,8 @@ class SousCategorieController extends Controller
 
     public function produits(SousCategorie $sous_category): AnonymousResourceCollection
     {
+        abort_unless($sous_category->actif && $sous_category->categorie?->actif, 404);
+
         return ProduitResource::collection(
             $sous_category->produits()->latest()->paginate(15)
         );

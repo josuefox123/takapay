@@ -113,6 +113,9 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
         Route::prefix('admin')->group(function () {
             // Statistiques du tableau de bord
             Route::get('/stats', [AdminStatsController::class, 'stats']);
+            Route::get('/categories', [CategorieController::class, 'adminIndex']);
+            Route::get('/sous-categories', [SousCategorieController::class, 'adminIndex']);
+            Route::get('/produits', [ProduitController::class, 'adminIndex']);
 
             // Commandes (vue admin avec relations)
             Route::get('/commandes', [CommandeController::class, 'adminIndex']);

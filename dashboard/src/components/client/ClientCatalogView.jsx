@@ -177,6 +177,9 @@ export default function ClientCatalogView({
     }
     return true;
   });
+  const archivedCagnotteProducts = selectedCategory === 'Tous' && !isPromoOnly
+    ? liveProducts.filter((product) => product.categoryArchived && product.has_cagnotte)
+    : [];
 
   return (
     <div>
@@ -291,6 +294,28 @@ export default function ClientCatalogView({
             ))}
           </div>
         </>
+      )}
+
+      {!searchQuery && archivedCagnotteProducts.length > 0 && (
+        <section style={{ marginTop: '28px' }}>
+          <div style={{ marginBottom: '14px' }}>
+            <h3 style={{ fontSize: '18px', fontWeight: 800, color: 'var(--tx)', margin: '0 0 4px' }}>
+              Articles avec une cagnotte existante
+            </h3>
+            <small style={{ color: 'var(--mu)' }}>
+              Ces articles restent accessibles pour retrouver et poursuivre les cagnottes déjà créées.
+            </small>
+          </div>
+          <div className="client-grid">
+            {archivedCagnotteProducts.map((product) => (
+              <ClientProductCard
+                key={`cagnotte-${product.id}`}
+                product={product}
+                onSelect={onSelectProduct}
+              />
+            ))}
+          </div>
+        </section>
       )}
 
       {/* Si recherche textuelle active, afficher les résultats correspondants */}

@@ -17,7 +17,15 @@ class SousCategorie extends Model
         'nom',
         'image',
         'categorie_id',
+        'actif',
     ];
+
+    protected function casts(): array
+    {
+        return [
+            'actif' => 'boolean',
+        ];
+    }
 
     public function categorie(): BelongsTo
     {
