@@ -207,6 +207,44 @@ class CagnotteController extends Controller
     }
 
     /**
+     * Rétablir une cagnotte dont l'annulation a été demandée (tant que le remboursement n'a pas été envoyé).
+     */
+    public function reactiver(Request $request, Cagnotte $cagnotte): JsonResponse
+    {
+        if ($cagnotte->statut !== 'annulation_demandee') {
+            return response()->json([
+                'message' => 'Seule une cagnotte en attente de remboursement peut être rétablie.',
+            ], 422);
+        }
+
+        $inputStatut = $request->input('statut');
+        $newStatut = 'active';
+        if ($inputStatut === 'en_attente' || $cagnotte->moyen_paiement === 'livraison') {
+            $newStatut = 'en_attente';
+        }
+
+        $cagnotte->update([
+            'statut' => $newStatut,
+            'montant_remboursement' => null,
+            'frais_annulation' => null,
+            'telephone_remboursement' => null,
+            'date_demande_annulation' => null,
+        ]);
+
+        // Supprimer la transaction provisoire de remboursement en attente
+        $cagnotte->transactions()
+            ->where('type', 'remboursement')
+            ->where('statut', 'en_attente')
+            ->delete();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Votre cagnotte a été rétablie avec succès.',
+            'cagnotte' => new CagnotteResource($cagnotte->fresh()->load(['utilisateur', 'produit', 'transactions'])),
+        ]);
+    }
+
+    /**
      * Valide et exécute le remboursement d'une cagnotte annulée via l'API Payout de FeexPay (ou manuellement).
      */
     public function validerRemboursementFeexpay(Request $request, Cagnotte $cagnotte): JsonResponse
