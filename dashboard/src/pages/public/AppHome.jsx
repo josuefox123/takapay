@@ -336,6 +336,7 @@ export default function AppHome({ initialTab = 'home' }) {
     };
 
     window.addEventListener('takapay_products_updated', handleProductsUpdated);
+    window.addEventListener('takapay_cagnotte_updated', handleProductsUpdated);
     window.addEventListener('storage', handleProductsUpdated);
     window.addEventListener('focus', handleProductsUpdated);
 
@@ -347,6 +348,7 @@ export default function AppHome({ initialTab = 'home' }) {
       isMounted = false;
       window.clearInterval(refreshInterval);
       window.removeEventListener('takapay_products_updated', handleProductsUpdated);
+      window.removeEventListener('takapay_cagnotte_updated', handleProductsUpdated);
       window.removeEventListener('storage', handleProductsUpdated);
       window.removeEventListener('focus', handleProductsUpdated);
     };

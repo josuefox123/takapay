@@ -391,6 +391,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
           telephone: effectivePhone,
           email: user?.email || '',
         });
+        window.dispatchEvent(new CustomEvent('takapay_products_updated'));
       } catch (err) {
         console.warn('Erreur API annulation:', err);
       }
@@ -444,6 +445,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
     if (backendCagnotteId) {
       try {
         await adminService.reactivateCagnotte(backendCagnotteId, { statut: newStatut });
+        window.dispatchEvent(new CustomEvent('takapay_products_updated'));
       } catch (err) {
         console.warn('Erreur API réactivation:', err);
       }
@@ -2184,8 +2186,8 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                 )}
               </div>
 
-              {/* Information Cagnotte Libre : récupération à 100% */}
-              {!isFinished && isLibre && (
+              {/* Information Cagnotte : cotisations au rythme du client */}
+              {!isFinished && !isCash && !isCancelled && (
                 <div
                   style={{
                     background: '#fef2f2',
@@ -2200,38 +2202,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                 >
                   <span style={{ fontSize: '24px' }}>🎯</span>
                   <div style={{ fontSize: '12.5px', color: '#991b1b', lineHeight: 1.4 }}>
-                    <b>Modalité Cagnotte Libre :</b> Vous cotisez à votre rythme. Votre article est débloqué et expédié dès que votre jauge atteint <b>100%</b> ({formatFCFA(cagnotte.montantTotal || cagnotte.product?.p)}).
-                  </div>
-                </div>
-              )}
-
-              {/* Échéances (masquées en mode libre, une fois financée OU si cagnotte annulée) */}
-              {!isFinished && !isLibre && !isCancelled && (
-                <div className="cagnotte-detail-schedule-grid">
-                  <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
-                    <span style={{ fontSize: '22px', marginTop: '1px' }}>📅</span>
-                    <div>
-                      <small style={{ color: '#8c8580', fontSize: '11.5px', display: 'block' }}>Prochain versement</small>
-                      <b style={{ fontSize: '15px', fontWeight: 800, color: '#1b1716', display: 'block', marginTop: '2px' }}>
-                        {formatFCFA(cagnotte.prochainVersement?.montant)}
-                      </b>
-                      <span style={{ fontSize: '11px', color: '#8c8580' }}>{cagnotte.prochainVersement?.date}</span>
-                    </div>
-                  </div>
-
-                  <div className="cagnotte-detail-schedule-divider" style={{ width: '1px', height: '44px', background: '#ded6cd', margin: '0 12px' }} />
-
-                  <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
-                    <span style={{ fontSize: '22px', marginTop: '1px' }}>🏁</span>
-                    <div>
-                      <small style={{ color: '#8c8580', fontSize: '11.5px', display: 'block' }}>Date de fin estimée</small>
-                      <b style={{ fontSize: '15px', fontWeight: 800, color: '#1b1716', display: 'block', marginTop: '2px' }}>
-                        {cagnotte.dateFinEstimee}
-                      </b>
-                      <span style={{ fontSize: '11px', color: '#8c8580' }}>
-                        ({cagnotte.moisRestants ?? 0} {cagnotte.moisRestants > 1 ? 'mois restants' : 'mois restant'})
-                      </span>
-                    </div>
+                    <b>Cotisation à votre rythme :</b> Vous cotisez librement et à votre propre rythme. Votre article est débloqué et expédié dès que votre jauge atteint <b>100%</b> ({formatFCFA(cagnotte.montantTotal || cagnotte.product?.p)}).
                   </div>
                 </div>
               )}

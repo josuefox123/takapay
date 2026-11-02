@@ -149,11 +149,9 @@ export default function ClientProductCard({ product, onSelect }) {
       <div className="in">
         <h3>{product.n}</h3>
         
-        {/* Prix de versement / seuil : récupération à 100% en mode libre */}
+        {/* À partir de 10% du prix de l'article */}
         <div className="card-price-monthly">
-          {product.payment?.mode === 'libre'
-            ? 'Cotisation libre · Récupération à 100%'
-            : `À partir de ${formatFCFA(product.seuilLivraison ?? product.payment?.seuilLivraison ?? product.seuil_livraison ?? Math.round(product.p * 0.4))}`}
+          À partir de {formatFCFA(Math.floor(Number(product.p || 0) * 0.10))}
         </div>
 
         <div className="pr">
@@ -163,11 +161,16 @@ export default function ClientProductCard({ product, onSelect }) {
         </div>
 
         <div className="card-footer-row">
-          <span className="st">
-            {product.stockCount !== null ? `${product.stockCount} en stock` : 'Stock à confirmer'}
+          <span
+            className="st"
+            style={product.stockCount !== null && product.stockCount <= 0 ? { color: '#dc2626', fontWeight: 700 } : undefined}
+          >
+            {product.stockCount !== null
+              ? (product.stockCount <= 0 ? 'Rupture de stock' : `${product.stockCount} en stock`)
+              : 'Stock à confirmer'}
           </span>
           <span className="card-detail-action">
-            Voir détails →
+            Voir l'offre →
           </span>
         </div>
       </div>

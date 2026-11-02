@@ -117,7 +117,7 @@ export default function AdminProductsView({ onShowToast }) {
     const refreshProducts = () => {
       if (document.visibilityState !== 'visible') return;
       adminService.getProduits().then((list) => {
-        if (isMounted) setProduits(list);
+        if (isMounted && Array.isArray(list)) setProduits(list);
       });
     };
 
@@ -147,13 +147,19 @@ export default function AdminProductsView({ onShowToast }) {
         setLoading(false);
       }
     });
+
     const refreshInterval = window.setInterval(refreshProducts, 60000);
     window.addEventListener('focus', refreshProducts);
+    window.addEventListener('takapay_products_updated', refreshProducts);
+    window.addEventListener('takapay_cagnotte_updated', refreshProducts);
+    window.addEventListener('storage', refreshProducts);
 
     return () => {
       isMounted = false;
       window.clearInterval(refreshInterval);
       window.removeEventListener('focus', refreshProducts);
+      window.removeEventListener('takapay_products_updated', refreshProducts);
+      window.removeEventListener('takapay_cagnotte_updated', refreshProducts);
     };
   }, []);
 
@@ -872,7 +878,7 @@ export default function AdminProductsView({ onShowToast }) {
   });
 
   // Calcul auto des suggestions financières
-  const autoMinStart = form.prix_total ? Math.round(Number(form.prix_total) * 0.1) : 0;
+  const autoMinStart = form.prix_total ? Math.floor(Number(form.prix_total) * 0.1) : 0;
   const dureeDispo = Math.max(1, Number(form.duree || 6));
   const autoEch =
     form.prix_total

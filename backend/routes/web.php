@@ -9,6 +9,11 @@ Route::get('/', function () {
     return view('welcome');
 });
 
+Route::get('/admin/{any?}', function () {
+    $frontendBase = rtrim(env('FRONTEND_URL', 'http://localhost:5173'), '/');
+    return redirect($frontendBase . request()->getRequestUri());
+})->where('any', '.*');
+
 // Fiche article partageable avec balises Open Graph pour WhatsApp, Facebook, etc.
 Route::get('/produit/{id}', function (Request $request, $id) {
     $produit = Produit::with(['imageProduits', 'parametreProduit'])->find($id);
@@ -62,3 +67,4 @@ Route::get('/produit/{id}', function (Request $request, $id) {
 Route::get('/p/{id}', function ($id) {
     return redirect()->route('produit.share', ['id' => $id]);
 });
+
