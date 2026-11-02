@@ -419,21 +419,49 @@ export default function ClientProductDetail({
 
   const colorText = chosenColor?.name || (typeof chosenColor === 'string' ? chosenColor : '');
 
+  // Mise à jour dynamique des balises Open Graph (og:image, og:title, og:description) pour WhatsApp et réseaux
+  useEffect(() => {
+    if (!product || !product.id) return;
+    const prodName = product.n || product.nom || 'Article Takapay';
+    document.title = `${prodName} — Takapay`;
+
+    const setMeta = (attr, key, content) => {
+      let el = document.querySelector(`meta[${attr}="${key}"]`);
+      if (!el) {
+        el = document.createElement('meta');
+        el.setAttribute(attr, key);
+        document.head.appendChild(el);
+      }
+      el.setAttribute('content', content);
+    };
+
+    setMeta('property', 'og:title', prodName);
+    setMeta('property', 'og:type', 'product');
+    setMeta('property', 'og:description', product.description || `Article de qualité certifiée disponible sur Takapay Bénin.`);
+    if (absoluteImageUrl) {
+      setMeta('property', 'og:image', absoluteImageUrl);
+      setMeta('property', 'og:image:secure_url', absoluteImageUrl);
+    }
+    setMeta('property', 'og:url', productPublicUrl);
+    setMeta('name', 'twitter:card', 'summary_large_image');
+    setMeta('name', 'twitter:title', prodName);
+    if (absoluteImageUrl) {
+      setMeta('name', 'twitter:image', absoluteImageUrl);
+    }
+  }, [product?.id, product?.n, absoluteImageUrl, productPublicUrl]);
+
   // Message personnalisé pour WhatsApp envoyé directement au 0198741111 (+2290198741111)
+  // Formaté exactement comme CoinAfrique : texte d'intérêt + détails, terminé par le lien de l'article pour générer l'aperçu photo cliquable
   const whatsappMessage = [
     `Bonjour Takapay ! 👋`,
-    `Je suis très intéressé(e) par l'article *"${product?.n || product?.nom || 'Article'}"* et je souhaite avoir plus d'informations.`,
+    `Votre article *"${product?.n || product?.nom || 'Article'}"* m'intéresse sur Takapay.`,
     ``,
-    `📋 *DÉTAILS DE MON CHOIX :*`,
+    `📋 *DÉTAILS :*`,
     `• *Formule :* ${modeText}`,
-    colorText ? `• *Couleur / Variante :* ${colorText}` : null,
+    colorText ? `• *Option :* ${colorText}` : null,
     (clientNom || clientTel) ? `• *Client :* ${[clientNom, clientTel].filter(Boolean).join(' - ')}` : null,
     ``,
-    `🔗 *Lien direct de l'article :*`,
     productPublicUrl,
-    absoluteImageUrl ? `\n🖼️ *Photo de l'article :*\n${absoluteImageUrl}` : null,
-    ``,
-    `Pouvez-vous me renseigner sur sa disponibilité, les délais et les modalités de livraison ? Merci !`,
   ].filter((line) => line !== null).join('\n');
 
   const whatsappUrl = `https://wa.me/2290198741111?text=${encodeURIComponent(whatsappMessage)}`;
