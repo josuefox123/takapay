@@ -18,6 +18,7 @@ import AdminUsersView from '../../components/admin/AdminUsersView';
 import AdminTransactionsView from '../../components/admin/AdminTransactionsView';
 import AdminLivraisonsView from '../../components/admin/AdminLivraisonsView';
 import AdminSupportView from '../../components/admin/AdminSupportView';
+import AdminProfileView from '../../components/admin/AdminProfileView';
 
 import { adminService } from '../../services/adminService';
 import './admin.css';
@@ -38,6 +39,7 @@ export default function AdminDashboard() {
     'utilisateurs',
     'transactions',
     'livraisons',
+    'profil',
   ];
 
   const initialActive = tab && validTabs.includes(tab) ? tab : 'dashboard';
@@ -124,6 +126,54 @@ export default function AdminDashboard() {
   const [toastMessage, setToastMessage] = useState('');
   const [toastVisible, setToastVisible] = useState(false);
   const [unreadSupportCount, setUnreadSupportCount] = useState(0);
+
+  // Changement de mot de passe obligatoire (première connexion)
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [changePwdLoading, setChangePwdLoading] = useState(false);
+  const [changePwdError, setChangePwdError] = useState('');
+
+  const handleUpdateFirstPassword = async (e) => {
+    e.preventDefault();
+    setChangePwdError('');
+    if (!newPassword || newPassword.length < 8) {
+      setChangePwdError('Le nouveau mot de passe doit comporter au moins 8 caractères.');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setChangePwdError('Les deux mots de passe ne correspondent pas.');
+      return;
+    }
+
+    setChangePwdLoading(true);
+    try {
+      const res = await adminService.updatePassword({
+        new_password: newPassword,
+        confirm_password: confirmPassword,
+      });
+      const updatedUser = res.user || res.data || res;
+      const mergedUser = { ...adminUser, ...updatedUser, must_change_password: false };
+      setAdminUser(mergedUser);
+      try {
+        localStorage.setItem('takapay_admin_user', JSON.stringify(mergedUser));
+      } catch {}
+      showToast('Votre mot de passe a été défini avec succès !');
+      setNewPassword('');
+      setConfirmPassword('');
+    } catch (err) {
+      const msg = err.errors
+        ? Object.values(err.errors).flat().join(' ')
+        : (err.message || 'Erreur lors de la mise à jour du mot de passe.');
+      setChangePwdError(msg);
+    } finally {
+      setChangePwdLoading(false);
+    }
+  };
+
+  const handleForceLogout = () => {
+    adminService.logout();
+    navigate('/admin/connexion', { replace: true });
+  };
 
   const refreshUnreadSupport = () => {
     adminService
@@ -281,7 +331,7 @@ export default function AdminDashboard() {
           )}
 
           {activeTab === 'utilisateurs' && (
-            <AdminUsersView onShowToast={showToast} />
+            <AdminUsersView onShowToast={showToast} currentUser={adminUser} />
           )}
 
           {activeTab === 'transactions' && <AdminTransactionsView />}
@@ -289,8 +339,182 @@ export default function AdminDashboard() {
           {activeTab === 'livraisons' && (
             <AdminLivraisonsView onShowToast={showToast} />
           )}
+
+          {activeTab === 'profil' && (
+            <AdminProfileView
+              currentUser={adminUser}
+              onUserUpdate={(updated) => {
+                setAdminUser(updated);
+                try {
+                  localStorage.setItem('takapay_admin_user', JSON.stringify(updated));
+                } catch {}
+              }}
+              onShowToast={showToast}
+            />
+          )}
         </main>
       </div>
+
+      {/* Modal de changement de mot de passe obligatoire lors de la première connexion */}
+      {adminUser?.must_change_password && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(15, 23, 42, 0.85)',
+            zIndex: 99999,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '24px 16px',
+            backdropFilter: 'blur(10px)',
+            boxSizing: 'border-box',
+          }}
+        >
+          <div
+            style={{
+              background: 'var(--card)',
+              border: '1.5px solid var(--line)',
+              borderRadius: '24px',
+              maxWidth: '520px',
+              width: '100%',
+              padding: '36px',
+              boxShadow: '0 25px 60px rgba(0,0,0,0.4)',
+              boxSizing: 'border-box',
+              position: 'relative',
+            }}
+          >
+            <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+              <div
+                style={{
+                  width: '60px',
+                  height: '60px',
+                  borderRadius: '50%',
+                  background: 'var(--soft)',
+                  color: 'var(--r)',
+                  display: 'grid',
+                  placeItems: 'center',
+                  margin: '0 auto 16px',
+                  fontSize: '28px',
+                }}
+              >
+                🔒
+              </div>
+              <h2 style={{ fontSize: '22px', fontWeight: 800, color: 'var(--ink)', margin: 0 }}>
+                Première connexion : Définissez votre mot de passe
+              </h2>
+              <p style={{ margin: '8px 0 0', fontSize: '14px', color: 'var(--mut)', lineHeight: 1.5 }}>
+                Pour des raisons de sécurité, vous devez remplacer le mot de passe temporaire par un mot de passe personnel avant d'accéder au tableau de bord.
+              </p>
+            </div>
+
+            {changePwdError && (
+              <div
+                style={{
+                  background: 'rgba(239, 68, 68, 0.1)',
+                  color: '#ef4444',
+                  padding: '12px 16px',
+                  borderRadius: '10px',
+                  marginBottom: '18px',
+                  fontSize: '13px',
+                  fontWeight: 500,
+                  lineHeight: 1.4,
+                }}
+              >
+                {changePwdError}
+              </div>
+            )}
+
+            <form onSubmit={handleUpdateFirstPassword}>
+              <div style={{ marginBottom: '16px' }}>
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--ink)', marginBottom: '6px' }}>
+                  Nouveau mot de passe *
+                </label>
+                <input
+                  type="password"
+                  required
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="Minimum 8 caractères"
+                  style={{
+                    width: '100%',
+                    padding: '12px 14px',
+                    borderRadius: '10px',
+                    border: '1.5px solid var(--line)',
+                    background: 'var(--bg)',
+                    color: 'var(--ink)',
+                    fontSize: '14px',
+                    boxSizing: 'border-box',
+                  }}
+                />
+              </div>
+
+              <div style={{ marginBottom: '24px' }}>
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--ink)', marginBottom: '6px' }}>
+                  Confirmez le nouveau mot de passe *
+                </label>
+                <input
+                  type="password"
+                  required
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="Répétez le mot de passe"
+                  style={{
+                    width: '100%',
+                    padding: '12px 14px',
+                    borderRadius: '10px',
+                    border: '1.5px solid var(--line)',
+                    background: 'var(--bg)',
+                    color: 'var(--ink)',
+                    fontSize: '14px',
+                    boxSizing: 'border-box',
+                  }}
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={changePwdLoading}
+                style={{
+                  width: '100%',
+                  padding: '13px',
+                  borderRadius: '12px',
+                  border: 'none',
+                  background: 'var(--r)',
+                  color: '#ffffff',
+                  fontSize: '14px',
+                  fontWeight: 700,
+                  cursor: changePwdLoading ? 'not-allowed' : 'pointer',
+                  opacity: changePwdLoading ? 0.7 : 1,
+                  boxShadow: '0 4px 14px rgba(225, 29, 72, 0.3)',
+                  marginBottom: '16px',
+                }}
+              >
+                {changePwdLoading ? 'Enregistrement...' : 'Enregistrer et continuer'}
+              </button>
+
+              <div style={{ textAlign: 'center' }}>
+                <button
+                  type="button"
+                  onClick={handleForceLogout}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: 'var(--mut)',
+                    fontSize: '13px',
+                    cursor: 'pointer',
+                    textDecoration: 'underline',
+                  }}
+                >
+                  Se déconnecter
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       <AdminToast message={toastMessage} isVisible={toastVisible} />
     </div>

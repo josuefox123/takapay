@@ -71,8 +71,10 @@ Route::get('commandes', [CommandeController::class, 'index'])->name('commandes.i
 Route::get('carousels', [CarouselController::class, 'index'])->name('carousels.index');
 Route::put('profile', [AuthController::class, 'updateProfile'])->name('profile.update');
 Route::put('profile/pin', [AuthController::class, 'updatePin'])->name('profile.update-pin');
+Route::put('profile/password', [AuthController::class, 'updatePassword'])->name('profile.update-password');
 Route::post('cagnottes/{cagnotte}/confirmer-reception', [CagnotteController::class, 'confirmerReception'])->name('cagnottes.confirmer-reception');
 Route::post('cagnottes/{cagnotte}/annuler', [CagnotteController::class, 'demanderAnnulation'])->name('cagnottes.annuler');
+Route::post('cagnottes/{cagnotte}/reactiver', [CagnotteController::class, 'reactiver'])->name('cagnottes.reactiver');
 Route::post('cagnottes/{cagnotte}/rembourser-feexpay', [CagnotteController::class, 'validerRemboursementFeexpay'])->name('cagnottes.rembourser-feexpay');
 Route::get('notifications', [NotificationController::class, 'index'])->name('notifications.index');
 Route::put('notifications/{notification}/lire', [NotificationController::class, 'marquerCommeLu'])->name('notifications.marquer-lu');

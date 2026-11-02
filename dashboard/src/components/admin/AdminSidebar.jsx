@@ -21,6 +21,7 @@ export default function AdminSidebar({
     { id: 'utilisateurs', label: 'Utilisateurs', icon: 'users' },
     { id: 'transactions', label: 'Transactions', icon: 'swap' },
     { id: 'livraisons', label: 'Livraisons', icon: 'truck' },
+    { id: 'profil', label: 'Mon Profil', icon: 'user' },
   ];
 
   return (

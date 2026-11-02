@@ -23,6 +23,7 @@ class UserResource extends JsonResource
             'latitude' => $this->latitude,
             'longitude' => $this->longitude,
             'statut_compte' => $this->statut_compte,
+            'must_change_password' => (bool) ($this->must_change_password ?? false),
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
         ];

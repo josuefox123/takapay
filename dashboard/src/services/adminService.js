@@ -1091,6 +1091,44 @@ export const adminService = {
     return true;
   },
 
+  async createUser(payload) {
+    const token = this.getToken();
+    const res = await fetch(`${API_BASE}/users`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const msg = data.message || Object.values(data.errors || {})[0]?.[0] || "Erreur lors de la création de l'utilisateur.";
+      throw new Error(msg);
+    }
+    return data;
+  },
+
+  async updatePassword(payload) {
+    const token = this.getToken();
+    const res = await fetch(`${API_BASE}/profile/password`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const msg = data.message || Object.values(data.errors || {})[0]?.[0] || 'Erreur lors de la mise à jour du mot de passe.';
+      throw new Error(msg);
+    }
+    return data;
+  },
+
   // 5. GESTION DES TRANSACTIONS
   async getTransactions() {
     const token = this.getToken();
