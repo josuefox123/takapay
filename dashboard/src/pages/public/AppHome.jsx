@@ -634,43 +634,58 @@ export default function AppHome({ initialTab = 'home' }) {
             />
           )}
 
-          {view === 'product' && (
-            <ClientProductDetail
-              productId={activeProductId}
-              product={productsList.find((p) => p.id === Number(activeProductId)) || PRODUCTS.find((p) => p.id === Number(activeProductId))}
-              user={user}
-              onShowToast={showToast}
-              onBack={() => {
-                if (window.history.state && window.history.state.idx > 0) {
-                  navigate(-1);
-                } else if (previousView === 'home') {
-                  setView('home');
-                  navigate('/app');
-                } else if (previousView === 'subcat' && isFavoritesOnly) {
-                  setView('subcat');
-                  navigate('/app/favoris');
-                } else if (previousView === 'subcat' && selectedSubCat) {
-                  setView('subcat');
-                  if (selectedCat && selectedCat !== 'Tous') {
-                    navigate(`/app/categories/${encodeURIComponent(selectedCat)}?sub=${encodeURIComponent(selectedSubCat)}`);
+          {view === 'product' && (() => {
+            const currentItem =
+              productsList.find((p) => String(p.id) === String(activeProductId)) ||
+              PRODUCTS.find((p) => String(p.id) === String(activeProductId));
+
+            if (!currentItem && productsList.length === 0) {
+              return (
+                <div style={{ minHeight: '60vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '2rem', textAlign: 'center' }}>
+                  <div style={{ width: '40px', height: '40px', border: '3px solid #e5e7eb', borderTopColor: '#c62828', borderRadius: '50%', animation: 'spin 1s linear infinite', marginBottom: '14px' }} />
+                  <p style={{ color: '#4b5563', fontWeight: 600, fontSize: '1rem' }}>Chargement de l'article Takapay...</p>
+                </div>
+              );
+            }
+
+            return (
+              <ClientProductDetail
+                productId={activeProductId}
+                product={currentItem || productsList[0] || PRODUCTS[0]}
+                user={user}
+                onShowToast={showToast}
+                onBack={() => {
+                  if (window.history.state && window.history.state.idx > 0) {
+                    navigate(-1);
+                  } else if (previousView === 'home') {
+                    setView('home');
+                    navigate('/app');
+                  } else if (previousView === 'subcat' && isFavoritesOnly) {
+                    setView('subcat');
+                    navigate('/app/favoris');
+                  } else if (previousView === 'subcat' && selectedSubCat) {
+                    setView('subcat');
+                    if (selectedCat && selectedCat !== 'Tous') {
+                      navigate(`/app/categories/${encodeURIComponent(selectedCat)}?sub=${encodeURIComponent(selectedSubCat)}`);
+                    } else {
+                      navigate(`/app/produits?sub=${encodeURIComponent(selectedSubCat)}`);
+                    }
+                  } else if (selectedCat && selectedCat !== 'Tous') {
+                    setView('shop');
+                    navigate(`/app/categories/${encodeURIComponent(selectedCat)}`);
                   } else {
-                    navigate(`/app/produits?sub=${encodeURIComponent(selectedSubCat)}`);
+                    setView('shop');
+                    navigate('/app/produits');
                   }
-                } else if (selectedCat && selectedCat !== 'Tous') {
-                  setView('shop');
-                  navigate(`/app/categories/${encodeURIComponent(selectedCat)}`);
-                } else {
-                  setView('shop');
-                  navigate('/app/produits');
-                }
-              }}
-              onStartOrder={handleStartOrder}
-              onSelectProduct={handleOpenProduct}
-              onGoHome={() => handleSelectTab('home')}
-              onSelectCategory={handleSelectCategory}
-              onSelectSubcategory={handleSelectSubcategory}
-            />
-          )}
+                }}
+                onStartOrder={handleStartOrder}
+                onSelectProduct={handleOpenProduct}
+                onGoHome={() => handleSelectTab('home')}
+                onSelectCategory={handleSelectCategory}
+                onSelectSubcategory={handleSelectSubcategory}
+              />
+            );
+          })()}
 
           {view === 'order' && (
             <ClientOrderFlow

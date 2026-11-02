@@ -14,7 +14,7 @@ export default function ClientProductDetail({
   onSelectCategory,
   onSelectSubcategory,
 }) {
-  const product = propProduct || PRODUCTS.find((p) => p.id === Number(productId)) || PRODUCTS[0];
+  const product = propProduct || PRODUCTS.find((p) => String(p.id) === String(productId)) || PRODUCTS[0] || {};
   const [selectedGallery, setSelectedGallery] = useState(() => {
     const hasImgs = ((Array.isArray(product?.images) && product.images.length > 0) ? product.images : (product?.im ? [product.im] : [])).filter(Boolean).length > 0;
     return (!hasImgs && product?.video) ? 'video' : 0;
@@ -252,36 +252,36 @@ export default function ClientProductDetail({
 
   // Suggestions d'articles après la zone inférieure (même catégorie ou catalogue complémentaire)
   const categoryArticles = PRODUCTS.filter(
-    (p) => p.id !== product.id && (p.subcategory === product.subcategory || p.c === product.c)
+    (p) => p && product?.id && p.id !== product.id && (p.subcategory === product.subcategory || p.c === product.c)
   );
   const otherArticles = PRODUCTS.filter(
-    (p) => p.id !== product.id && p.subcategory !== product.subcategory && p.c !== product.c
+    (p) => p && product?.id && p.id !== product.id && p.subcategory !== product.subcategory && p.c !== product.c
   );
   const proposalArticles = [...categoryArticles, ...otherArticles].slice(0, 6);
 
-  const colors = product.colors || [];
+  const colors = product?.colors || [];
   const chosenColor = colors[selectedColor] || colors[0];
 
   // Paramètres & promotion éventuelle sur le produit
-  const param = product.parametre_produit || {};
-  const promo = param.promotion || product.promotion;
+  const param = product?.parametre_produit || {};
+  const promo = param.promotion || product?.promotion;
   const promoPercent = promo ? Number(promo.pourcentage_promo || 0) : 0;
 
-  const rawProductPrice = Number(param.prix_total || product.prix_total || product.prix || product.p || 0);
-  const rawCashPrice = Number(param.prix_cash || product.prix_cash || rawProductPrice);
+  const rawProductPrice = Number(param.prix_total || product?.prix_total || product?.prix || product?.p || 0);
+  const rawCashPrice = Number(param.prix_cash || product?.prix_cash || rawProductPrice);
 
   // Prix de base garanti avec application de la promotion si non encore appliquée
-  const resolvedBasePrice = (promoPercent > 0 && !product.o && rawProductPrice > 0)
+  const resolvedBasePrice = (promoPercent > 0 && !product?.o && rawProductPrice > 0)
     ? Math.round(rawProductPrice * (1 - promoPercent / 100))
-    : Number(product.p || rawProductPrice || 0);
+    : Number(product?.p || rawProductPrice || 0);
 
-  const resolvedCashPrice = (promoPercent > 0 && !product.o && rawCashPrice > 0)
+  const resolvedCashPrice = (promoPercent > 0 && !product?.o && rawCashPrice > 0)
     ? Math.round(rawCashPrice * (1 - promoPercent / 100))
-    : Number(product.prix_cash || product.payment?.prixCash || resolvedBasePrice);
+    : Number(product?.prix_cash || product?.payment?.prixCash || resolvedBasePrice);
 
-  const resolvedOldPrice = (promoPercent > 0 && !product.o && rawProductPrice > 0)
+  const resolvedOldPrice = (promoPercent > 0 && !product?.o && rawProductPrice > 0)
     ? rawProductPrice
-    : product.o;
+    : product?.o;
 
   // Calcul du prix dynamique selon la couleur sélectionnée
   const hasCustomPrice = Boolean(chosenColor?.hasCustomPrice && chosenColor?.price);
@@ -388,10 +388,83 @@ export default function ClientProductDetail({
     }
   };
 
-  // Lien WhatsApp direct avec message pré-rempli
-  const whatsappUrl = `https://wa.me/22990000000?text=${encodeURIComponent(
-    `Bonjour Takapay, je suis intéressé(e) par l'article "${product.n}" affiché à ${formatFCFA(orderMode === 'cash' ? effectiveCashPrice * cashQuantity : currentPrice)} (Mode : ${orderMode === 'cash' ? `Cash Comptant - ${cashQuantity} article(s)` : `Cagnotte Libre - 1er versement : ${formatFCFA(effectiveFirstDeposit)}`}). Pouvez-vous me renseigner sur sa disponibilité et la livraison ?`
-  )}`;
+  // Résolution d'une URL de base accessible sur le réseau (LAN en dev, domaine en prod)
+  const getPublicBaseUrl = () => {
+    let origin = window.location.origin;
+    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+      origin = origin.replace(/localhost|127\.0\.0\.1/, '192.168.100.210');
+    }
+    return origin;
+  };
+
+  const productPublicUrl = `${getPublicBaseUrl()}/app/produits/${product?.id || 1}`;
+
+  // Image URL absolue pour affichage et prévisualisation WhatsApp
+  const selectedImgSrc = currentImage || (images && images[0]) || product?.im || '';
+  const resolvedImg = selectedImgSrc ? resolveImageUrl(selectedImgSrc) : '';
+  const absoluteImageUrl = resolvedImg
+    ? (resolvedImg.startsWith('http://') || resolvedImg.startsWith('https://')
+        ? (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+            ? resolvedImg.replace(/localhost|127\.0\.0\.1/, '192.168.100.210')
+            : resolvedImg)
+        : `${getPublicBaseUrl()}${resolvedImg.startsWith('/') ? '' : '/'}${resolvedImg}`)
+    : '';
+
+  const clientNom = deliveryCustomerName || (user?.prenom || user?.nom ? `${user.prenom || ''} ${user.nom || ''}`.trim() : (user?.n || ''));
+  const clientTel = deliveryPhone || user?.telephone || user?.phone || '';
+
+  const modeText = orderMode === 'cash'
+    ? `Paiement Cash Comptant (${cashQuantity} article(s) à ${formatFCFA(effectiveCashPrice * cashQuantity)})`
+    : `Cagnotte Libre TakaPay (Objectif : ${formatFCFA(currentPrice)} · 1er versement : ${formatFCFA(effectiveFirstDeposit)})`;
+
+  const colorText = chosenColor?.name || (typeof chosenColor === 'string' ? chosenColor : '');
+
+  // Mise à jour dynamique des balises Open Graph (og:image, og:title, og:description) pour WhatsApp et réseaux
+  useEffect(() => {
+    if (!product || !product.id) return;
+    const prodName = product.n || product.nom || 'Article Takapay';
+    document.title = `${prodName} — Takapay`;
+
+    const setMeta = (attr, key, content) => {
+      let el = document.querySelector(`meta[${attr}="${key}"]`);
+      if (!el) {
+        el = document.createElement('meta');
+        el.setAttribute(attr, key);
+        document.head.appendChild(el);
+      }
+      el.setAttribute('content', content);
+    };
+
+    setMeta('property', 'og:title', prodName);
+    setMeta('property', 'og:type', 'product');
+    setMeta('property', 'og:description', product.description || `Article de qualité certifiée disponible sur Takapay Bénin.`);
+    if (absoluteImageUrl) {
+      setMeta('property', 'og:image', absoluteImageUrl);
+      setMeta('property', 'og:image:secure_url', absoluteImageUrl);
+    }
+    setMeta('property', 'og:url', productPublicUrl);
+    setMeta('name', 'twitter:card', 'summary_large_image');
+    setMeta('name', 'twitter:title', prodName);
+    if (absoluteImageUrl) {
+      setMeta('name', 'twitter:image', absoluteImageUrl);
+    }
+  }, [product?.id, product?.n, absoluteImageUrl, productPublicUrl]);
+
+  // Message personnalisé pour WhatsApp envoyé directement au 0198741111 (+2290198741111)
+  // Formaté exactement comme CoinAfrique : texte d'intérêt + détails, terminé par le lien de l'article pour générer l'aperçu photo cliquable
+  const whatsappMessage = [
+    `Bonjour Takapay ! 👋`,
+    `Votre article *"${product?.n || product?.nom || 'Article'}"* m'intéresse sur Takapay.`,
+    ``,
+    `📋 *DÉTAILS :*`,
+    `• *Formule :* ${modeText}`,
+    colorText ? `• *Option :* ${colorText}` : null,
+    (clientNom || clientTel) ? `• *Client :* ${[clientNom, clientTel].filter(Boolean).join(' - ')}` : null,
+    ``,
+    productPublicUrl,
+  ].filter((line) => line !== null).join('\n');
+
+  const whatsappUrl = `https://wa.me/2290198741111?text=${encodeURIComponent(whatsappMessage)}`;
 
   // 1er versement minimum pour la cagnotte (10% par défaut)
   const basePrice = Number(product.p) > 0 ? Number(product.p) : 1;
@@ -1088,15 +1161,13 @@ export default function ClientProductDetail({
           </div>
 
           {/* ACTIONS D'ACHAT DIRECT (PAS DE PANIER) */}
-          <div>
-            {/* Bouton d'action principal CTA rouge compact prenant toute la largeur */}
+          <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginTop: '16px', flexWrap: 'wrap' }}>
             <button
               type="button"
-              className="client-btn"
+              className="btn btn-primary"
               style={{
-                width: '100%',
-                fontSize: '15px',
-                padding: '12px 16px',
+                flex: 1,
+                minWidth: '200px',
                 borderRadius: '12px',
                 fontWeight: 800,
                 background: 'var(--r)',
@@ -1124,6 +1195,35 @@ export default function ClientProductDetail({
             >
               <span>Passer ma commande</span>
             </button>
+
+            <a
+              href={whatsappUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                padding: '0 18px',
+                height: '46px',
+                borderRadius: '12px',
+                background: '#25D366',
+                color: '#ffffff',
+                fontWeight: 800,
+                fontSize: '13.5px',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+                textDecoration: 'none',
+                boxShadow: '0 4px 14px rgba(37, 211, 102, 0.28)',
+                whiteSpace: 'nowrap',
+              }}
+              title="Intéressé(e) ? Échanger sur WhatsApp au 01 98 74 11 11"
+            >
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none">
+                <path fill="#ffffff" d="M12.04 2c-5.46 0-9.91 4.45-9.91 9.91 0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38c1.45.79 3.08 1.21 4.74 1.21 5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.82 9.82 0 0 0 12.04 2z" />
+                <path fill="#25D366" fillRule="evenodd" clipRule="evenodd" d="M17.51 14.38c-.3-.15-1.77-.87-2.04-.97-.28-.1-.48-.15-.68.15-.2.3-.77.97-.95 1.17-.17.2-.35.22-.65.07-.3-.15-1.26-.46-2.4-1.48-.89-.79-1.49-1.77-1.66-2.07-.18-.3-.02-.46.13-.61.13-.14.3-.35.45-.52.15-.18.2-.3.3-.5.1-.2.05-.38-.02-.53-.08-.15-.68-1.64-.93-2.24-.25-.6-.5-.52-.68-.53-.18-.01-.38-.01-.58-.01-.2 0-.53.07-.81.38-.28.3-1.07 1.05-1.07 2.56 0 1.51 1.1 2.97 1.25 3.17.15.2 2.16 3.3 5.23 4.63.73.32 1.3.51 1.74.65.73.23 1.4.2 1.93.12.59-.09 1.77-.72 2.02-1.42.25-.7.25-1.3.17-1.42-.07-.13-.27-.2-.57-.35z" />
+              </svg>
+              <span>Infos via WhatsApp</span>
+            </a>
           </div>
 
           <p className="auth-footnote" style={{ marginTop: '12px', textAlign: 'center', fontSize: '11.5px', color: 'var(--mu)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
@@ -1169,26 +1269,36 @@ export default function ClientProductDetail({
           {/* Carte 3 : Support & Service client */}
           <div className="aside-info-card">
             <div className="aside-info-card-title">
-              <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '20px', color: 'var(--r)' }}>support_agent</span>
-              <span>Besoin d'aide ?</span>
+              <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '20px', color: '#25D366' }}>chat</span>
+              <span>Besoin d'aide ou d'infos ?</span>
             </div>
             <p className="aside-info-card-text">
-              Une question sur cet article ou sur votre commande ? Nos conseillers sont à votre écoute au Bénin.
+              Intéressé(e) par cet article ? Échangez directement avec nos conseillers sur WhatsApp au <strong>01 98 74 11 11</strong>.
             </p>
             <a
               href={whatsappUrl}
               target="_blank"
               rel="noopener noreferrer"
               style={{
-                display: 'inline-block',
-                marginTop: '8px',
-                fontSize: '12px',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '8px',
+                marginTop: '10px',
+                padding: '9px 16px',
+                background: '#25D366',
+                color: '#ffffff',
+                borderRadius: '10px',
+                fontSize: '12.5px',
                 fontWeight: 800,
-                color: 'var(--r)',
                 textDecoration: 'none',
+                boxShadow: '0 2px 8px rgba(37, 211, 102, 0.25)',
               }}
             >
-              Contacter le support Takapay →
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none">
+                <path fill="#ffffff" d="M12.04 2c-5.46 0-9.91 4.45-9.91 9.91 0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38c1.45.79 3.08 1.21 4.74 1.21 5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.82 9.82 0 0 0 12.04 2z" />
+                <path fill="#25D366" fillRule="evenodd" clipRule="evenodd" d="M17.51 14.38c-.3-.15-1.77-.87-2.04-.97-.28-.1-.48-.15-.68.15-.2.3-.77.97-.95 1.17-.17.2-.35.22-.65.07-.3-.15-1.26-.46-2.4-1.48-.89-.79-1.49-1.77-1.66-2.07-.18-.3-.02-.46.13-.61.13-.14.3-.35.45-.52.15-.18.2-.3.3-.5.1-.2.05-.38-.02-.53-.08-.15-.68-1.64-.93-2.24-.25-.6-.5-.52-.68-.53-.18-.01-.38-.01-.58-.01-.2 0-.53.07-.81.38-.28.3-1.07 1.05-1.07 2.56 0 1.51 1.1 2.97 1.25 3.17.15.2 2.16 3.3 5.23 4.63.73.32 1.3.51 1.74.65.73.23 1.4.2 1.93.12.59-.09 1.77-.72 2.02-1.42.25-.7.25-1.3.17-1.42-.07-.13-.27-.2-.57-.35z" />
+              </svg>
+              <span>Discuter sur WhatsApp →</span>
             </a>
           </div>
 
@@ -1209,7 +1319,7 @@ export default function ClientProductDetail({
                 <span>Copier le lien</span>
               </button>
               <a
-                href={`https://api.whatsapp.com/send?text=${encodeURIComponent(`Regarde cet article sur Takapay : ${product.n} - ${window.location.href}`)}`}
+                href={`https://api.whatsapp.com/send?text=${encodeURIComponent(`Regarde cet article sur Takapay : ${product?.n || ''} - ${productPublicUrl}`)}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="aside-share-btn"

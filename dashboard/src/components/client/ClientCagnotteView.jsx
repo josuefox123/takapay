@@ -94,6 +94,28 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
   const [selectedReceipt, setSelectedReceipt] = useState(null);
   const [paymentData, setPaymentData] = useState(null);
   const [depositError, setDepositError] = useState('');
+
+  // Simulation validation versement 40 secondes
+  const [isProcessingPayment, setIsProcessingPayment] = useState(false);
+  const [paymentCountdown, setPaymentCountdown] = useState(40);
+  const [paymentFailed, setPaymentFailed] = useState(false);
+
+  useEffect(() => {
+    let timer = null;
+    if (isProcessingPayment) {
+      if (paymentCountdown > 0) {
+        timer = setTimeout(() => {
+          setPaymentCountdown((prev) => prev - 1);
+        }, 1000);
+      } else {
+        setIsProcessingPayment(false);
+        setPaymentFailed(true);
+      }
+    }
+    return () => {
+      if (timer) clearTimeout(timer);
+    };
+  }, [isProcessingPayment, paymentCountdown]);
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
   const [isReactivating, setIsReactivating] = useState(false);
@@ -311,6 +333,9 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
     setDepositTargetId(null);
     setPaymentData(null);
     setDepositError('');
+    setIsProcessingPayment(false);
+    setPaymentCountdown(40);
+    setPaymentFailed(false);
   };
 
   const openCancelModal = () => {
@@ -531,7 +556,9 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
     }
 
     setDepositError('');
-    setIsSubmitting(true);
+    setPaymentFailed(false);
+    setIsProcessingPayment(true);
+    setPaymentCountdown(40);
     try {
       const initRes = await adminService.initiatePayment({
         amount: amountNum,
@@ -540,12 +567,11 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
         type_paiement: 'cagnotte',
         moyen_paiement: depositProvider,
         user_id: user?.id,
+        telephone: depositPhone.trim(),
       });
-      setPaymentData(initRes);
+      if (initRes) setPaymentData(initRes);
     } catch (err) {
-      setDepositError(err.message || 'Impossible d’initialiser le paiement avec FeexPay.');
-    } finally {
-      setIsSubmitting(false);
+      console.warn('initiatePayment background notice:', err);
     }
   };
 
@@ -557,87 +583,94 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
       response.status?.toUpperCase() === 'PAID'
     );
 
-    if (isSuccess) {
-      const orderRef = paymentData?.reference || response.reference;
-      let amountNum = parseInt(depositAmount, 10) || Number(response.amount) || 0;
-      const customerEmail = response.email || user?.email || null;
-
-      try {
-        const confirmation = await adminService.confirmPayment({
-          reference: orderRef,
-          status: 'successful',
-          transaction_id: response.transaction_id || response.id || response.reference || orderRef,
-          amount: amountNum,
-          reseau: response.reseau || depositProvider,
-          user_id: user?.id,
-          client_email: customerEmail,
-        });
-        if (confirmation?.status !== 'success') {
-          throw new Error(confirmation?.message || 'FeexPay n’a pas confirmé le paiement.');
-        }
-        amountNum = Number(confirmation.amount) || amountNum;
-      } catch (err) {
-        setDepositError(err.message || 'Impossible de confirmer le paiement auprès de FeexPay.');
-        return;
-      }
-
-      // Mise à jour de la cagnotte en local
-      const target = targetCagnotte;
-      const targetTotal = Number(target.prixTotal) || 1;
-      const newPaid = (Number(target.montantVerse) || 0) + amountNum;
-      const newRemaining = Math.max(0, targetTotal - newPaid);
-      const newPercent = Math.min(100, Math.round((newPaid / targetTotal) * 100));
-
-      const now = new Date();
-      const dateFormatted =
-        now.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' }) +
-        ' ' +
-        now.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
-
-      const newTx = {
-        id: `tx-${Date.now()}`,
-        reference: orderRef,
-        titre: 'Versement',
-        methode: response.reseau || (depositProvider === 'MTN' ? 'MTN Mobile Money' : 'Moov Money'),
-        date: dateFormatted,
-        montant: amountNum,
-        statut: 'Réussi',
-        type: 'versement',
-        periode: 'aujourdhui',
-        telephone: depositPhone,
-        client: clientName,
-      };
-
-      const isCompleted = newPercent >= 100;
-      const updatedCagnotte = {
-        ...target,
-        montantVerse: newPaid,
-        resteAPayer: newRemaining,
-        pourcentage: newPercent,
-        statut: isCompleted ? 'completed' : 'active',
-        transactions: [newTx, ...(target.transactions || [])],
-      };
-
-      const updatedList = cagnottesList.map((c) =>
-        String(c.id) === String(target.id) ? updatedCagnotte : c
-      );
-      setCagnottesList(updatedList);
-      try {
-        localStorage.setItem('takapay_backend_cagnottes', JSON.stringify(updatedList));
-        window.dispatchEvent(new CustomEvent('takapay_cagnotte_updated'));
-      } catch {
-        // Ignorer
-      }
-
-      closeDeposit();
-      onShowToast?.(
-        isCompleted
-          ? `🎉 Bravo ! Votre cagnotte "${target.product?.n}" est désormais financée à 100% !`
-          : `Versement de ${formatFCFA(amountNum)} validé avec succès par FeexPay !`
-      );
-    } else {
-      setDepositError(response?.message || 'Le paiement FeexPay a été annulé ou n’a pas abouti.');
+    if (!isSuccess) {
+      setPaymentData(null);
+      setPaymentFailed(false);
+      setIsProcessingPayment(true);
+      setPaymentCountdown(40);
+      return;
     }
+
+    const orderRef = paymentData?.reference || response.reference;
+    let amountNum = parseInt(depositAmount, 10) || Number(response.amount) || 0;
+    const customerEmail = response.email || user?.email || null;
+
+    try {
+      const confirmation = await adminService.confirmPayment({
+        reference: orderRef,
+        status: 'successful',
+        transaction_id: response.transaction_id || response.id || response.reference || orderRef,
+        amount: amountNum,
+        reseau: response.reseau || depositProvider,
+        user_id: user?.id,
+        client_email: customerEmail,
+      });
+      if (confirmation?.status !== 'success') {
+        throw new Error(confirmation?.message || 'FeexPay n’a pas confirmé le paiement.');
+      }
+      amountNum = Number(confirmation.amount) || amountNum;
+    } catch (err) {
+      setPaymentData(null);
+      setIsProcessingPayment(false);
+      setPaymentFailed(false);
+      setDepositError(err.message || 'Impossible de confirmer le paiement auprès de FeexPay.');
+      return;
+    }
+
+    // Mise à jour de la cagnotte en local
+    const target = targetCagnotte;
+    const targetTotal = Number(target.prixTotal) || 1;
+    const newPaid = (Number(target.montantVerse) || 0) + amountNum;
+    const newRemaining = Math.max(0, targetTotal - newPaid);
+    const newPercent = Math.min(100, Math.round((newPaid / targetTotal) * 100));
+
+    const now = new Date();
+    const dateFormatted =
+      now.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' }) +
+      ' ' +
+      now.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+
+    const newTx = {
+      id: `tx-${Date.now()}`,
+      reference: orderRef,
+      titre: 'Versement',
+      methode: response.reseau || (depositProvider === 'MTN' ? 'MTN Mobile Money' : 'Moov Money'),
+      date: dateFormatted,
+      montant: amountNum,
+      statut: 'Réussi',
+      type: 'versement',
+      periode: 'aujourdhui',
+      telephone: depositPhone,
+      client: clientName,
+    };
+
+    const isCompleted = newPercent >= 100;
+    const updatedCagnotte = {
+      ...target,
+      montantVerse: newPaid,
+      resteAPayer: newRemaining,
+      pourcentage: newPercent,
+      statut: isCompleted ? 'completed' : 'active',
+      transactions: [newTx, ...(target.transactions || [])],
+    };
+
+    const updatedList = cagnottesList.map((c) =>
+      String(c.id) === String(target.id) ? updatedCagnotte : c
+    );
+    setCagnottesList(updatedList);
+    try {
+      localStorage.setItem('takapay_backend_cagnottes', JSON.stringify(updatedList));
+      window.dispatchEvent(new CustomEvent('takapay_cagnotte_updated'));
+    } catch {
+      // Ignorer
+    }
+
+    closeDeposit();
+    onShowToast?.(
+      isCompleted
+        ? `🎉 Bravo ! Votre cagnotte "${target.product?.n}" est désormais financée à 100% !`
+        : `Versement de ${formatFCFA(amountNum)} validé avec succès par FeexPay !`
+    );
   };
 
   // ---------- Rendu ----------
@@ -2571,7 +2604,57 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
               </div>
             )}
 
-            {paymentData ? (
+            {paymentFailed ? (
+              <div style={{
+                padding: '32px 20px',
+                textAlign: 'center',
+                background: '#ffffff',
+                borderRadius: '16px',
+                border: '1.5px solid #fecaca',
+                boxShadow: '0 8px 24px rgba(220, 38, 38, 0.08)',
+                marginBottom: '16px'
+              }}>
+                <div style={{
+                  width: '56px',
+                  height: '56px',
+                  margin: '0 auto 14px',
+                  background: '#fee2e2',
+                  color: '#dc2626',
+                  borderRadius: '50%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '28px',
+                  fontWeight: 'bold'
+                }}>
+                  ✕
+                </div>
+                <h3 style={{ fontSize: '18px', fontWeight: 800, color: '#991b1b', marginBottom: '8px' }}>
+                  Échec du versement
+                </h3>
+                <p style={{ fontSize: '13.5px', color: '#4b5563', lineHeight: 1.5, maxWidth: '380px', margin: '0 auto 20px' }}>
+                  Aucune confirmation n’a été reçue dans le délai. Vérifiez le statut du versement dans votre historique avant de réessayer afin d’éviter un double paiement.
+                </p>
+                <button
+                  type="button"
+                  style={{
+                    ...primaryButtonStyle,
+                    width: '100%',
+                    padding: '14px',
+                    borderRadius: '14px',
+                    fontSize: '15px',
+                  }}
+                  onClick={() => {
+                    setPaymentFailed(false);
+                    setIsProcessingPayment(false);
+                    setPaymentCountdown(40);
+                    setPaymentData(null);
+                  }}
+                >
+                  🔄 Réessayer le versement
+                </button>
+              </div>
+            ) : paymentData ? (
               <FeexPayProvider>
                 <div style={{ marginTop: '12px' }}>
                   <div style={{ marginBottom: '14px', padding: '12px', background: 'rgba(22, 163, 74, 0.08)', borderRadius: '10px', fontSize: '13px', color: '#166534', fontWeight: 600 }}>
@@ -2726,19 +2809,21 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
 
               <button
                 type="submit"
-                disabled={isSubmitting}
+                disabled={isSubmitting || isProcessingPayment}
                 style={{
                   ...primaryButtonStyle,
                   width: '100%',
                   padding: '14px',
                   borderRadius: '14px',
                   fontSize: '15px',
-                  opacity: isSubmitting ? 0.8 : 1,
-                  cursor: isSubmitting ? 'wait' : 'pointer',
+                  opacity: (isSubmitting || isProcessingPayment) ? 0.8 : 1,
+                  cursor: (isSubmitting || isProcessingPayment) ? 'wait' : 'pointer',
                 }}
               >
-                {isSubmitting
-                  ? 'Traitement Mobile Money...'
+                {isProcessingPayment
+                  ? 'Traitement en cours...'
+                  : isSubmitting
+                  ? 'Préparation FeexPay...'
                   : `Confirmer le versement de ${formatFCFA(Number(depositAmount) || 0)}`}
               </button>
               </form>
