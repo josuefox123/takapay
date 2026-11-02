@@ -544,6 +544,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
         type_paiement: 'cagnotte',
         moyen_paiement: depositProvider,
         user_id: user?.id,
+        telephone: depositPhone.trim(),
       });
       if (initRes) setPaymentData(initRes);
     } catch (err) {

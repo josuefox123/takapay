@@ -14,6 +14,7 @@ use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 
@@ -212,13 +213,66 @@ class PaymentController extends Controller
         }
 
         $isCod = $request->input('moyen_paiement') === 'livraison';
+        $feexpayResponse = null;
+
+        if (!$isCod) {
+            $rawPhone = $request->input('telephone') ?? $request->input('telephone_livraison') ?? $request->input('delivery_phone') ?? $user?->telephone;
+            $cleanPhone = preg_replace('/\D/', '', (string) $rawPhone);
+            if (str_starts_with($cleanPhone, '229229')) {
+                $cleanPhone = substr($cleanPhone, 3);
+            }
+            if (!str_starts_with($cleanPhone, '229') && !empty($cleanPhone)) {
+                $cleanPhone = '229' . $cleanPhone;
+            }
+
+            $moyen = strtoupper((string) $request->input('moyen_paiement', 'MTN'));
+            $network = str_contains($moyen, 'MOOV') ? 'MOOV' : 'MTN';
+
+            $shopId = config('services.feexpay.shop_id');
+            $apiKey = config('services.feexpay.api_key');
+
+            if ($shopId && $apiKey && strlen($cleanPhone) >= 10) {
+                try {
+                    $fpRes = Http::timeout(15)
+                        ->withToken($apiKey)
+                        ->withHeaders([
+                            'Accept' => 'application/json',
+                            'Content-Type' => 'application/json',
+                        ])
+                        ->post('https://api-v2.feexpay.me/api/transactions/requesttopay/integration', [
+                            'phoneNumber' => $cleanPhone,
+                            'amount' => (int) $amount,
+                            'reseau' => $network,
+                            'description' => 'Takapay ' . $reference,
+                            'customId' => $reference,
+                            'shop' => $shopId,
+                            'token' => $apiKey,
+                            'currency' => 'XOF',
+                            'first_name' => $user?->prenom ?? $request->input('client_nom', 'Client'),
+                            'email' => $request->input('client_email') ?? $user?->email,
+                        ]);
+                    $feexpayResponse = $fpRes->json();
+                    Log::info('FeexPay RequestToPay trigger :', [
+                        'phone' => $cleanPhone,
+                        'reseau' => $network,
+                        'status' => $fpRes->status(),
+                        'data' => $feexpayResponse,
+                    ]);
+                } catch (\Throwable $e) {
+                    Log::error('FeexPay RequestToPay Exception :', [
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+        }
 
         return response()->json([
             'shop_id' => config('services.feexpay.shop_id'),
             'api_key' => config('services.feexpay.api_key'),
             'mode' => config('services.feexpay.mode', 'SANDBOX'),
             'amount' => $amount,
-            'reference' => $reference,
+            'reference' => $feexpayResponse['reference'] ?? $reference,
+            'feexpay_status' => $feexpayResponse['status'] ?? null,
             'commande_id' => $commande?->id,
             'cagnotte_id' => $cagnotteId,
             'type_paiement' => $typePaiement,
