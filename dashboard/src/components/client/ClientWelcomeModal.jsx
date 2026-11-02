@@ -3,7 +3,7 @@ import { formatFCFA, discountPercentage, resolveImageUrl, PRODUCTS } from '../..
 import adminService from '../../services/adminService';
 import welcomeBannerImg from '../../assets/imagetakapay.webp';
 
-export default function ClientWelcomeModal({ isOpen, onClose, onSelectProduct, onShowAllPromos }) {
+export default function ClientWelcomeModal({ isOpen, onClose, onSelectProduct, onShowAllPromos, products = [] }) {
   const [dbCarousels, setDbCarousels] = useState(() => {
     try {
       const cached = localStorage.getItem('takapay_public_carousels');
@@ -42,9 +42,13 @@ export default function ClientWelcomeModal({ isOpen, onClose, onSelectProduct, o
     return dbCarousels.find((c) => c.is_actif !== false && (c.image_url || c.image)) || dbCarousels[0];
   }, [dbCarousels]);
 
+  // Produits en promotion réels venant de la base de données
   const deals = useMemo(() => {
-    return PRODUCTS.filter((p) => p.o).slice(0, 3);
-  }, []);
+    const list = Array.isArray(products) && products.length > 0 ? products : PRODUCTS;
+    const discounted = list.filter((p) => p && p.o && Number(p.o) > Number(p.p));
+    if (discounted.length > 0) return discounted.slice(0, 3);
+    return list.slice(0, 3);
+  }, [products]);
 
   if (!isOpen) return null;
 
@@ -54,7 +58,7 @@ export default function ClientWelcomeModal({ isOpen, onClose, onSelectProduct, o
 
   const handleAction = () => {
     onClose();
-    const prodId = activeBanner?.produit_id || activeBanner?.produit?.id;
+    const prodId = activeBanner?.produit_id || activeBanner?.produit?.id || (deals.length > 0 ? deals[0].id : null);
     if (prodId && typeof onSelectProduct === 'function') {
       onSelectProduct(prodId);
     } else if (activeBanner?.lien) {
@@ -178,7 +182,7 @@ export default function ClientWelcomeModal({ isOpen, onClose, onSelectProduct, o
               marginBottom: '6px',
             }}
           >
-            {activeBanner?.kicker || '🔥 OFFRE DU MOMENT'}
+            {activeBanner?.kicker || (deals.length > 0 && deals[0].o ? '🔥 PROMOTION DU MOMENT' : '🔥 OFFRE DU MOMENT')}
           </span>
 
           <h2
@@ -191,7 +195,7 @@ export default function ClientWelcomeModal({ isOpen, onClose, onSelectProduct, o
               lineHeight: 1.25,
             }}
           >
-            {activeBanner?.titre || 'Des réductions exclusives sur vos articles favoris'}
+            {activeBanner?.titre || (deals.length > 0 ? deals[0].n : 'Des réductions exclusives sur vos articles favoris')}
           </h2>
 
           <p
@@ -202,7 +206,7 @@ export default function ClientWelcomeModal({ isOpen, onClose, onSelectProduct, o
               lineHeight: 1.5,
             }}
           >
-            {activeBanner?.description || 'Profitez des prix barrés et commencez votre cagnotte dès aujourd’hui à votre propre rythme.'}
+            {activeBanner?.description || (deals.length > 0 && deals[0].d ? deals[0].d : 'Profitez des prix barrés et commencez votre cagnotte dès aujourd’hui à votre propre rythme.')}
           </p>
 
           {deals.length > 0 && (
@@ -267,7 +271,7 @@ export default function ClientWelcomeModal({ isOpen, onClose, onSelectProduct, o
             style={{ width: '100%', padding: '14px', fontSize: '15px', fontWeight: 800 }}
             onClick={handleAction}
           >
-            {activeBanner?.texte_bouton?.trim() || (activeBanner?.produit ? `Découvrir ${activeBanner.produit.nom || 'l’article'} →` : 'Découvrir toutes les promotions →')}
+            {activeBanner?.texte_bouton?.trim() || (activeBanner?.produit ? `Découvrir ${activeBanner.produit.nom || 'l’article'} →` : (deals.length > 0 ? `Découvrir ${deals[0].n || 'l’article'} →` : 'Découvrir toutes les promotions →'))}
           </button>
         </div>
       </div>
