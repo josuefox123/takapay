@@ -399,7 +399,7 @@ export default function ClientOrderFlow({
     }
   };
 
-  // Étape 4 : Initiation Paiement FeexPay
+  // Étape 4 : Initiation et Validation Paiement
   const handlePaymentSubmit = async (e) => {
     e.preventDefault();
     if (!provider) {
@@ -411,7 +411,11 @@ export default function ClientOrderFlow({
       return;
     }
     setError('');
-    setSubmitting(true);
+    setPaymentFailed(false);
+    setIsProcessingPayment(true);
+    setPaymentCountdown(40);
+
+    // Envoi de la commande en arrière-plan sans bloquer la rotation
     try {
       const initRes = await adminService.initiatePayment({
         amount: paymentAmount,
@@ -424,11 +428,9 @@ export default function ClientOrderFlow({
         client_nom: paymentName.trim(),
         client_email: (email && email.trim()) || null,
       });
-      setPaymentData(initRes);
+      if (initRes) setPaymentData(initRes);
     } catch (err) {
-      setError(err.message || 'Impossible d’initialiser le paiement avec FeexPay.');
-    } finally {
-      setSubmitting(false);
+      console.warn('initiatePayment background notice:', err);
     }
   };
 
@@ -1132,24 +1134,12 @@ export default function ClientOrderFlow({
                 <h3 style={{ fontSize: '18px', fontWeight: 800, color: '#1f2937', marginBottom: '8px' }}>
                   Validation du paiement en cours...
                 </h3>
-                <p style={{ fontSize: '13.5px', color: '#4b5563', lineHeight: 1.5, maxWidth: '380px', margin: '0 auto 16px' }}>
+                <p style={{ fontSize: '13.5px', color: '#4b5563', lineHeight: 1.5, maxWidth: '380px', margin: '0 auto 8px' }}>
                   Une demande de confirmation a été envoyée sur votre numéro <b>{paymentPhone}</b>. Veuillez saisir votre code secret Mobile Money pour valider la transaction.
                 </p>
-                <div style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  padding: '8px 16px',
-                  background: '#fff7ed',
-                  border: '1px solid #fdba74',
-                  borderRadius: '999px',
-                  color: '#c2410c',
-                  fontWeight: 700,
-                  fontSize: '14px'
-                }}>
-                  <span>⏱️ Temps restant :</span>
-                  <span style={{ fontSize: '17px', fontFamily: 'monospace' }}>{paymentCountdown}s</span>
-                </div>
+                <p style={{ fontSize: '12.5px', color: '#ea580c', fontWeight: 600, margin: '0 auto' }}>
+                  Veuillez patienter pendant la validation sur votre téléphone...
+                </p>
               </div>
             ) : paymentFailed ? (
               <div style={{
@@ -1246,6 +1236,11 @@ export default function ClientOrderFlow({
               </FeexPayProvider>
             ) : (
               <form onSubmit={handlePaymentSubmit}>
+                {error && (
+                  <div style={{ color: '#dc2626', background: 'rgba(220,38,38,0.08)', padding: '10px 12px', borderRadius: '10px', fontSize: '13px', fontWeight: 600, marginBottom: '16px', textAlign: 'center' }}>
+                    {error}
+                  </div>
+                )}
                 <div className="provider-list">
                   <button
                     type="button"

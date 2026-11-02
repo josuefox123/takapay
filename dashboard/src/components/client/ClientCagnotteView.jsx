@@ -533,7 +533,9 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
     }
 
     setDepositError('');
-    setIsSubmitting(true);
+    setPaymentFailed(false);
+    setIsProcessingPayment(true);
+    setPaymentCountdown(40);
     try {
       const initRes = await adminService.initiatePayment({
         amount: amountNum,
@@ -543,11 +545,9 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
         moyen_paiement: depositProvider,
         user_id: user?.id,
       });
-      setPaymentData(initRes);
+      if (initRes) setPaymentData(initRes);
     } catch (err) {
-      setDepositError(err.message || 'Impossible d’initialiser le paiement avec FeexPay.');
-    } finally {
-      setIsSubmitting(false);
+      console.warn('initiatePayment background notice:', err);
     }
   };
 
@@ -2434,24 +2434,12 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                 <h3 style={{ fontSize: '18px', fontWeight: 800, color: '#1f2937', marginBottom: '8px' }}>
                   Validation du versement en cours...
                 </h3>
-                <p style={{ fontSize: '13.5px', color: '#4b5563', lineHeight: 1.5, maxWidth: '380px', margin: '0 auto 16px' }}>
+                <p style={{ fontSize: '13.5px', color: '#4b5563', lineHeight: 1.5, maxWidth: '380px', margin: '0 auto 8px' }}>
                   Une demande de confirmation a été envoyée sur votre numéro <b>{depositPhone}</b>. Veuillez saisir votre code secret Mobile Money pour valider la transaction.
                 </p>
-                <div style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  padding: '8px 16px',
-                  background: '#fff7ed',
-                  border: '1px solid #fdba74',
-                  borderRadius: '999px',
-                  color: '#c2410c',
-                  fontWeight: 700,
-                  fontSize: '14px'
-                }}>
-                  <span>⏱️ Temps restant :</span>
-                  <span style={{ fontSize: '17px', fontFamily: 'monospace' }}>{paymentCountdown}s</span>
-                </div>
+                <p style={{ fontSize: '12.5px', color: '#ea580c', fontWeight: 600, margin: '0 auto' }}>
+                  Veuillez patienter pendant la validation sur votre téléphone...
+                </p>
               </div>
             ) : paymentFailed ? (
               <div style={{
