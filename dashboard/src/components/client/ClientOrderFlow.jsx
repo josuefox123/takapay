@@ -392,44 +392,45 @@ export default function ClientOrderFlow({
     }
   };
 
-  // Étape 4 : Initiation et Validation Paiement
-  const handlePaymentSubmit = async (e) => {
-    e.preventDefault();
+  // Étape 4 : Initialisation FeexPay (MTN, Moov, Celtis, Carte Bancaire)
+  const handleInitiateFeexpay = async () => {
     if (isOutOfStock) {
       setError('Désolé, cet article est actuellement en rupture de stock.');
       return;
     }
-    if (!provider) {
-      setError('Veuillez choisir votre moyen de paiement.');
-      return;
-    }
-    if (!paymentPhone.trim()) {
-      setError('Veuillez renseigner votre numéro de téléphone Mobile Money.');
-      return;
-    }
     setError('');
+    setSubmitting(true);
     setPaymentFailed(false);
-    setIsProcessingPayment(true);
-    setPaymentCountdown(20);
-
-    // Envoi de la commande en arrière-plan sans bloquer la rotation
     try {
       const initRes = await adminService.initiatePayment({
         amount: paymentAmount,
         produit_id: product?.id,
         type_paiement: orderType,
         quantite: effectiveQuantity,
-        moyen_paiement: provider,
+        moyen_paiement: 'FEEXPAY',
         user_id: activeUser?.id || user?.id,
-        telephone: paymentPhone.trim(),
-        client_nom: paymentName.trim(),
-        client_email: (email && email.trim()) || null,
+        telephone: paymentPhone.trim() || user?.telephone || '',
+        client_nom: paymentName.trim() || `${user?.prenom || ''} ${user?.nom || ''}`.trim() || 'Client',
+        client_email: (email && email.trim()) || user?.email || null,
+        adresse_livraison: deliveryAddress,
+        telephone_livraison: deliveryPhone,
+        note_livraison: deliveryNote,
+        coordonnees_gps: deliveryCoords,
       });
       if (initRes) setPaymentData(initRes);
     } catch (err) {
-      console.warn('initiatePayment background notice:', err);
+      console.warn('initiatePayment notice:', err);
+      setError(err?.message || 'Erreur lors de la préparation du paiement FeexPay.');
+    } finally {
+      setSubmitting(false);
     }
   };
+
+  useEffect(() => {
+    if (step === 4 && (orderType === 'cagnotte' || cashPaymentMode === 'online') && !paymentData && !submitting && !isOutOfStock) {
+      handleInitiateFeexpay();
+    }
+  }, [step, orderType, cashPaymentMode, paymentAmount]);
 
   const handleFeexpayCallback = async (response) => {
     console.log('FeexPay callback reçu :', response);
@@ -1007,10 +1008,10 @@ export default function ClientOrderFlow({
                       textAlign: 'center',
                     }}
                   >
-                    <span style={{ fontSize: '20px', display: 'block', marginBottom: '4px' }}>📱</span>
-                    Mobile Money
+                    <span style={{ fontSize: '20px', display: 'block', marginBottom: '4px' }}>💳</span>
+                    Paiement en ligne
                     <small style={{ display: 'block', fontSize: '11px', color: '#706966', marginTop: '2px' }}>
-                      Payer en ligne
+                      MoMo & Carte bancaire
                     </small>
                   </button>
                 </div>
@@ -1214,170 +1215,94 @@ export default function ClientOrderFlow({
                   🔄 Réessayer le paiement
                 </button>
               </div>
-            ) : paymentData ? (
-              <FeexPayProvider>
-                <div style={{ marginTop: '16px' }}>
-                  <div style={{ marginBottom: '14px', padding: '12px', background: 'rgba(22, 163, 74, 0.08)', borderRadius: '10px', fontSize: '13px', color: '#166534', fontWeight: 600 }}>
-                    Commande prête (Réf: {paymentData.reference}). Cliquez ci-dessous pour ouvrir le module sécurisé FeexPay.
-                  </div>
-
-                  <FeexPayButton
-                    id={paymentData.shop_id}
-                    token={paymentData.api_key}
-                    amount={paymentData.amount}
-                    description={`Takapay - ${product?.n || 'Commande'}`}
-                    mode={paymentData.mode || 'SANDBOX'}
-                    currency="XOF"
-                    customId={paymentData.reference}
-                    callback_info={{
-                      fullname: paymentName.trim() || `${activeUser?.prenom || user?.prenom || prenom || ''} ${activeUser?.nom || user?.nom || nom || ''}`.trim() || 'Client',
-                      first_name: (paymentName.trim().split(' ')[0]) || activeUser?.prenom || user?.prenom || prenom || 'Client',
-                      last_name: (paymentName.trim().split(' ').slice(1).join(' ')) || activeUser?.nom || user?.nom || nom || '',
-                      email: (email && email.trim()) || (activeUser?.email && !activeUser.email.endsWith('@client.takapay.bj') ? activeUser.email : '') || '',
-                      phone: paymentPhone.trim() || activeUser?.telephone || activeUser?.phone || user?.telephone || user?.phone || phone || '',
-                      phoneNumber: paymentPhone.trim() || activeUser?.telephone || activeUser?.phone || user?.telephone || user?.phone || phone || '',
-                      reseau: provider === 'Moov' ? 'MOOV' : 'MTN',
-                    }}
-                    callback={handleFeexpayCallback}
-                    buttonText={`Payer ${formatFCFA(paymentAmount)} avec FeexPay`}
-                    buttonClass="client-btn w100"
-                  />
-
-                  <button
-                    type="button"
-                    onClick={() => setPaymentData(null)}
-                    style={{
-                      marginTop: '12px',
-                      background: 'none',
-                      border: 'none',
-                      color: 'var(--mu)',
-                      fontSize: '13px',
-                      cursor: 'pointer',
-                      width: '100%',
-                      textAlign: 'center',
-                      textDecoration: 'underline',
-                    }}
-                  >
-                    ← Changer d'opérateur ou modifier
-                  </button>
-                </div>
-              </FeexPayProvider>
             ) : (
-              <form onSubmit={handlePaymentSubmit}>
+              <div style={{
+                background: '#ffffff',
+                borderRadius: '16px',
+                border: '1.5px solid #ded6ce',
+                padding: '22px 20px',
+                marginTop: '16px',
+                boxShadow: '0 4px 18px rgba(0, 0, 0, 0.04)',
+              }}>
                 {error && (
                   <div style={{ color: '#dc2626', background: 'rgba(220,38,38,0.08)', padding: '10px 12px', borderRadius: '10px', fontSize: '13px', fontWeight: 600, marginBottom: '16px', textAlign: 'center' }}>
                     {error}
                   </div>
                 )}
-                <div className="provider-list">
+
+                <div style={{ marginBottom: '16px' }}>
+                  <div style={{ fontSize: '13px', fontWeight: 800, color: 'var(--tx, #1b1716)', marginBottom: '10px' }}>
+                    Moyens de paiement acceptés par FeexPay :
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '8px' }}>
+                    <div style={{ padding: '10px 12px', background: '#fef9c3', border: '1px solid #fde047', borderRadius: '10px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12.5px', fontWeight: 700, color: '#854d0e' }}>
+                      <span>🟡</span>
+                      <span>MTN MoMo</span>
+                    </div>
+                    <div style={{ padding: '10px 12px', background: '#ffedd5', border: '1px solid #fed7aa', borderRadius: '10px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12.5px', fontWeight: 700, color: '#9a3412' }}>
+                      <span>🔵</span>
+                      <span>Moov Money</span>
+                    </div>
+                    <div style={{ padding: '10px 12px', background: '#dcfce7', border: '1px solid #bbf7d0', borderRadius: '10px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12.5px', fontWeight: 700, color: '#166534' }}>
+                      <span>🟢</span>
+                      <span>Celtis Cash</span>
+                    </div>
+                    <div style={{ padding: '10px 12px', background: '#e0f2fe', border: '1px solid #bae6fd', borderRadius: '10px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12.5px', fontWeight: 700, color: '#0369a1' }}>
+                      <span>💳</span>
+                      <span>Carte Bancaire</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ marginBottom: '20px', padding: '12px 14px', background: '#f8fafc', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '12.5px', color: '#475569', lineHeight: 1.5 }}>
+                  🔒 Le paiement s'effectue en toute sécurité sur le module officiel FeexPay. Vous pourrez y choisir librement votre méthode : <b>MTN MoMo</b>, <b>Moov Money</b>, <b>Celtis Cash</b> ou <b>Carte Bancaire (Visa / Mastercard)</b>.
+                </div>
+
+                {paymentData ? (
+                  <FeexPayProvider>
+                    <FeexPayButton
+                      id={paymentData.shop_id}
+                      token={paymentData.api_key}
+                      amount={paymentData.amount}
+                      description={`Takapay - ${product?.n || 'Commande'}`}
+                      mode={paymentData.mode || 'SANDBOX'}
+                      currency="XOF"
+                      customId={paymentData.reference}
+                      callback_info={{
+                        fullname: paymentName.trim() || `${activeUser?.prenom || user?.prenom || prenom || ''} ${activeUser?.nom || user?.nom || nom || ''}`.trim() || 'Client',
+                        first_name: (paymentName.trim().split(' ')[0]) || activeUser?.prenom || user?.prenom || prenom || 'Client',
+                        last_name: (paymentName.trim().split(' ').slice(1).join(' ')) || activeUser?.nom || user?.nom || nom || '',
+                        email: (email && email.trim()) || (activeUser?.email && !activeUser.email.endsWith('@client.takapay.bj') ? activeUser.email : '') || '',
+                        phone: paymentPhone.trim() || activeUser?.telephone || activeUser?.phone || user?.telephone || user?.phone || phone || '',
+                        phoneNumber: paymentPhone.trim() || activeUser?.telephone || activeUser?.phone || user?.telephone || user?.phone || phone || '',
+                      }}
+                      callback={handleFeexpayCallback}
+                      buttonText={`Payer ${formatFCFA(paymentAmount)} avec FeexPay`}
+                      buttonClass="client-btn w100"
+                    />
+                  </FeexPayProvider>
+                ) : (
                   <button
                     type="button"
-                    className={`provider-option ${provider === 'MTN' ? 'on' : ''}`}
-                    onClick={() => setProvider('MTN')}
+                    className="client-btn w100"
+                    onClick={handleInitiateFeexpay}
+                    disabled={submitting || isOutOfStock}
+                    style={{
+                      padding: '16px',
+                      fontSize: '15px',
+                      fontWeight: 800,
+                      background: isOutOfStock ? '#9ca3af' : 'var(--p, #dc2626)',
+                      cursor: isOutOfStock ? 'not-allowed' : submitting ? 'wait' : 'pointer',
+                    }}
                   >
-                    <span className="provider-mark" style={{ background: '#fef08a', color: '#854d0e' }}>
-                      M
-                    </span>
-                    <span className="provider-copy">
-                      <b>MTN Mobile Money</b>
-                      <small>Paiement instantané depuis votre compte MTN Bénin</small>
-                    </span>
-                    <span style={{ marginLeft: 'auto', fontWeight: 800 }}>
-                      {provider === 'MTN' ? '●' : '○'}
-                    </span>
+                    {isOutOfStock
+                      ? 'Article en rupture de stock'
+                      : submitting
+                      ? 'Préparation FeexPay...'
+                      : `Payer ${formatFCFA(paymentAmount)} avec FeexPay`}
                   </button>
-
-                  <button
-                    type="button"
-                    className={`provider-option ${provider === 'Moov' ? 'on' : ''}`}
-                    onClick={() => setProvider('Moov')}
-                  >
-                    <span className="provider-mark" style={{ background: '#fed7aa', color: '#9a3412' }}>
-                      M
-                    </span>
-                    <span className="provider-copy">
-                      <b>Moov Money</b>
-                      <small>Règlement sécurisé via Moov Money Bénin</small>
-                    </span>
-                    <span style={{ marginLeft: 'auto', fontWeight: 800 }}>
-                      {provider === 'Moov' ? '●' : '○'}
-                    </span>
-                  </button>
-                </div>
-
-                {/* Coordonnées de paiement pré-remplies (directement insérées, modifiables) */}
-                <div style={{ marginTop: '16px', marginBottom: '14px' }}>
-                  <label className="fl" htmlFor="client-payment-phone">
-                    Numéro Mobile Money pour le débit *
-                  </label>
-                  <input
-                    id="client-payment-phone"
-                    type="tel"
-                    required
-                    className="fi"
-                    placeholder="+229 97 00 00 00"
-                    value={paymentPhone}
-                    onChange={(e) => setPaymentPhone(e.target.value)}
-                  />
-                  <small style={{ color: '#706966', fontSize: '11.5px', display: 'block', marginTop: '4px' }}>
-                    Numéro enregistré à l’inscription. Vous pouvez l’effacer et le remplacer si vous payez depuis un autre numéro.
-                  </small>
-                </div>
-
-                <div style={{ marginBottom: '14px' }}>
-                  <label className="fl" htmlFor="client-payment-name">
-                    Nom et prénom du client *
-                  </label>
-                  <input
-                    id="client-payment-name"
-                    type="text"
-                    required
-                    className="fi"
-                    placeholder="Ex: Jean DOSSOU"
-                    value={paymentName}
-                    onChange={(e) => setPaymentName(e.target.value)}
-                  />
-                </div>
-
-                <div style={{ marginBottom: '14px' }}>
-                  <label className="fl" htmlFor="client-receipt-email">
-                    Adresse email pour recevoir le reçu {(!email || email.endsWith('@client.takapay.bj')) ? '(facultatif)' : ''}
-                  </label>
-                  <input
-                    id="client-receipt-email"
-                    type="email"
-                    className="fi"
-                    placeholder="Ex: votre.email@gmail.com"
-                    value={email && !email.endsWith('@client.takapay.bj') ? email : ''}
-                    onChange={(e) => setEmail(e.target.value)}
-                  />
-                </div>
-
-                <div className="checkout-note">
-                  🔒 Transaction sécurisée par notification push Mobile Money sur votre téléphone via FeexPay.
-                </div>
-
-                <button
-                  type="submit"
-                  className="client-btn w100"
-                  disabled={submitting || isProcessingPayment || isOutOfStock}
-                  style={{
-                    padding: '16px',
-                    fontSize: '15px',
-                    background: isOutOfStock ? '#9ca3af' : undefined,
-                    cursor: isOutOfStock ? 'not-allowed' : (submitting || isProcessingPayment) ? 'wait' : 'pointer',
-                    opacity: (submitting || isProcessingPayment) ? 0.8 : 1,
-                  }}
-                >
-                  {isOutOfStock
-                    ? 'Article en rupture de stock'
-                    : isProcessingPayment
-                    ? 'Traitement en cours...'
-                    : submitting
-                    ? 'Préparation FeexPay...'
-                    : `Valider avec ${provider === 'MTN' ? 'MTN MoMo' : 'Moov Money'}`}
-                </button>
-              </form>
+                )}
+              </div>
             )}
           </div>
         )}

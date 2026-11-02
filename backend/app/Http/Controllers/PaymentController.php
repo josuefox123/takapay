@@ -277,9 +277,7 @@ class PaymentController extends Controller
 
         $isCod = in_array(strtolower((string) $request->input('moyen_paiement')), ['livraison', 'cod', 'especes'])
             || in_array(strtolower((string) $request->input('mode_reglement')), ['livraison', 'cod', 'especes']);
-        $feexpayResponse = null;
-
-        if (!$isCod) {
+        if (!$isCod && $request->boolean('direct_push')) {
             $rawPhone = $request->input('telephone') ?? $request->input('telephone_livraison') ?? $request->input('delivery_phone') ?? $user?->telephone;
             $cleanPhone = preg_replace('/\D/', '', (string) $rawPhone);
             if (str_starts_with($cleanPhone, '229229')) {
