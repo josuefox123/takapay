@@ -62,9 +62,9 @@ export default function ClientOrderFlow({
   const [quantity, setQuantity] = useState(initialQuantity || 1);
   const [successModalData, setSuccessModalData] = useState(null);
 
-  // Simulation validation paiement 40 secondes
+  // Simulation validation paiement 20 secondes
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
-  const [paymentCountdown, setPaymentCountdown] = useState(40);
+  const [paymentCountdown, setPaymentCountdown] = useState(20);
   const [paymentFailed, setPaymentFailed] = useState(false);
 
   useEffect(() => {
@@ -410,7 +410,7 @@ export default function ClientOrderFlow({
     setError('');
     setPaymentFailed(false);
     setIsProcessingPayment(true);
-    setPaymentCountdown(40);
+    setPaymentCountdown(20);
 
     // Envoi de la commande en arrière-plan sans bloquer la rotation
     try {
@@ -443,7 +443,7 @@ export default function ClientOrderFlow({
       setPaymentData(null);
       setPaymentFailed(false);
       setIsProcessingPayment(true);
-      setPaymentCountdown(40);
+      setPaymentCountdown(20);
       return;
     }
 
@@ -472,7 +472,7 @@ export default function ClientOrderFlow({
       setPaymentData(null);
       setIsProcessingPayment(false);
       setPaymentFailed(false);
-      setPaymentCountdown(40);
+      setPaymentCountdown(20);
 
       // Afficher le popup de félicitations avant la redirection vers les cagnottes ou commandes
       setSuccessModalData({
@@ -1206,7 +1206,7 @@ export default function ClientOrderFlow({
                   onClick={() => {
                     setPaymentFailed(false);
                     setIsProcessingPayment(false);
-                    setPaymentCountdown(40);
+                    setPaymentCountdown(20);
                     setPaymentData(null);
                   }}
                   style={{ padding: '14px', fontSize: '15px' }}

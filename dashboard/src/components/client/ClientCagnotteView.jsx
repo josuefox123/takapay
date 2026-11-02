@@ -95,9 +95,9 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
   const [paymentData, setPaymentData] = useState(null);
   const [depositError, setDepositError] = useState('');
 
-  // Simulation validation versement 40 secondes
+  // Simulation validation versement 20 secondes
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
-  const [paymentCountdown, setPaymentCountdown] = useState(40);
+  const [paymentCountdown, setPaymentCountdown] = useState(20);
   const [paymentFailed, setPaymentFailed] = useState(false);
 
   useEffect(() => {
@@ -334,7 +334,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
     setPaymentData(null);
     setDepositError('');
     setIsProcessingPayment(false);
-    setPaymentCountdown(40);
+    setPaymentCountdown(20);
     setPaymentFailed(false);
   };
 
@@ -560,7 +560,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
     setDepositError('');
     setPaymentFailed(false);
     setIsProcessingPayment(true);
-    setPaymentCountdown(40);
+    setPaymentCountdown(20);
     try {
       const initRes = await adminService.initiatePayment({
         amount: amountNum,
@@ -589,7 +589,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
       setPaymentData(null);
       setPaymentFailed(false);
       setIsProcessingPayment(true);
-      setPaymentCountdown(40);
+      setPaymentCountdown(20);
       return;
     }
 
@@ -2618,7 +2618,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                   onClick={() => {
                     setPaymentFailed(false);
                     setIsProcessingPayment(false);
-                    setPaymentCountdown(40);
+                    setPaymentCountdown(20);
                     setPaymentData(null);
                   }}
                 >
