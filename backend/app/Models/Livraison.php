@@ -21,7 +21,7 @@ class Livraison extends Model
         'frais_livraison',
         'date_demande',
         'date_prevue',
-        'date_livraisonte',
+        'date_livraison',
     ];
 
     protected function casts(): array
@@ -30,7 +30,7 @@ class Livraison extends Model
             'frais_livraison' => 'decimal:2',
             'date_demande' => 'datetime',
             'date_prevue' => 'datetime',
-            'date_livraisonte' => 'datetime',
+            'date_livraison' => 'datetime',
         ];
     }
 

@@ -8,16 +8,22 @@ use App\Http\Requests\UpdateAdresseRequest;
 use App\Http\Resources\AdresseResource;
 use App\Models\Adresse;
 use Illuminate\Http\JsonResponse;
-
+use Illuminate\Http\Request;
 
 class AdresseController extends Controller
 {
     /**
-     * Liste paginée des adresses.
+     * Liste des adresses : les siennes, ou toutes pour un administrateur.
      */
-    public function index()
+    public function index(Request $request)
     {
-        return AdresseResource::collection(Adresse::all());
+        $user = $request->user();
+
+        $query = $user->isAdmin()
+            ? Adresse::query()
+            : Adresse::where('utilisateur_id', $user->id);
+
+        return AdresseResource::collection($query->latest()->get());
     }
 
     /**
@@ -25,7 +31,12 @@ class AdresseController extends Controller
      */
     public function store(StoreAdresseRequest $request): JsonResponse
     {
-        $adresse = Adresse::create($request->validated());
+        $data = $request->validated();
+
+        // Le propriétaire est toujours dérivé du jeton d'authentification
+        $data['utilisateur_id'] ??= $request->user()->id;
+
+        $adresse = Adresse::create($data);
 
         return (new AdresseResource($adresse))
             ->response()
@@ -33,15 +44,17 @@ class AdresseController extends Controller
     }
 
     /**
-     * Afficher un adresse.
+     * Afficher une adresse.
      */
-    public function show(Adresse $adresse): AdresseResource
+    public function show(Request $request, Adresse $adresse): AdresseResource
     {
+        $this->authorizeOwnerOrAdmin($request, $adresse);
+
         return new AdresseResource($adresse);
     }
 
     /**
-     * Modifier un adresse.
+     * Modifier une adresse.
      */
     public function update(UpdateAdresseRequest $request, Adresse $adresse): AdresseResource
     {
@@ -51,12 +64,14 @@ class AdresseController extends Controller
     }
 
     /**
-     * Supprimer un adresse.
+     * Supprimer une adresse.
      */
-    public function destroy(Adresse $adresse): JsonResponse
+    public function destroy(Request $request, Adresse $adresse): JsonResponse
     {
+        $this->authorizeOwnerOrAdmin($request, $adresse);
+
         $adresse->delete();
 
-       return response()->json(['message' => 'Adresse supprimée avec succès.']);
+        return response()->json(['message' => 'Adresse supprimée avec succès.']);
     }
 }

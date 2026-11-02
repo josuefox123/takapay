@@ -3,65 +3,110 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\SousCategorie;
-use Illuminate\Http\Request;
-use App\Http\Resources\SousCategorieResource;
-use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use App\Http\Requests\StoreSousCategorieRequest;
 use App\Http\Requests\UpdateSousCategorieRequest;
 use App\Http\Resources\ProduitResource;
+use App\Http\Resources\SousCategorieResource;
+use App\Models\Cagnotte;
+use App\Models\CommandeProduit;
+use App\Models\SousCategorie;
+use App\Services\ImageStorageService;
+use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 
 class SousCategorieController extends Controller
 {
-    /**
-     * Display a listing of the resource.
-     */
-    public function index() : AnonymousResourceCollection
+    public function __construct(private readonly ImageStorageService $images) {}
+
+    public function index(): AnonymousResourceCollection
     {
-        return SousCategorieResource::collection(SousCategorie::latest()->paginate(15));
-    }
-    
-        //
-    
-    /**
-     * Store a newly created resource in storage.
-     */
-    public function store(StoreSousCategorieRequest $request)
-    {
-        $sous_category = SousCategorie::create($request->validated());
-        return new SousCategorieResource($sous_category);
+        return SousCategorieResource::collection(SousCategorie::with('categorie')->orderBy('nom', 'asc')->get());
     }
 
-    /**
-     * Display the specified resource.
-     */
+    public function store(StoreSousCategorieRequest $request)
+    {
+        $data = $request->validated();
+        if ($request->filled('image') || $request->hasFile('image')) {
+            $preferredName = $request->input('nom_fichier') ?? ($request->file('image')?->getClientOriginalName()) ?? null;
+            $data['image'] = $this->images->process($data['image'] ?? $request->file('image'), 'sous_categories', null, 'image', $preferredName);
+        }
+
+        $sous_category = SousCategorie::create($data);
+
+        return (new SousCategorieResource($sous_category))
+            ->response()
+            ->setStatusCode(201);
+    }
+
     public function show(SousCategorie $sous_category)
     {
         return new SousCategorieResource($sous_category);
     }
 
-    /**
-     * Update the specified resource in storage.
-     */
     public function update(UpdateSousCategorieRequest $request, SousCategorie $sous_category)
     {
-        $sous_category->update($request->validated());
-        return new SousCategorieResource($sous_category);
+        $data = $request->validated();
+        if (array_key_exists('image', $data)) {
+            if ($data['image'] === null || $data['image'] === '') {
+                $this->images->delete($sous_category->image);
+                $data['image'] = null;
+            } else {
+                $preferredName = $request->input('nom_fichier') ?? ($request->file('image')?->getClientOriginalName()) ?? null;
+                $data['image'] = $this->images->process($data['image'], 'sous_categories', $sous_category->image, 'image', $preferredName);
+            }
+        }
+
+        $sous_category->update($data);
+
+        return new SousCategorieResource($sous_category->fresh());
     }
 
-    /**
-     * Remove the specified resource from storage.
-     */
     public function destroy(SousCategorie $sous_category)
     {
+        $produits = $sous_category->produits()->get();
+        $produitIds = $produits->pluck('id');
+
+        // Vérification de sécurité : refuser si un produit a un achat ou une cagnotte en cours
+        $hasActiveCagnotte = Cagnotte::whereIn('produit_id', $produitIds)
+            ->where(function ($q) {
+                $q->whereIn('statut', ['active', 'en_cours'])
+                  ->orWhere('montant_verse', '>', 0);
+            })
+            ->exists();
+
+        $hasActiveCmd = CommandeProduit::whereIn('produit_id', $produitIds)
+            ->whereHas('commande', function ($q) {
+                $q->whereNotIn('statut', ['annulee', 'echouee', 'terminee', 'livree']);
+            })
+            ->exists();
+
+        if ($hasActiveCagnotte || $hasActiveCmd) {
+            return response()->json([
+                'message' => 'Impossible de supprimer cette sous-catégorie car une cagnotte est actuellement en cours sur l\'un de ses produits.',
+            ], 422);
+        }
+
+        $fichiers = $produits
+            ->load('imageProduits')
+            ->flatMap->imageProduits
+            ->pluck('chemin');
+
+        if ($sous_category->image) {
+            $this->images->delete($sous_category->image);
+        }
+
         $sous_category->delete();
+
+        foreach ($fichiers as $chemin) {
+            $this->images->delete($chemin);
+        }
+
         return response()->json(['message' => 'Sous-catégorie supprimée avec succès.']);
     }
 
-     public function produits(SousCategorie $sous_category): AnonymousResourceCollection
-{
-    return ProduitResource::collection(
-        $sous_category->produits()->latest()->paginate(15)
-    );
-}
+    public function produits(SousCategorie $sous_category): AnonymousResourceCollection
+    {
+        return ProduitResource::collection(
+            $sous_category->produits()->latest()->paginate(15)
+        );
+    }
 }

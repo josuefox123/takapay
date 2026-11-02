@@ -20,9 +20,10 @@ class NotificationResource extends JsonResource
             'cagnotte_id' => $this->cagnotte_id,
             'titre' => $this->titre,
             'message' => $this->message,
-            'type' => $this->type,
-            'statut' => $this->statut,
-
+            'type' => $this->type ?? 'infos',
+            'statut' => $this->statut ?? 'non_lu',
+            'created_at' => $this->created_at?->toISOString(),
+            'date_formattee' => $this->created_at ? $this->created_at->locale('fr')->diffForHumans() : 'Récemment',
         ];
     }
 }

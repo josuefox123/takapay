@@ -17,7 +17,7 @@ class UserController extends Controller
      */
     public function index(): AnonymousResourceCollection
     {
-        return UserResource::collection(User::latest()->paginate(15));
+        return UserResource::collection(User::orderBy('nom', 'asc')->orderBy('prenom', 'asc')->paginate(15));
     }
 
     /**

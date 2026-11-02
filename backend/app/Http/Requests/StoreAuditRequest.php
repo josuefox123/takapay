@@ -2,7 +2,6 @@
 
 namespace App\Http\Requests;
 
-
 use Illuminate\Foundation\Http\FormRequest;
 
 class StoreAuditRequest extends FormRequest
@@ -12,13 +11,11 @@ class StoreAuditRequest extends FormRequest
      */
     public function authorize(): bool
     {
-        return true;
+        return $this->user()?->isAdmin() ?? false;
     }
 
     /**
      * Get the validation rules that apply to the request.
-     *
-     
      */
     public function rules(): array
     {

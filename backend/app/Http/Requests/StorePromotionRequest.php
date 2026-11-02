@@ -12,7 +12,7 @@ class StorePromotionRequest extends FormRequest
      */
     public function authorize(): bool
     {
-        return true;
+        return $this->user()?->isAdmin() ?? false;
     }
 
     /**
@@ -22,7 +22,7 @@ class StorePromotionRequest extends FormRequest
      */
     public function rules(): array
     {
-         return [
+        return [
             'pourcentage_promo' => ['required', 'numeric', 'min:0', 'max:100'],
             'date_debut' => ['required', 'date'],
             'date_fin' => ['required', 'date', 'after_or_equal:date_debut'],

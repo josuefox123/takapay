@@ -5,34 +5,43 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreImageProduitRequest;
 use App\Http\Requests\UpdateImageProduitRequest;
-use App\Models\ImageProduit;
-use Illuminate\Http\Request;
 use App\Http\Resources\ImageProduitResource;
+use App\Models\ImageProduit;
+use App\Services\ImageStorageService;
 
 class ImageProduitController extends Controller
 {
+    public function __construct(private readonly ImageStorageService $images) {}
+
     /**
-     * Display a listing of the resource.
+     * Liste paginée des images de produit.
      */
     public function index()
     {
- return ImageProduitResource::collection(
+        return ImageProduitResource::collection(
             ImageProduit::latest()->paginate(15)
-        );    }
-
-    /**
-     * Store a newly created resource in storage.
-     */
-    public function store(StoreImageProduitRequest $request)
-    {
-       $image_produit = ImageProduit::create($request->validated());
-
-        return new ImageProduitResource($image_produit);
-        
+        );
     }
 
     /**
-     * Display the specified resource.
+     * Enregistrer une image de produit.
+     */
+    public function store(StoreImageProduitRequest $request)
+    {
+        $data = $request->validated();
+        $preferredName = $request->input('nom_fichier') ?? ($request->file('chemin')?->getClientOriginalName()) ?? null;
+
+        $data['chemin'] = $this->images->process($data['chemin'], 'produits', null, 'chemin', $preferredName);
+
+        $imageProduit = ImageProduit::create($data);
+
+        return (new ImageProduitResource($imageProduit))
+            ->response()
+            ->setStatusCode(201);
+    }
+
+    /**
+     * Afficher une image de produit.
      */
     public function show(ImageProduit $image_produit)
     {
@@ -40,21 +49,51 @@ class ImageProduitController extends Controller
     }
 
     /**
-     * Update the specified resource in storage.
+     * Modifier une image de produit.
      */
     public function update(UpdateImageProduitRequest $request, ImageProduit $image_produit)
     {
-        $image_produit->update($request->validated());
+        $data = $request->validated();
 
-        return new ImageProduitResource($image_produit);
+        $oldPath = null;
+
+        if (array_key_exists('chemin', $data)) {
+            if ($data['chemin'] === null || $data['chemin'] === '') {
+                $oldPath = $image_produit->chemin;
+                $data['chemin'] = null;
+            } else {
+                $preferredName = $request->input('nom_fichier') ?? ($request->file('chemin')?->getClientOriginalName()) ?? null;
+                $newPath = $this->images->process($data['chemin'], 'produits', $image_produit->chemin, 'chemin', $preferredName);
+
+                if ($newPath !== $image_produit->chemin) {
+                    $oldPath = $image_produit->chemin;
+                    $data['chemin'] = $newPath;
+                } else {
+                    unset($data['chemin']);
+                }
+            }
+        }
+
+        $image_produit->update($data);
+
+        if ($oldPath !== null) {
+            $this->images->delete($oldPath);
+        }
+
+        return new ImageProduitResource($image_produit->fresh());
     }
 
     /**
-     * Remove the specified resource from storage.
+     * Supprimer une image de produit.
      */
     public function destroy(ImageProduit $image_produit)
     {
+        $chemin = $image_produit->chemin;
+
         $image_produit->delete();
+
+        $this->images->delete($chemin);
+
         return response()->json(['message' => 'Image du produit supprimée avec succès.']);
     }
 }

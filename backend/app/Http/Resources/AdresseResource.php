@@ -15,18 +15,17 @@ class AdresseResource extends JsonResource
     public function toArray(Request $request): array
     {
         return [
-            'id' =>$this->id,
-            'utilisateur_id' =>$this->utilisateur_id,
-            'description' =>$this->description,
-            'adresse' =>$this->adresse,
-            'quartier' =>$this->quartier,
-            'ville' =>$this->ville,
-            'pays' =>$this->pays,
-            'latitude' =>$this->latitude,
-            'longitude' =>$this->longitude,
+            'id' => $this->id,
+            'utilisateur_id' => $this->utilisateur_id,
+            'description' => $this->description,
+            'adresse' => $this->adresse,
+            'quartier' => $this->quartier,
+            'ville' => $this->ville,
+            'pays' => $this->pays,
+            'latitude' => $this->latitude,
+            'longitude' => $this->longitude,
 
         ];
-
 
     }
 }

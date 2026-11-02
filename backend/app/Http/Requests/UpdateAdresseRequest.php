@@ -8,11 +8,23 @@ use Illuminate\Foundation\Http\FormRequest;
 class UpdateAdresseRequest extends FormRequest
 {
     /**
-     * Determine if the user is authorized to make this request.
+     * Seul le propriétaire de l'adresse ou un administrateur peut la modifier.
      */
     public function authorize(): bool
     {
-        return true;
+        $user = $this->user();
+
+        if (! $user) {
+            return false;
+        }
+
+        if ($user->isAdmin()) {
+            return true;
+        }
+
+        $adresse = $this->route('adresse');
+
+        return $adresse !== null && (int) $adresse->utilisateur_id === (int) $user->id;
     }
 
     /**
@@ -23,16 +35,15 @@ class UpdateAdresseRequest extends FormRequest
     public function rules(): array
     {
         return [
-            //
-            'utilisateur_id' => 'sometimes|exists:users,id' ,
-            'description' => 'sometimes|string|max:255' ,
+            // Une adresse ne peut pas être réaffectée à un autre utilisateur
+            'utilisateur_id' => 'prohibited',
+            'description' => 'sometimes|string|max:255',
             'adresse' => 'sometimes|string|max:255',
             'quartier' => 'sometimes|string|max:255',
             'ville' => 'sometimes|string|max:255',
             'pays' => 'sometimes|string|max:255',
             'latitude' => 'sometimes|nullable|numeric|between:-90,90',
             'longitude' => 'sometimes|nullable|numeric|between:-180,180',
-
         ];
     }
 }

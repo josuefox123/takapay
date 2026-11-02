@@ -7,9 +7,12 @@ use Illuminate\Validation\Rule;
 
 class UpdateUserRequest extends FormRequest
 {
+    /**
+     * Seule l'administration peut modifier un compte.
+     */
     public function authorize(): bool
     {
-        return true;
+        return $this->user()?->isAdmin() ?? false;
     }
 
     /**
@@ -20,6 +23,11 @@ class UpdateUserRequest extends FormRequest
         $user = $this->route('user');
         $userId = is_object($user) ? $user->id : $user;
 
+        // Seul un super_admin peut attribuer ou conserver un rôle super_admin
+        $allowedRoles = ($this->user()?->role ?? '') === 'super_admin'
+            ? 'in:client,livreur,admin,super_admin'
+            : 'in:client,livreur,admin';
+
         return [
             'nom' => ['sometimes', 'required', 'string', 'max:255'],
             'prenom' => ['sometimes', 'nullable', 'string', 'max:255'],
@@ -27,10 +35,10 @@ class UpdateUserRequest extends FormRequest
             'telephone' => ['sometimes', 'nullable', 'string', 'max:20', Rule::unique('users', 'telephone')->ignore($userId)],
             'password' => ['sometimes', 'required', 'string', 'min:8'],
             'photo_profil' => ['sometimes', 'nullable', 'string', 'max:255'],
-            'role' => ['sometimes', 'required', 'string', 'in:client,livreur,admin'],
+            'role' => ['sometimes', 'required', 'string', $allowedRoles],
             'latitude' => ['sometimes', 'nullable', 'numeric', 'between:-90,90'],
             'longitude' => ['sometimes', 'nullable', 'numeric', 'between:-180,180'],
-            'statut_compte' => ['sometimes', 'required', 'string', 'in:actif,inactif,suspendu'],
+            'statut_compte' => ['sometimes', 'required', 'string', Rule::in(['actif', 'inactif', 'suspendu'])],
         ];
     }
 }

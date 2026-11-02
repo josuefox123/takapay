@@ -15,7 +15,7 @@ class LivreurResource extends JsonResource
     public function toArray(Request $request): array
     {
         return [
-            'id' =>$this->id,
+            'id' => $this->id,
             'utilisateur_id' => $this->utilisateur_id,
             'type_vehicule' => $this->type_vehicule,
             'statut' => $this->statut,

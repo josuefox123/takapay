@@ -8,59 +8,119 @@ use App\Http\Requests\UpdateCommandeRequest;
 use App\Http\Resources\CommandeResource;
 use App\Models\Commande;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Support\Facades\DB;
 
 class CommandeController extends Controller
 {
     /**
-     * Liste paginée des commandes.
+     * Liste paginée des commandes : les siennes, ou toutes pour un administrateur.
      */
-    public function index(): AnonymousResourceCollection
+    public function index(Request $request): AnonymousResourceCollection
     {
-        return CommandeResource::collection(Commande::latest()->paginate(15));
+        $user = $request->user('sanctum') ?? $request->user();
+        $userId = $request->query('user_id') ?? $user?->id;
+
+        $query = Commande::with(['utilisateur', 'commandeProduits.produit', 'transactions.cagnotte'])->latest();
+
+        if ($user && $user->isAdmin()) {
+            if ($request->filled('user_id')) {
+                $query->where('utilisateur_id', $request->query('user_id'));
+            }
+        } elseif ($userId) {
+            $query->where('utilisateur_id', $userId);
+        } else {
+            $query->whereRaw('1 = 0');
+        }
+
+        // Écarte les simples ébauches de cagnottes orphelines (abandonnées sans versement)
+        $query->where(function ($q) {
+            $q->where('type_commande', 'cash')
+                ->orWhereHas('transactions');
+        });
+
+        $perPage = (int) $request->query('per_page', 50);
+        return CommandeResource::collection($query->paginate($perPage));
     }
 
     /**
-     * Créer une commande.
+     * Liste paginée des commandes pour le back-office admin.
+     * Route : GET /api/admin/commandes
      */
+    public function adminIndex(Request $request): AnonymousResourceCollection
+    {
+        $query = Commande::with([
+            'utilisateur',
+            'commandeProduits.produit',
+            'transactions.cagnotte',
+        ])
+        ->where(function ($q) {
+            $q->where('type_commande', 'cash')
+                ->orWhereHas('transactions');
+        })
+        ->latest();
+
+        if ($request->filled('statut')) {
+            $query->where('statut', $request->query('statut'));
+        }
+
+        if ($request->filled('q')) {
+            $q = $request->query('q');
+            $query->where(function ($sub) use ($q) {
+                $sub->where('reference', 'like', "%{$q}%")
+                    ->orWhereHas('utilisateur', fn ($u) => $u->where('nom', 'like', "%{$q}%"));
+            });
+        }
+
+        return CommandeResource::collection($query->paginate(15));
+    }
+
     public function store(StoreCommandeRequest $request): JsonResponse
     {
-        $commande = Commande::create($request->validated());
+        $data = $request->validated();
+
+        $data['utilisateur_id'] ??= $request->user()->id;
+        $data['prix_total'] ??= 0;
+
+        $commande = Commande::create($data);
 
         return (new CommandeResource($commande))
             ->response()
             ->setStatusCode(201);
     }
 
-    /**
-     * Afficher une commande.
-     */
-    public function show(Commande $commande): CommandeResource
+    public function show(Request $request, Commande $commande): CommandeResource
     {
-        return new CommandeResource($commande);
+        $this->authorizeOwnerOrAdmin($request, $commande);
+
+        return new CommandeResource(
+            $commande->load(['utilisateur:id,nom', 'commandeProduits.produit:id,nom', 'transactions.cagnotte'])
+        );
     }
 
-    /**
-     * Modifier une commande.
-     */
     public function update(
         UpdateCommandeRequest $request,
         Commande $commande
     ): CommandeResource {
         $commande->update($request->validated());
 
-        return new CommandeResource($commande);
+        return new CommandeResource(
+            $commande->fresh(['utilisateur:id,nom', 'commandeProduits.produit:id,nom', 'transactions.cagnotte'])
+        );
     }
 
-    /**
-     * Supprimer une commande.
-     */
-    public function destroy(Commande $commande): JsonResponse
+    public function destroy(Request $request, Commande $commande): JsonResponse
     {
-        $commande->delete();
+        $this->authorizeOwnerOrAdmin($request, $commande);
+
+        DB::transaction(function () use ($commande) {
+            $commande->commandeProduits()->delete();
+            $commande->delete();
+        });
 
         return response()->json([
-            'message' => 'Commande supprimée avec succès.'
+            'message' => 'Commande supprimée avec succès.',
         ]);
     }
 }

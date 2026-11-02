@@ -6,9 +6,25 @@ use Illuminate\Foundation\Http\FormRequest;
 
 class UpdateCommandeProduitRequest extends FormRequest
 {
+    /**
+     * Le client ne modifie que les lignes de ses propres commandes.
+     */
     public function authorize(): bool
     {
-        return true;
+        $user = $this->user();
+
+        if (! $user) {
+            return false;
+        }
+
+        if ($user->isAdmin()) {
+            return true;
+        }
+
+        $commandeProduit = $this->route('commande_produit');
+        $commande = $commandeProduit?->commande;
+
+        return $commande !== null && (int) $commande->utilisateur_id === (int) $user->id;
     }
 
     /**
@@ -16,12 +32,17 @@ class UpdateCommandeProduitRequest extends FormRequest
      */
     public function rules(): array
     {
+        $isSuperAdmin = ($this->user()?->role ?? '') === 'super_admin';
+
         return [
-            'commande_id' => ['sometimes', 'required', 'exists:commandes,id'],
+            // La ligne reste rattachée à sa commande d'origine
+            'commande_id' => $isSuperAdmin
+                ? ['sometimes', 'required', 'exists:commandes,id']
+                : ['prohibited'],
             'produit_id' => ['sometimes', 'required', 'exists:produits,id'],
             'quantite' => ['sometimes', 'required', 'integer', 'min:1'],
             'prix_unitaire' => ['sometimes', 'required', 'numeric', 'min:0'],
-            'total' => ['sometimes', 'required', 'numeric', 'min:0'],
+            'total' => ['prohibited'],
         ];
     }
 }

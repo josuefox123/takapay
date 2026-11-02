@@ -12,7 +12,7 @@ class StoreLivreurRequest extends FormRequest
      */
     public function authorize(): bool
     {
-        return true;
+        return $this->user()?->isAdmin() ?? false;
     }
 
     /**
@@ -24,9 +24,9 @@ class StoreLivreurRequest extends FormRequest
     {
         return [
             //
-            'utilisateur_id' =>'required|exists:users,id',
+            'utilisateur_id' => 'required|exists:users,id',
             'type_vehicule' => 'required|string|max:255',
-            'statut' =>'required|string|max:50',
+            'statut' => 'required|string|max:50',
         ];
     }
 }

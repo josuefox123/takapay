@@ -4,23 +4,33 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreProduitRequest;
-use App\Models\Produit;
 use App\Http\Requests\UpdateProduitRequest;
 use App\Http\Resources\ProduitResource;
+use App\Models\ImageProduit;
+use App\Models\ParametreProduit;
+use App\Models\Produit;
+use App\Services\ImageStorageService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 
 class ProduitController extends Controller
 {
     /**
      * Display a listing of the resource.
      */
-    public function index():AnonymousResourceCollection
+    public function index(): AnonymousResourceCollection
     {
-   return ProduitResource::collection(
-        Produit::latest()->paginate(15)
-    );
- }
+        return ProduitResource::collection(
+            Produit::with(['sousCategorie.categorie', 'parametreProduit.promotion', 'imageProduits'])
+                ->withCount(['cagnottes as cagnottes_actives_count' => function ($query) {
+                    $query->whereIn('statut', ['en_cours', 'active']);
+                }])
+                ->latest()
+                ->paginate(25)
+        );
+    }
 
     /**
      * Store a newly created resource in storage.
@@ -39,7 +49,7 @@ class ProduitController extends Controller
      */
     public function show(Produit $produit)
     {
-        return new ProduitResource($produit);
+        return new ProduitResource($produit->load(['sousCategorie.categorie', 'parametreProduit.promotion', 'imageProduits']));
     }
 
     /**
@@ -47,17 +57,109 @@ class ProduitController extends Controller
      */
     public function update(UpdateProduitRequest $request, Produit $produit)
     {
-        $produit->update($request->validated());
+        $validated = $request->validated();
 
-        return new ProduitResource($produit);
+        DB::transaction(function () use ($produit, $validated) {
+$produitFields = ['nom', 'sous_categorie_id', 'description', 'stock', 'duree', 'couleur', 'video'];
+            $produitData = array_intersect_key($validated, array_flip($produitFields));
+            if (!empty($produitData)) {
+                if (!empty($produitData['video']) && is_array($produitData['video'])) {
+                    $produitData['video'] = $produitData['video']['chemin'] ?? null;
+                }
+                if (!empty($produitData['video']) && is_string($produitData['video'])) {
+                    if (str_starts_with($produitData['video'], 'blob:')) {
+                        unset($produitData['video']);
+                    } elseif (str_starts_with($produitData['video'], 'data:video/')) {
+                        $comma = strpos($produitData['video'], ',');
+                        $header = substr($produitData['video'], 0, $comma);
+                        $binary = base64_decode(substr($produitData['video'], $comma + 1), true);
+                        if ($binary !== false) {
+                            $ext = 'mp4';
+                            if (preg_match('#data:video/(webm|ogg|quicktime|mp4)#i', $header, $m)) {
+                                $ext = $m[1] === 'quicktime' ? 'mov' : $m[1];
+                            }
+                            $videoFileName = 'video_'.time().'_'.\Illuminate\Support\Str::random(6).'.'.$ext;
+                            Storage::disk('public')->put('produits/'.$videoFileName, $binary);
+                            Storage::disk('public')->put($videoFileName, $binary);
+                            $produitData['video'] = 'produits/'.$videoFileName;
+                        }
+                    }
+                }
+                $produit->update($produitData);
+            }
+
+            $paramFields = [
+                'reference', 'prix_total', 'prix_minimum', 'prix_echelonne',
+                'prix_cash', 'mode_paiement', 'frequence', 'seuil_livraison', 'promotion_id'
+            ];
+            $paramData = array_intersect_key($validated, array_flip($paramFields));
+
+            if (!empty($paramData)) {
+                if ($produit->parametreProduit) {
+                    $produit->parametreProduit->update($paramData);
+                } else {
+                    $paramData['produit_id'] = $produit->id;
+                    if (empty($paramData['reference'])) {
+                        $paramData['reference'] = 'PRD-' . str_pad($produit->id, 4, '0', STR_PAD_LEFT);
+                    }
+                    if (!isset($paramData['prix_total'])) {
+                        $paramData['prix_total'] = 0;
+                    }
+                    ParametreProduit::create($paramData);
+                }
+            }
+
+            if (isset($validated['images']) && is_array($validated['images'])) {
+                $imagesService = app(ImageStorageService::class);
+                foreach ($validated['images'] as $idx => $img) {
+                    if (is_array($img) && !empty($img['chemin']) && str_starts_with($img['chemin'], 'data:image')) {
+                        $preferredName = $img['nom_fichier'] ?? $img['nom'] ?? null;
+                        $savedPath = $imagesService->process($img['chemin'], 'produits', null, "images.{$idx}.chemin", $preferredName);
+                        if ($savedPath) {
+                            ImageProduit::create([
+                                'produit_id' => $produit->id,
+                                'chemin' => $savedPath,
+                                'position' => isset($img['position']) ? (int) $img['position'] : ($idx + 1),
+                                'is_principal' => !empty($img['is_principal']),
+                            ]);
+                        }
+                    }
+                }
+            }
+        });
+
+        return new ProduitResource($produit->fresh(['sousCategorie.categorie', 'parametreProduit.promotion', 'imageProduits']));
     }
 
     /**
-     * Remove the specified resource from storage.
+     * Supprimer un produit : base d'abord, fichiers ensuite.
      */
-    public function destroy(Produit $produit) : JsonResponse
+    public function destroy(Produit $produit): JsonResponse
     {
-        $produit->delete();
+        $activeCagnottesCount = $produit->cagnottes()
+            ->whereIn('statut', ['en_cours', 'active'])
+            ->count();
+
+        if ($activeCagnottesCount > 0) {
+            return response()->json([
+                'message' => 'Impossible de supprimer ce produit car une ou plusieurs cagnottes sont actuellement en cours chez un utilisateur.',
+                'has_active_cagnotte' => true,
+                'cagnottes_actives_count' => $activeCagnottesCount,
+            ], 422);
+        }
+
+        $chemins = $produit->imageProduits()->pluck('chemin');
+
+        DB::transaction(function () use ($produit) {
+            $produit->imageProduits()->delete();
+            $produit->parametreProduit()->delete();
+            $produit->delete();
+        });
+
+        $images = app(ImageStorageService::class);
+        foreach ($chemins as $chemin) {
+            $images->delete($chemin);
+        }
 
         return response()->json(['message' => 'Produit supprimé avec succès']);
     }

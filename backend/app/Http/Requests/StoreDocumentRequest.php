@@ -4,15 +4,17 @@ namespace App\Http\Requests;
 
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class StoreDocumentRequest extends FormRequest
 {
     /**
-     * Determine if the user is authorized to make this request.
+     * Un client dépose ses propres documents ; un administrateur peut en déposer pour un autre.
+     * Le propriétaire est forcé côté contrôleur pour un non-admin.
      */
     public function authorize(): bool
     {
-        return true;
+        return $this->user() !== null;
     }
 
     /**
@@ -22,18 +24,25 @@ class StoreDocumentRequest extends FormRequest
      */
     public function rules(): array
     {
+        $isAdmin = $this->user()?->isAdmin() ?? false;
+
         return [
-            //
-            'utilisateur_id' => 'required|exists:users,id',
+            // Un non-admin ne peut déposer que pour lui-même
+            'utilisateur_id' => $isAdmin
+                ? ['sometimes', 'exists:users,id']
+                : ['sometimes', Rule::in([(string) $this->user()?->id])],
             'type' => 'required|string|max:100',
             'chemin' => 'required|string|max:255',
             'nom_origine' => 'required|string|max:255',
             'type_fichier' => 'required|string|max:100',
             'taille' => 'required|integer|min:0',
-            'statut' => 'required|string|max:50',
+            // Le statut KYC ne se forge pas soi-même : seul l'admin vérifie
+            'statut' => $isAdmin
+                ? ['sometimes', Rule::in(['en_attente', 'valide', 'refuse'])]
+                : ['prohibited'],
             'date_modification' => 'nullable|date',
-            'verifier_par' => 'nullable|exists:users,id',
-            'motif' => 'nullable|string',
+            'verifier_par' => $isAdmin ? ['nullable', 'exists:users,id'] : ['prohibited'],
+            'motif' => $isAdmin ? ['nullable', 'string', 'max:500'] : ['prohibited'],
         ];
     }
 }
