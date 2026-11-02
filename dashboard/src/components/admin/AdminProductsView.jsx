@@ -40,6 +40,8 @@ export default function AdminProductsView({ onShowToast }) {
     description: '',
     stock: 10,
     duree: 6, // Durée de disponibilité de l'article (mois)
+    garantie_duree: '',
+    garantie_unite: 'mois',
     reference: '',
     prix_total: '',
     prix_cash: '',
@@ -347,6 +349,8 @@ export default function AdminProductsView({ onShowToast }) {
       description: '',
       stock: 10,
       duree: 6,
+      garantie_duree: '',
+      garantie_unite: 'mois',
       reference: '',
       prix_total: '',
       prix_cash: '',
@@ -435,6 +439,8 @@ export default function AdminProductsView({ onShowToast }) {
       description: item.description || '',
       stock: item.stock !== undefined ? item.stock : 10,
       duree: item.duree !== undefined ? item.duree : 6,
+      garantie_duree: item.garantie_duree ?? '',
+      garantie_unite: item.garantie_unite || 'mois',
       reference: param.reference || '',
       prix_total: param.prix_total !== undefined ? param.prix_total : '',
       prix_cash: param.prix_cash !== undefined ? param.prix_cash : '',
@@ -498,6 +504,9 @@ export default function AdminProductsView({ onShowToast }) {
     }
     if (form.duree === '' || form.duree === null || Number(form.duree) < 1) {
       errs.duree = "La durée de disponibilité de l'article doit être d'au moins 1 mois.";
+    }
+    if (form.garantie_duree !== '' && (!Number.isInteger(Number(form.garantie_duree)) || Number(form.garantie_duree) < 1 || Number(form.garantie_duree) > 1200)) {
+      errs.garantie_duree = 'La durée de garantie doit être comprise entre 1 et 1200.';
     }
     return errs;
   };
@@ -588,6 +597,8 @@ export default function AdminProductsView({ onShowToast }) {
         prix_cash: cleanNum(form.prix_cash),
         stock: cleanNum(form.stock) ?? 0,
         duree: cleanNum(form.duree) ?? 6,
+        garantie_duree: form.garantie_duree === '' ? null : cleanNum(form.garantie_duree),
+        garantie_unite: form.garantie_duree === '' ? null : form.garantie_unite,
         seuil_livraison: form.mode_paiement === 'libre' ? null : cleanNum(form.seuil_livraison),
         promotion_id: form.promotion_id ? Number(form.promotion_id) : null,
         couleur: finalColorsStr,
@@ -1746,6 +1757,51 @@ export default function AdminProductsView({ onShowToast }) {
                 {errors.duree && (
                   <span style={{ color: '#dc2626', fontSize: '13px', fontWeight: 600, marginTop: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}>
                     ⚠ {errors.duree}
+                  </span>
+                )}
+              </div>
+
+              <div className="admin-field" style={{ margin: 0 }}>
+                <label style={{ fontSize: '14px', fontWeight: 700, marginBottom: '6px', display: 'block' }}>
+                  Garantie de l'article (facultative)
+                </label>
+                <div style={{ display: 'grid', gridTemplateColumns: 'minmax(90px, 1fr) minmax(110px, 1fr)', gap: '8px' }}>
+                  <input
+                    type="number"
+                    min="1"
+                    max="1200"
+                    placeholder="Durée"
+                    value={form.garantie_duree}
+                    onChange={(e) => {
+                      setForm({ ...form, garantie_duree: e.target.value });
+                      if (errors.garantie_duree) setErrors((prev) => ({ ...prev, garantie_duree: null }));
+                    }}
+                    aria-label="Durée de garantie"
+                    style={{
+                      width: '100%',
+                      padding: '13px 16px',
+                      borderRadius: '12px',
+                      border: errors.garantie_duree ? '2px solid #dc2626' : '1.5px solid var(--line)',
+                      fontSize: '15px',
+                    }}
+                  />
+                  <select
+                    value={form.garantie_unite}
+                    onChange={(e) => setForm({ ...form, garantie_unite: e.target.value })}
+                    aria-label="Unité de la garantie"
+                    style={{ width: '100%', padding: '13px 12px', borderRadius: '12px', border: '1.5px solid var(--line)', fontSize: '15px' }}
+                  >
+                    <option value="jours">Jour(s)</option>
+                    <option value="mois">Mois</option>
+                    <option value="ans">An(s)</option>
+                  </select>
+                </div>
+                <span style={{ fontSize: '12px', color: 'var(--mut)', marginTop: '4px', display: 'block' }}>
+                  Indiquez une durée pour afficher la garantie sur la fiche client. Laissez vide si aucune garantie spécifique n'est proposée.
+                </span>
+                {errors.garantie_duree && (
+                  <span style={{ color: '#dc2626', fontSize: '13px', fontWeight: 600, marginTop: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    ⚠ {errors.garantie_duree}
                   </span>
                 )}
               </div>

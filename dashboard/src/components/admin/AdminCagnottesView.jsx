@@ -82,14 +82,38 @@ export default function AdminCagnottesView() {
 
   useEffect(() => {
     let isMounted = true;
-    adminService.getCagnottes().then((data) => {
-      if (isMounted) {
-        setCagnottes(data);
-        setLoading(false);
-      }
-    });
+    let isRefreshing = false;
+    const refreshCagnottes = () => {
+      if (isRefreshing) return;
+      isRefreshing = true;
+
+      adminService.getCagnottes().then((data) => {
+        if (isMounted) {
+          setCagnottes(data);
+          setLoading(false);
+        }
+      }).finally(() => {
+        isRefreshing = false;
+      });
+    };
+    const handleStorageUpdate = (event) => {
+      if (event.key === 'takapay_dashboard_stats_updated') refreshCagnottes();
+    };
+
+    refreshCagnottes();
+    const refreshInterval = window.setInterval(() => {
+      if (document.visibilityState === 'visible') refreshCagnottes();
+    }, 15000);
+    window.addEventListener('focus', refreshCagnottes);
+    window.addEventListener('storage', handleStorageUpdate);
+    window.addEventListener('takapay:dashboard-stats-updated', refreshCagnottes);
+
     return () => {
       isMounted = false;
+      window.clearInterval(refreshInterval);
+      window.removeEventListener('focus', refreshCagnottes);
+      window.removeEventListener('storage', handleStorageUpdate);
+      window.removeEventListener('takapay:dashboard-stats-updated', refreshCagnottes);
     };
   }, []);
 

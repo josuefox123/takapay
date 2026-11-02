@@ -6,7 +6,6 @@ use App\Http\Controllers\Controller;
 use App\Models\Cagnotte;
 use App\Models\Commande;
 use App\Models\Document;
-use App\Models\Echeance;
 use App\Models\Transaction;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
@@ -24,7 +23,19 @@ class AdminStatsController extends Controller
             ->where('date', '>=', $startOfMonth)
             ->sum('montant');
 
-        $cagnottesActives = (int) Cagnotte::whereIn('statut', ['active', 'en_cours'])->count();
+        $cagnottesActives = (int) Cagnotte::whereIn('statut', [
+            'active',
+            'en_attente',
+            'en_cours',
+            'terminee',
+        ])->whereDoesntHave('transactions', function ($transactionQuery) {
+            $transactionQuery->whereHas('commande', function ($commandeQuery) {
+                $commandeQuery->where(function ($query) {
+                    $query->where('statut_reception', 'recu')
+                        ->orWhereIn('statut', ['livree', 'terminee']);
+                });
+            });
+        })->count();
 
         $documentsAValider = (int) Document::where('statut', 'en_attente')->count();
 
@@ -41,9 +52,9 @@ class AdminStatsController extends Controller
                 ->whereBetween('date', [$start, $end])
                 ->where(function ($q) {
                     $q->where('type', 'paiement_livraison')
-                      ->orWhere('type', 'commande_cash')
-                      ->orWhere('moyen_paiement', 'livraison')
-                      ->orWhereNull('cagnotte_id');
+                        ->orWhere('type', 'commande_cash')
+                        ->orWhere('moyen_paiement', 'livraison')
+                        ->orWhereNull('cagnotte_id');
                 })
                 ->sum('montant');
 
@@ -56,13 +67,13 @@ class AdminStatsController extends Controller
             $nomsJours = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
 
             return [
-                'jour'     => $nomsJours[$i],
-                'label'    => $nomsJours[$i] . ' ' . $day->format('d/m'),
-                'date'     => $day->toDateString(),
-                'cash'     => $cash,
+                'jour' => $nomsJours[$i],
+                'label' => $nomsJours[$i].' '.$day->format('d/m'),
+                'date' => $day->toDateString(),
+                'cash' => $cash,
                 'cagnotte' => $cagnotte,
-                'total'    => $cash + $cagnotte,
-                'attendu'  => $cash,
+                'total' => $cash + $cagnotte,
+                'attendu' => $cash,
                 'encaisse' => $cagnotte,
             ];
         });
@@ -76,19 +87,21 @@ class AdminStatsController extends Controller
         while ($current->lte($endOfMonth)) {
             $weekStart = $current->copy();
             $weekEnd = $current->copy()->endOfWeek();
+            $periodStart = $weekStart->lt($startOfMonth) ? $startOfMonth->copy() : $weekStart;
+            $periodEnd = $weekEnd->gt($endOfMonth) ? $endOfMonth->copy() : $weekEnd;
 
             $cash = (float) Transaction::whereIn('statut', ['succes', 'reussi'])
-                ->whereBetween('date', [$weekStart, $weekEnd])
+                ->whereBetween('date', [$periodStart, $periodEnd])
                 ->where(function ($q) {
                     $q->where('type', 'paiement_livraison')
-                      ->orWhere('type', 'commande_cash')
-                      ->orWhere('moyen_paiement', 'livraison')
-                      ->orWhereNull('cagnotte_id');
+                        ->orWhere('type', 'commande_cash')
+                        ->orWhere('moyen_paiement', 'livraison')
+                        ->orWhereNull('cagnotte_id');
                 })
                 ->sum('montant');
 
             $cagnotte = (float) Transaction::whereIn('statut', ['succes', 'reussi'])
-                ->whereBetween('date', [$weekStart, $weekEnd])
+                ->whereBetween('date', [$periodStart, $periodEnd])
                 ->whereNotNull('cagnotte_id')
                 ->whereNotIn('type', ['paiement_livraison', 'commande_cash'])
                 ->sum('montant');
@@ -96,15 +109,15 @@ class AdminStatsController extends Controller
             $isCurrent = $now->between($weekStart, $weekEnd);
 
             $semaines->push([
-                'semaine'    => $isCurrent ? 'Cette sem.' : "S{$numSemaine}",
-                'label'      => $isCurrent ? 'Cette semaine' : "Semaine {$numSemaine}",
-                'periode'    => $weekStart->format('d/m') . ' au ' . $weekEnd->format('d/m'),
+                'semaine' => $isCurrent ? 'Cette sem.' : "S{$numSemaine}",
+                'label' => $isCurrent ? 'Cette semaine' : "Semaine {$numSemaine}",
+                'periode' => $periodStart->format('d/m').' au '.$periodEnd->format('d/m'),
                 'is_current' => $isCurrent,
-                'cash'       => $cash,
-                'cagnotte'   => $cagnotte,
-                'total'      => $cash + $cagnotte,
-                'attendu'    => $cash,
-                'encaisse'   => $cagnotte,
+                'cash' => $cash,
+                'cagnotte' => $cagnotte,
+                'total' => $cash + $cagnotte,
+                'attendu' => $cash,
+                'encaisse' => $cagnotte,
             ]);
 
             $current->addWeek();
@@ -121,30 +134,32 @@ class AdminStatsController extends Controller
             ->take(5)
             ->get()
             ->map(fn ($d) => [
-                'id'          => $d->id,
+                'id' => $d->id,
                 'utilisateur' => $d->utilisateur->nom ?? '—',
-                'type'        => $d->type ?? '—',
-                'url'         => $d->url ?? null,
-                'statut'      => $d->statut,
-                'created_at'  => $d->created_at?->toIso8601String(),
+                'type' => $d->type ?? '—',
+                'url' => $d->url ?? null,
+                'statut' => $d->statut,
+                'created_at' => $d->created_at?->toIso8601String(),
             ]);
 
         // ---- Derniers versements ----
         $derniersVersements = Transaction::with([
-                'commande.utilisateur',
-                'commande.commandeProduits.produit',
-                'cagnotte.produit',
-                'cagnotte.utilisateur',
-            ])
-            ->latest()
+            'commande.utilisateur',
+            'commande.commandeProduits.produit',
+            'cagnotte.produit',
+            'cagnotte.utilisateur',
+        ])
+            ->whereIn('statut', ['succes', 'reussi', 'en_attente'])
+            ->orderByDesc('date')
+            ->orderByDesc('id')
             ->take(5)
             ->get()
             ->map(function ($tx) {
                 $commande = $tx->commande;
                 $cagnotte = $tx->cagnotte;
-                $isCash = $tx->type === 'paiement_livraison' 
-                    || $tx->type === 'commande_cash' 
-                    || $tx->moyen_paiement === 'livraison' 
+                $isCash = $tx->type === 'paiement_livraison'
+                    || $tx->type === 'commande_cash'
+                    || $tx->moyen_paiement === 'livraison'
                     || ($commande && $commande->type_commande === 'cash');
 
                 $articleName = $cagnotte?->produit?->nom
@@ -155,47 +170,86 @@ class AdminStatsController extends Controller
                     ?? $cagnotte?->utilisateur?->nom
                     ?? '—';
 
-                $cagnotteNom = $isCash 
+                $cagnotteNom = $isCash
                     ? ($tx->moyen_paiement === 'livraison' ? 'À la livraison' : 'Comptant')
                     : ($cagnotte?->nom ?? ($tx->cagnotte_id ? "CG-{$tx->cagnotte_id}" : 'Cagnotte'));
 
                 return [
-                    'id'                 => $tx->id,
-                    'is_cash'            => $isCash,
+                    'id' => $tx->id,
+                    'is_cash' => $isCash,
                     'commande_reference' => $commande?->reference
                         ?? $tx->reference_externe
                         ?? ($tx->commande_id ? "CMD-{$tx->commande_id}" : null),
-                    'commande_id'        => $tx->commande_id,
-                    'cagnotte_nom'       => $cagnotteNom,
-                    'article'            => $articleName,
-                    'montant'            => (float) $tx->montant,
-                    'montant_cotise'     => (float) ($cagnotte?->montant_verse ?? 0),
-                    'objectif'           => (float) ($cagnotte?->objectif_effectif ?? 0),
-                    'progression'        => $isCash ? null : (int) ($cagnotte?->progression ?? 0),
-                    'moyen_paiement'     => $tx->moyen_paiement,
-                    'statut'             => $tx->statut,
-                    'statut_label'       => $tx->isSuccessful()
+                    'commande_id' => $tx->commande_id,
+                    'cagnotte_nom' => $cagnotteNom,
+                    'article' => $articleName,
+                    'montant' => (float) $tx->montant,
+                    'montant_cotise' => (float) ($cagnotte?->montant_verse ?? 0),
+                    'objectif' => (float) ($cagnotte?->objectif_effectif ?? 0),
+                    'progression' => $isCash ? null : (int) ($cagnotte?->progression ?? 0),
+                    'moyen_paiement' => $tx->moyen_paiement,
+                    'statut' => $tx->statut,
+                    'statut_label' => $tx->isSuccessful()
                         ? 'Réussi'
                         : ($tx->statut === 'en_attente' ? 'En attente' : 'Échoué'),
-                    'client'             => $clientName,
-                    'nb_articles'        => $commande?->commandeProduits?->count() ?? 1,
-                    'date'               => $tx->date?->toIso8601String(),
+                    'client' => $clientName,
+                    'nb_articles' => $commande?->commandeProduits?->count() ?? 1,
+                    'date' => $tx->date?->toIso8601String(),
                 ];
             });
+
+        $commandesSansTransaction = Commande::with([
+            'utilisateur',
+            'commandeProduits.produit',
+        ])
+            ->where('statut', 'en_attente')
+            ->whereDoesntHave('transactions')
+            ->latest()
+            ->take(5)
+            ->get()
+            ->map(function ($commande) {
+                $isCash = $commande->type_commande === 'cash';
+                $produit = $commande->commandeProduits->first()?->produit;
+
+                return [
+                    'id' => 'commande-'.$commande->id,
+                    'is_cash' => $isCash,
+                    'commande_reference' => $commande->reference,
+                    'commande_id' => $commande->id,
+                    'cagnotte_nom' => $isCash ? 'Comptant' : 'Cagnotte',
+                    'article' => $produit?->nom ?? '—',
+                    'montant' => (float) $commande->prix_total,
+                    'montant_cotise' => 0,
+                    'objectif' => (float) $commande->prix_total,
+                    'progression' => $isCash ? null : 0,
+                    'moyen_paiement' => $commande->mode_paiement,
+                    'statut' => 'en_attente',
+                    'statut_label' => 'En attente',
+                    'client' => $commande->utilisateur?->nom ?? '—',
+                    'nb_articles' => $commande->commandeProduits->count(),
+                    'date' => $commande->created_at?->toIso8601String(),
+                ];
+            });
+
+        $derniersVersements = $derniersVersements
+            ->concat($commandesSansTransaction)
+            ->sortByDesc('date')
+            ->take(5)
+            ->values();
 
         // ---- Indicateurs Réels à surveiller ----
         $cagnottesPretesALivrer = Cagnotte::where('statut', 'terminee')
             ->orWhere(function ($q) {
                 $q->where('montant_verse', '>=', DB::raw('COALESCE(montant_objectif, prix_unitaire, 0)'))
-                  ->where('montant_verse', '>', 0)
-                  ->where('statut', '!=', 'livree')
-                  ->where('statut', '!=', 'annulee');
+                    ->where('montant_verse', '>', 0)
+                    ->where('statut', '!=', 'livree')
+                    ->where('statut', '!=', 'annulee');
             })->count();
 
         $commandesCashEnAttente = Commande::where(function ($q) {
-                $q->where('type_commande', 'cash')
-                  ->orWhere('mode_paiement', 'livraison');
-            })
+            $q->where('type_commande', 'cash')
+                ->orWhere('mode_paiement', 'livraison');
+        })
             ->whereNotIn('statut', ['terminee', 'livree', 'annulee'])
             ->count();
 
@@ -209,21 +263,21 @@ class AdminStatsController extends Controller
 
         return response()->json([
             'kpis' => [
-                'encaisse_ce_mois'      => $encaisseCeMois,
-                'cagnottes_actives'     => $cagnottesActives,
-                'documents_a_valider'   => $documentsAValider,
+                'encaisse_ce_mois' => $encaisseCeMois,
+                'cagnottes_actives' => $cagnottesActives,
+                'documents_a_valider' => $documentsAValider,
                 'nouveaux_utilisateurs' => $nouveauxUtilisateurs,
             ],
             'recouvrement' => [
-                'taux'          => $tauxRecouvrement,
-                'semaines'      => $semaines->toArray(),
+                'taux' => $tauxRecouvrement,
+                'semaines' => $semaines->toArray(),
                 'cette_semaine' => $cetteSemaineJours->toArray(),
                 'total_semaine' => (float) $cetteSemaineJours->sum('total'),
-                'total_mois'    => $totalEncaisse,
+                'total_mois' => $totalEncaisse,
             ],
-            'documents'           => $documents,
+            'documents' => $documents,
             'derniers_versements' => $derniersVersements,
-            'a_surveiller'        => $aSurveiller,
+            'a_surveiller' => $aSurveiller,
         ]);
     }
 }

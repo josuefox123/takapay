@@ -20,6 +20,8 @@ class Produit extends Model
         'description',
         'stock',
         'duree',
+        'garantie_duree',
+        'garantie_unite',
         'couleur',
         'video',
     ];
@@ -29,6 +31,7 @@ class Produit extends Model
         return [
             'stock' => 'integer',
             'duree' => 'integer',
+            'garantie_duree' => 'integer',
         ];
     }
 

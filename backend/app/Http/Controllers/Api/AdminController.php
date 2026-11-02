@@ -208,6 +208,8 @@ class AdminController extends Controller
                 'description' => ['nullable', 'string'],
                 'stock' => ['required', 'integer', 'min:0'],
                 'duree' => ['required', 'integer', 'min:0'],
+                'garantie_duree' => ['nullable', 'integer', 'min:1', 'max:1200', 'required_with:garantie_unite'],
+                'garantie_unite' => ['nullable', 'string', 'in:jours,mois,ans', 'required_with:garantie_duree'],
                 'couleur' => ['nullable', 'string'],
                 'video' => ['nullable'],
                 'promotion_id' => ['nullable', 'exists:promotions,id'],
@@ -265,6 +267,8 @@ class AdminController extends Controller
                 'description' => $validated['description'] ?? null,
                 'stock' => $validated['stock'],
                 'duree' => $validated['duree'],
+                'garantie_duree' => $validated['garantie_duree'] ?? null,
+                'garantie_unite' => $validated['garantie_unite'] ?? null,
                 'couleur' => $validated['couleur'] ?? null,
                 'video' => $videoPath,
             ]);

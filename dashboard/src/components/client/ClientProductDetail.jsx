@@ -1295,7 +1295,7 @@ export default function ClientProductDetail({
               Présentation détaillée de l'article
             </h3>
             <p style={{ margin: '0 0 16px', lineHeight: 1.7, color: 'var(--mu)', whiteSpace: 'pre-line' }}>
-              {product.d || "Cet article est certifié par Takapay et provient de notre réseau de distributeurs agréés au Bénin. Il offre une fiabilité remarquable et bénéficie d'une garantie constructeur intégrale."}
+              {product.d || 'Découvrez les caractéristiques et les modalités de cet article proposé sur TakaPay.'}
             </p>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px', marginTop: '16px' }}>
@@ -1492,10 +1492,12 @@ export default function ClientProductDetail({
               <div style={{ padding: '16px', background: 'var(--sf)', borderRadius: '14px', border: '1px solid var(--bd)' }}>
                 <b style={{ color: 'var(--tx)', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
                   <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '18px', color: 'var(--r)' }}>verified_user</span>
-                  <span>Garantie Constructeur</span>
+                  <span>Garantie indiquée pour cet article</span>
                 </b>
                 <p style={{ margin: 0, fontSize: '12.5px', color: 'var(--mu)', lineHeight: 1.5 }}>
-                  Chaque article neuf dispose d'une garantie légale d'au moins 6 à 12 mois contre tout défaut de fabrication.
+                  {product.garantie
+                    ? `Cet article bénéficie d'une garantie de ${product.garantie}.`
+                    : "Aucune durée de garantie spécifique n'a été renseignée pour cet article. Contactez notre support pour connaître les conditions applicables."}
                 </p>
               </div>
               <div style={{ padding: '16px', background: 'var(--sf)', borderRadius: '14px', border: '1px solid var(--bd)' }}>

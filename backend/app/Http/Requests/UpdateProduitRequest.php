@@ -28,6 +28,8 @@ class UpdateProduitRequest extends FormRequest
             'description' => ['sometimes', 'nullable', 'string'],
             'stock' => ['sometimes', 'required', 'integer', 'min:0'],
             'duree' => ['sometimes', 'nullable', 'integer', 'min:0'],
+            'garantie_duree' => ['sometimes', 'nullable', 'integer', 'min:1', 'max:1200', 'required_with:garantie_unite'],
+            'garantie_unite' => ['sometimes', 'nullable', 'string', 'in:jours,mois,ans', 'required_with:garantie_duree'],
             'couleur' => ['sometimes', 'nullable', 'string'],
             'video' => ['sometimes', 'nullable'],
             'reference' => ['sometimes', 'nullable', 'string', 'max:255'],

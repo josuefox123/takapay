@@ -28,6 +28,8 @@ class StoreProduitRequest extends FormRequest
             'description' => ['nullable', 'string'],
             'stock' => ['required', 'integer', 'min:0'],
             'duree' => ['required', 'integer', 'min:0'],
+            'garantie_duree' => ['nullable', 'integer', 'min:1', 'max:1200', 'required_with:garantie_unite'],
+            'garantie_unite' => ['nullable', 'string', 'in:jours,mois,ans', 'required_with:garantie_duree'],
             'couleur' => ['nullable', 'string', 'max:100'],
         ];
     }

@@ -150,9 +150,13 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     let isMounted = true;
+    let isRefreshing = false;
     if (activeTab !== 'dashboard') return () => { isMounted = false; };
 
     const refreshStats = () => {
+      if (isRefreshing) return;
+      isRefreshing = true;
+
       adminService
         .getDashboardStats()
         .then((data) => {
@@ -163,19 +167,32 @@ export default function AdminDashboard() {
         })
         .catch(() => {
           if (isMounted) showToast('Impossible de charger les statistiques');
+        })
+        .finally(() => {
+          isRefreshing = false;
         });
+    };
+
+    const handleStorageUpdate = (event) => {
+      if (event.key === 'takapay_dashboard_stats_updated') refreshStats();
     };
 
     refreshStats();
     const refreshInterval = window.setInterval(() => {
       if (document.visibilityState === 'visible') refreshStats();
-    }, 30000);
+    }, 15000);
     window.addEventListener('focus', refreshStats);
+    window.addEventListener('storage', handleStorageUpdate);
+    window.addEventListener('takapay:dashboard-stats-updated', refreshStats);
+    document.addEventListener('visibilitychange', refreshStats);
 
     return () => {
       isMounted = false;
       window.clearInterval(refreshInterval);
       window.removeEventListener('focus', refreshStats);
+      window.removeEventListener('storage', handleStorageUpdate);
+      window.removeEventListener('takapay:dashboard-stats-updated', refreshStats);
+      document.removeEventListener('visibilitychange', refreshStats);
     };
   }, [activeTab, showToast]);
 

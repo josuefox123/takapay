@@ -85,6 +85,13 @@ export const mapAdminProductToClient = (p) => {
   const discountedPrice = promoPercent > 0 ? Math.round(price * (1 - promoPercent / 100)) : price;
   const discountedCashPrice = promoPercent > 0 ? Math.round(cashPrice * (1 - promoPercent / 100)) : cashPrice;
   const oldPrice = promoPercent > 0 ? price : null;
+  const garantieDuree = Number(p.garantie_duree || 0);
+  const garantieUnite = p.garantie_unite || 'mois';
+  const garantieUniteLabel = garantieUnite === 'jours'
+    ? (garantieDuree === 1 ? 'jour' : 'jours')
+    : garantieUnite === 'ans'
+      ? (garantieDuree === 1 ? 'an' : 'ans')
+      : 'mois';
 
   // Récupérer les images réelles du produit depuis image_produits (MySQL) ou images (formulaire admin)
   const rawImages = Array.isArray(p.image_produits) && p.image_produits.length > 0
@@ -170,6 +177,9 @@ export const mapAdminProductToClient = (p) => {
     stockCount: p.stock !== undefined ? Number(p.stock) : 15,
     availabilityDuration: p.duree ? `${p.duree} mois de disponibilité` : 'Disponible',
     duree: Number(p.duree || 6),
+    garantie_duree: garantieDuree || null,
+    garantie_unite: garantieDuree ? garantieUnite : null,
+    garantie: garantieDuree ? `${garantieDuree} ${garantieUniteLabel}` : null,
     d: p.description || p.d || 'Article de qualité certifiée disponible sur TakaPay.',
     colors: (() => {
       if (p.couleur) {

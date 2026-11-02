@@ -62,7 +62,7 @@ class ProduitController extends Controller
         $deletedImagePaths = [];
 
         DB::transaction(function () use ($produit, $validated, &$deletedImagePaths) {
-$produitFields = ['nom', 'sous_categorie_id', 'description', 'stock', 'duree', 'couleur', 'video'];
+            $produitFields = ['nom', 'sous_categorie_id', 'description', 'stock', 'duree', 'garantie_duree', 'garantie_unite', 'couleur', 'video'];
             $produitData = array_intersect_key($validated, array_flip($produitFields));
             if (!empty($produitData)) {
                 if (!empty($produitData['video']) && is_array($produitData['video'])) {

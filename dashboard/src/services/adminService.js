@@ -1,4 +1,6 @@
 const API_BASE = '/api';
+const DASHBOARD_STATS_UPDATE_KEY = 'takapay_dashboard_stats_updated';
+const DASHBOARD_STATS_UPDATE_EVENT = 'takapay:dashboard-stats-updated';
 
 const readCachedList = (key) => {
   try {
@@ -81,6 +83,14 @@ export const adminService = {
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       throw new Error(data.message || 'Erreur lors de la confirmation du paiement.');
+    }
+    if (data.status === 'success') {
+      window.dispatchEvent(new Event(DASHBOARD_STATS_UPDATE_EVENT));
+      try {
+        localStorage.setItem(DASHBOARD_STATS_UPDATE_KEY, String(Date.now()));
+      } catch {
+        // La mise à jour immédiate entre onglets reste facultative.
+      }
     }
     return data;
   },
@@ -588,26 +598,24 @@ export const adminService = {
 
   async getDashboardStats() {
     const token = this.getToken();
-    if (token) {
-      try {
-        const res = await fetch(`${API_BASE}/admin/stats`, {
+    if (!token) {
+      throw new Error('Session administrateur expirée. Veuillez vous reconnecter.');
+    }
+    const res = await fetch(`${API_BASE}/admin/stats`, {
           headers: {
             Authorization: `Bearer ${token}`,
             Accept: 'application/json',
           },
         });
-        if (res.ok) {
-          const data = await res.json();
-          return {
-            ...EMPTY_STATS,
-            ...data,
-          };
-        }
-      } catch {
-        // Échec API : on affiche l'état vide plutôt que des données inventées
-      }
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.message || `Impossible de charger les statistiques (${res.status}).`);
     }
-    return EMPTY_STATS;
+
+    return {
+      ...EMPTY_STATS,
+      ...data,
+    };
   },
 
   // 1. GESTION DES PRODUITS
