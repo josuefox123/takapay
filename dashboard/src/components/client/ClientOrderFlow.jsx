@@ -1106,41 +1106,6 @@ export default function ClientOrderFlow({
                   {submitting ? 'Enregistrement de la commande...' : 'Confirmer la commande (Paiement à la livraison)'}
                 </button>
               </form>
-            ) : isProcessingPayment ? (
-              <div style={{
-                padding: '36px 20px',
-                textAlign: 'center',
-                background: '#ffffff',
-                borderRadius: '16px',
-                border: '1.5px solid #fed7aa',
-                boxShadow: '0 8px 24px rgba(234, 88, 12, 0.08)',
-                marginTop: '16px'
-              }}>
-                <style>{`
-                  @keyframes takapaySpin {
-                    from { transform: rotate(0deg); }
-                    to { transform: rotate(360deg); }
-                  }
-                `}</style>
-                <div style={{
-                  width: '56px',
-                  height: '56px',
-                  margin: '0 auto 16px',
-                  border: '4px solid #f3f4f6',
-                  borderTop: '4px solid #ea580c',
-                  borderRadius: '50%',
-                  animation: 'takapaySpin 1s linear infinite'
-                }} />
-                <h3 style={{ fontSize: '18px', fontWeight: 800, color: '#1f2937', marginBottom: '8px' }}>
-                  Validation du paiement en cours...
-                </h3>
-                <p style={{ fontSize: '13.5px', color: '#4b5563', lineHeight: 1.5, maxWidth: '380px', margin: '0 auto 8px' }}>
-                  Une demande de confirmation a été envoyée sur votre numéro <b>{paymentPhone}</b>. Veuillez saisir votre code secret Mobile Money pour valider la transaction.
-                </p>
-                <p style={{ fontSize: '12.5px', color: '#ea580c', fontWeight: 600, margin: '0 auto' }}>
-                  Veuillez patienter pendant la validation sur votre téléphone...
-                </p>
-              </div>
             ) : paymentFailed ? (
               <div style={{
                 padding: '32px 20px',
@@ -1332,10 +1297,19 @@ export default function ClientOrderFlow({
                 <button
                   type="submit"
                   className="client-btn w100"
-                  disabled={submitting}
-                  style={{ padding: '16px', fontSize: '15px' }}
+                  disabled={submitting || isProcessingPayment}
+                  style={{
+                    padding: '16px',
+                    fontSize: '15px',
+                    cursor: (submitting || isProcessingPayment) ? 'wait' : 'pointer',
+                    opacity: (submitting || isProcessingPayment) ? 0.8 : 1,
+                  }}
                 >
-                  {submitting ? 'Préparation FeexPay...' : `Valider avec ${provider === 'MTN' ? 'MTN MoMo' : 'Moov Money'}`}
+                  {isProcessingPayment
+                    ? 'Traitement en cours...'
+                    : submitting
+                    ? 'Préparation FeexPay...'
+                    : `Valider avec ${provider === 'MTN' ? 'MTN MoMo' : 'Moov Money'}`}
                 </button>
               </form>
             )}

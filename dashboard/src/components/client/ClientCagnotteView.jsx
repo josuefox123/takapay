@@ -2407,42 +2407,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
               </div>
             )}
 
-            {isProcessingPayment ? (
-              <div style={{
-                padding: '36px 20px',
-                textAlign: 'center',
-                background: '#ffffff',
-                borderRadius: '16px',
-                border: '1.5px solid #fed7aa',
-                boxShadow: '0 8px 24px rgba(234, 88, 12, 0.08)',
-                marginBottom: '16px'
-              }}>
-                <style>{`
-                  @keyframes takapaySpin {
-                    from { transform: rotate(0deg); }
-                    to { transform: rotate(360deg); }
-                  }
-                `}</style>
-                <div style={{
-                  width: '56px',
-                  height: '56px',
-                  margin: '0 auto 16px',
-                  border: '4px solid #f3f4f6',
-                  borderTop: '4px solid #ea580c',
-                  borderRadius: '50%',
-                  animation: 'takapaySpin 1s linear infinite'
-                }} />
-                <h3 style={{ fontSize: '18px', fontWeight: 800, color: '#1f2937', marginBottom: '8px' }}>
-                  Validation du versement en cours...
-                </h3>
-                <p style={{ fontSize: '13.5px', color: '#4b5563', lineHeight: 1.5, maxWidth: '380px', margin: '0 auto 8px' }}>
-                  Une demande de confirmation a été envoyée sur votre numéro <b>{depositPhone}</b>. Veuillez saisir votre code secret Mobile Money pour valider la transaction.
-                </p>
-                <p style={{ fontSize: '12.5px', color: '#ea580c', fontWeight: 600, margin: '0 auto' }}>
-                  Veuillez patienter pendant la validation sur votre téléphone...
-                </p>
-              </div>
-            ) : paymentFailed ? (
+            {paymentFailed ? (
               <div style={{
                 padding: '32px 20px',
                 textAlign: 'center',
@@ -2647,18 +2612,20 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
 
               <button
                 type="submit"
-                disabled={isSubmitting}
+                disabled={isSubmitting || isProcessingPayment}
                 style={{
                   ...primaryButtonStyle,
                   width: '100%',
                   padding: '14px',
                   borderRadius: '14px',
                   fontSize: '15px',
-                  opacity: isSubmitting ? 0.8 : 1,
-                  cursor: isSubmitting ? 'wait' : 'pointer',
+                  opacity: (isSubmitting || isProcessingPayment) ? 0.8 : 1,
+                  cursor: (isSubmitting || isProcessingPayment) ? 'wait' : 'pointer',
                 }}
               >
-                {isSubmitting
+                {isProcessingPayment
+                  ? 'Traitement en cours...'
+                  : isSubmitting
                   ? 'Préparation FeexPay...'
                   : `Confirmer le versement de ${formatFCFA(Number(depositAmount) || 0)}`}
               </button>
