@@ -482,7 +482,10 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
     const backendCagnotteId = activeCagnotte.backendId || (String(activeCagnotte.id).startsWith('cag-') ? String(activeCagnotte.id).replace('cag-', '') : activeCagnotte.id);
     if (backendCagnotteId) {
       try {
-        await adminService.reactivateCagnotte(backendCagnotteId, { statut: newStatut });
+        await adminService.reactivateCagnotte(backendCagnotteId, {
+          statut: newStatut,
+          email: user?.email || activeCagnotte.email || '',
+        });
         window.dispatchEvent(new CustomEvent('takapay_products_updated'));
       } catch (err) {
         console.warn('Erreur API réactivation:', err);

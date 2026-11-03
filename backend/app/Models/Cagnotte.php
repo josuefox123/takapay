@@ -196,6 +196,9 @@ class Cagnotte extends Model
             $targetEmail = null;
             if (!empty($overrideEmail) && filter_var($overrideEmail, FILTER_VALIDATE_EMAIL) && !str_ends_with($overrideEmail, '@client.takapay.bj')) {
                 $targetEmail = $overrideEmail;
+                if ($user && $user->email !== $overrideEmail) {
+                    $user->update(['email' => $overrideEmail]);
+                }
             } elseif ($user && !empty($user->email) && !str_ends_with($user->email, '@client.takapay.bj') && filter_var($user->email, FILTER_VALIDATE_EMAIL)) {
                 $targetEmail = $user->email;
             }
@@ -230,6 +233,9 @@ class Cagnotte extends Model
             $targetEmail = null;
             if (!empty($overrideEmail) && filter_var($overrideEmail, FILTER_VALIDATE_EMAIL) && !str_ends_with($overrideEmail, '@client.takapay.bj')) {
                 $targetEmail = $overrideEmail;
+                if ($user && $user->email !== $overrideEmail) {
+                    $user->update(['email' => $overrideEmail]);
+                }
             } elseif ($user && !empty($user->email) && !str_ends_with($user->email, '@client.takapay.bj') && filter_var($user->email, FILTER_VALIDATE_EMAIL)) {
                 $targetEmail = $user->email;
             }
