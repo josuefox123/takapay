@@ -1202,7 +1202,7 @@ export default function ClientProductDetail({
                 >
                   <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '16px', color: 'var(--r)', flexShrink: 0, marginTop: '1px' }}>savings</span>
                   <div>
-                    <strong>Règle de récupération :</strong> le client récupère son article une fois la cagnotte atteinte ({formatFCFA(currentPrice)} épargnés). Sans intérêts ni pénalités.
+                    <strong>Règle de récupération :</strong> le client récupère son article une fois la cagnotte atteinte.
                   </div>
                 </div>
               </div>
@@ -1278,7 +1278,7 @@ export default function ClientProductDetail({
           <div className="aside-info-card">
             <div className="aside-info-card-title">
               <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '20px', color: 'var(--r)' }}>local_shipping</span>
-              <span>Livraison estimée</span>
+              <span>Livraison possible</span>
             </div>
             <p className="aside-info-card-text">
               <strong>Cotonou & Calavi :</strong> (1 000 – 2 000 FCFA)

@@ -419,42 +419,90 @@ export default function AdminCommandesView({ onShowToast }) {
             </table>
           </div>
         )}
-      </div>
 
-      {/* Pagination */}
-      {meta.last_page > 1 && (
-        <div
-          style={{
-            display: 'flex',
-            gap: '8px',
-            justifyContent: 'center',
-            alignItems: 'center',
-            marginTop: '16px',
-          }}
-        >
-          <button
-            type="button"
-            className="admin-btn"
-            disabled={page <= 1}
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
-            style={{ padding: '8px 16px', fontSize: '13px' }}
+        {/* Barre de pagination */}
+        {!loading && commandes.length > 0 && (
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              paddingTop: '20px',
+              marginTop: '20px',
+              borderTop: '1px solid var(--line)',
+              flexWrap: 'wrap',
+              gap: '12px',
+            }}
           >
-            ← Précédent
-          </button>
-          <span style={{ fontSize: '13px', color: 'var(--mut)' }}>
-            Page {meta.current_page} / {meta.last_page}
-          </span>
-          <button
-            type="button"
-            className="admin-btn"
-            disabled={page >= meta.last_page}
-            onClick={() => setPage((p) => Math.min(meta.last_page, p + 1))}
-            style={{ padding: '8px 16px', fontSize: '13px' }}
-          >
-            Suivant →
-          </button>
-        </div>
-      )}
+            <div style={{ fontSize: '13px', color: 'var(--mut)' }}>
+              Affichage de <strong>{commandes.length}</strong> sur <strong>{meta.total || commandes.length}</strong> commande{(meta.total || commandes.length) > 1 ? 's' : ''} (Page {meta.current_page || 1} sur {meta.last_page || 1})
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <button
+                type="button"
+                disabled={page <= 1 || loading}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                style={{
+                  padding: '8px 14px',
+                  borderRadius: '8px',
+                  border: '1px solid var(--line)',
+                  background: page <= 1 || loading ? 'var(--bg)' : 'var(--card)',
+                  color: page <= 1 || loading ? 'var(--mut)' : 'var(--ink)',
+                  fontSize: '13px',
+                  fontWeight: 500,
+                  cursor: page <= 1 || loading ? 'not-allowed' : 'pointer',
+                  fontFamily: 'inherit',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  opacity: page <= 1 || loading ? 0.6 : 1,
+                  transition: 'all 0.2s ease',
+                }}
+              >
+                &larr; Précédent
+              </button>
+
+              <span
+                style={{
+                  padding: '6px 12px',
+                  borderRadius: '8px',
+                  background: 'var(--soft)',
+                  color: 'var(--r)',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                }}
+              >
+                {meta.current_page || 1} / {meta.last_page || 1}
+              </span>
+
+              <button
+                type="button"
+                disabled={page >= (meta.last_page || 1) || loading}
+                onClick={() => setPage((p) => Math.min(meta.last_page || 1, p + 1))}
+                style={{
+                  padding: '8px 14px',
+                  borderRadius: '8px',
+                  border: '1px solid var(--line)',
+                  background: page >= (meta.last_page || 1) || loading ? 'var(--bg)' : 'var(--card)',
+                  color: page >= (meta.last_page || 1) || loading ? 'var(--mut)' : 'var(--ink)',
+                  fontSize: '13px',
+                  fontWeight: 500,
+                  cursor: page >= (meta.last_page || 1) || loading ? 'not-allowed' : 'pointer',
+                  fontFamily: 'inherit',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  opacity: page >= (meta.last_page || 1) || loading ? 0.6 : 1,
+                  transition: 'all 0.2s ease',
+                }}
+              >
+                Suivant &rarr;
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

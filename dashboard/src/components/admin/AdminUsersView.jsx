@@ -126,7 +126,11 @@ export default function AdminUsersView({ onShowToast, currentUser }) {
     onShowToast(`Statut de l'utilisateur mis à jour : ${newStatus}`);
   };
 
-  const filtered = users.filter((u) => {
+  const visibleUsers = isSuperAdmin
+    ? users
+    : users.filter((u) => u.role !== 'super_admin');
+
+  const filtered = visibleUsers.filter((u) => {
     const fullName = `${u.prenom || ''} ${u.nom || ''} ${u.email || ''}`.toLowerCase();
     const matchSearch = fullName.includes(search.toLowerCase()) || (u.telephone || '').includes(search);
     const matchRole = roleFilter === 'tous' || u.role === roleFilter;
@@ -142,9 +146,9 @@ export default function AdminUsersView({ onShowToast, currentUser }) {
     return prenomA.localeCompare(prenomB, 'fr', { sensitivity: 'base' });
   });
 
-  const clientCount = users.filter((u) => u.role === 'client').length;
-  const livreurCount = users.filter((u) => u.role === 'livreur').length;
-  const adminCount = users.filter((u) => (u.role || '').includes('admin')).length;
+  const clientCount = visibleUsers.filter((u) => u.role === 'client').length;
+  const livreurCount = visibleUsers.filter((u) => u.role === 'livreur').length;
+  const adminCount = visibleUsers.filter((u) => (u.role || '').includes('admin')).length;
 
   return (
     <div>
@@ -250,7 +254,7 @@ export default function AdminUsersView({ onShowToast, currentUser }) {
           <option value="client">Clients</option>
           <option value="livreur">Livreurs</option>
           <option value="admin">Administrateurs</option>
-          <option value="super_admin">Super Admins</option>
+          {isSuperAdmin && <option value="super_admin">Super Admins</option>}
         </select>
       </div>
 

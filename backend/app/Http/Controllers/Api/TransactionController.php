@@ -18,9 +18,10 @@ class TransactionController extends Controller
     public function index(): AnonymousResourceCollection
     {
         return TransactionResource::collection(
-            Transaction::with(['cagnotte', 'commande', 'echeance'])
-                ->latest()
-                ->paginate(15)
+            Transaction::with(['cagnotte.produit', 'commande', 'echeance'])
+                ->orderByDesc('date')
+                ->orderByDesc('id')
+                ->get()
         );
     }
 

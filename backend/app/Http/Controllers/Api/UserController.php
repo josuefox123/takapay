@@ -18,9 +18,14 @@ class UserController extends Controller
     /**
      * Liste paginée des utilisateurs.
      */
-    public function index(): AnonymousResourceCollection
+    public function index(\Illuminate\Http\Request $request): AnonymousResourceCollection
     {
-        return UserResource::collection(User::orderBy('nom', 'asc')->orderBy('prenom', 'asc')->paginate(15));
+        $query = User::orderBy('nom', 'asc')->orderBy('prenom', 'asc');
+        if ($request->user()?->role !== 'super_admin') {
+            $query->where('role', '!=', 'super_admin');
+        }
+
+        return UserResource::collection($query->paginate(15));
     }
 
     /**

@@ -124,6 +124,46 @@ class AdminStatsController extends Controller
             $numSemaine++;
         }
 
+        // ---- 3. Flux Réel : Les 12 mois de l'année en cours ----
+        $nomsMoisCourts = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Août', 'Sep', 'Oct', 'Nov', 'Déc'];
+        $nomsMoisLongs = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'];
+        $currentYear = $now->year;
+        $moisAnnee = collect(range(1, 12))->map(function ($m) use ($currentYear, $now, $nomsMoisCourts, $nomsMoisLongs) {
+            $monthDate = $now->copy()->setYear($currentYear)->setMonth($m)->startOfMonth();
+            $start = $monthDate->copy()->startOfMonth()->startOfDay();
+            $end = $monthDate->copy()->endOfMonth()->endOfDay();
+
+            $cash = (float) Transaction::whereIn('statut', ['succes', 'reussi'])
+                ->whereBetween('date', [$start, $end])
+                ->where(function ($q) {
+                    $q->where('type', 'paiement_livraison')
+                        ->orWhere('type', 'commande_cash')
+                        ->orWhere('moyen_paiement', 'livraison')
+                        ->orWhereNull('cagnotte_id');
+                })
+                ->sum('montant');
+
+            $cagnotte = (float) Transaction::whereIn('statut', ['succes', 'reussi'])
+                ->whereBetween('date', [$start, $end])
+                ->whereNotNull('cagnotte_id')
+                ->whereNotIn('type', ['paiement_livraison', 'commande_cash'])
+                ->sum('montant');
+
+            $isCurrent = ($now->month === $m);
+
+            return [
+                'mois' => $nomsMoisCourts[$m - 1],
+                'label' => $nomsMoisLongs[$m - 1].' '.$currentYear,
+                'periode' => $start->format('d/m/Y').' au '.$end->format('d/m/Y'),
+                'is_current' => $isCurrent,
+                'cash' => $cash,
+                'cagnotte' => $cagnotte,
+                'total' => $cash + $cagnotte,
+                'attendu' => $cash,
+                'encaisse' => $cagnotte,
+            ];
+        });
+
         $totalEncaisse = (float) $semaines->sum('total');
         $tauxRecouvrement = $totalEncaisse > 0 ? 100 : 0;
 
@@ -272,8 +312,10 @@ class AdminStatsController extends Controller
                 'taux' => $tauxRecouvrement,
                 'semaines' => $semaines->toArray(),
                 'cette_semaine' => $cetteSemaineJours->toArray(),
+                'annee' => $moisAnnee->toArray(),
                 'total_semaine' => (float) $cetteSemaineJours->sum('total'),
                 'total_mois' => $totalEncaisse,
+                'total_annee' => (float) $moisAnnee->sum('total'),
             ],
             'documents' => $documents,
             'derniers_versements' => $derniersVersements,
