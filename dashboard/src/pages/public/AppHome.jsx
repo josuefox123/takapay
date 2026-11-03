@@ -603,8 +603,8 @@ export default function AppHome({ initialTab = 'home' }) {
       />
 
       {/* Contenu principal du portail client */}
-      <main className="client-scope">
-        <div className="client-w">
+      <main className={`client-scope ${view === 'home' ? 'client-scope-home' : ''}`}>
+        <div className={`client-w ${view === 'home' ? 'client-w-home' : ''}`}>
           {view === 'home' && (
             <ClientHomeView
               products={productsList}
