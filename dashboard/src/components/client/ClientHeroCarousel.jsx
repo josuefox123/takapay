@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { formatFCFA, discountPercentage, PRODUCTS } from '../../data/clientStore';
+import { formatFCFA, discountPercentage, PRODUCTS, resolveImageUrl } from '../../data/clientStore';
 import { adminService } from '../../services/adminService';
 import welcomeBannerImg from '../../assets/imagetakapay.webp';
 
@@ -13,13 +13,13 @@ export default function ClientHeroCarousel({
   const [isTransitioning, setIsTransitioning] = useState(true);
   const [dbCarousels, setDbCarousels] = useState(() => {
     try {
-      const saved = localStorage.getItem('takapay_cached_carousels');
-      return saved ? JSON.parse(saved) : [];
+      const cached = localStorage.getItem('takapay_public_carousels');
+      const parsed = cached ? JSON.parse(cached) : [];
+      return Array.isArray(parsed) ? parsed : [];
     } catch {
       return [];
     }
   });
-  const [loadingDb, setLoadingDb] = useState(false);
 
   // Charger les bannières dynamiques configurées par l'administrateur
   useEffect(() => {
@@ -28,18 +28,10 @@ export default function ClientHeroCarousel({
       .getCarousels(false)
       .then((data) => {
         if (isMounted) {
-          if (Array.isArray(data) && data.length > 0) {
-            setDbCarousels(data);
-            try {
-              localStorage.setItem('takapay_cached_carousels', JSON.stringify(data));
-            } catch { /* ignore */ }
-          }
-          setLoadingDb(false);
+          setDbCarousels(Array.isArray(data) ? data : []);
         }
       })
-      .catch(() => {
-        if (isMounted) setLoadingDb(false);
-      });
+      .catch(() => {});
 
     return () => {
       isMounted = false;
@@ -50,13 +42,13 @@ export default function ClientHeroCarousel({
   const slides = useMemo(() => {
     // 1. Si l'administrateur a configuré des bannières carrousel dans la base, on les utilise en priorité
     if (dbCarousels.length > 0) {
-      return dbCarousels.map((item) => {
+      return dbCarousels.slice(0, 4).map((item) => {
         const hasProd = item.produit;
 
         return {
           id: `carousel-db-${item.id}`,
           isDb: true,
-          image: item.image_url || welcomeBannerImg,
+          image: resolveImageUrl(item.image_url) || welcomeBannerImg,
           kicker: item.kicker ? item.kicker.trim() : null,
           title: item.titre ? item.titre.trim() : null,
           description: item.description ? item.description.trim() : null,

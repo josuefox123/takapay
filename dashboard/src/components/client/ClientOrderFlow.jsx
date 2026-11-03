@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { FeexPayProvider, FeexPayButton } from '@feexpay/react-sdk';
 import '@feexpay/react-sdk/style.css';
 import { formatFCFA } from '../../data/clientStore';
-import { adminService } from '../../services/adminService';
+import { adminService, registerFeexpayWatchdog, cancelFeexpayPayment } from '../../services/adminService';
 import ClientForgotPinModal from './ClientForgotPinModal';
 
 export default function ClientOrderFlow({
@@ -62,9 +62,9 @@ export default function ClientOrderFlow({
   const [quantity, setQuantity] = useState(initialQuantity || 1);
   const [successModalData, setSuccessModalData] = useState(null);
 
-  // Simulation validation paiement 40 secondes
+  // Simulation validation paiement 20 secondes
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
-  const [paymentCountdown, setPaymentCountdown] = useState(40);
+  const [paymentCountdown, setPaymentCountdown] = useState(20);
   const [paymentFailed, setPaymentFailed] = useState(false);
 
   useEffect(() => {
@@ -93,13 +93,15 @@ export default function ClientOrderFlow({
     return `${u?.prenom || ''} ${u?.nom || ''}`.trim() || u?.nom || u?.n || '';
   });
 
-  // Mode Cash : Choix entre Paiement à la livraison et Mobile Money
-  const [cashPaymentMode, setCashPaymentMode] = useState('delivery'); // 'delivery' ou 'online'
+  // Mode Cash : Paiement en ligne Mobile Money par défaut
+  const [cashPaymentMode, setCashPaymentMode] = useState('online'); // 'delivery' ou 'online'
   const [deliveryAddress, setDeliveryAddress] = useState(() => user?.adresse || activeUser?.adresse || '');
   const [deliveryPhone, setDeliveryPhone] = useState(() => user?.telephone || user?.phone || activeUser?.telephone || activeUser?.phone || '');
   const [deliveryNote, setDeliveryNote] = useState('');
   const [deliveryCoords, setDeliveryCoords] = useState('');
   const [isLocating, setIsLocating] = useState(false);
+
+  const isOutOfStock = product?.stockCount !== null && product?.stockCount !== undefined && Number(product.stockCount) <= 0;
 
   // Synchronisation automatique des informations du client connecté ou inscrit
   useEffect(() => {
@@ -262,11 +264,11 @@ export default function ClientOrderFlow({
   const minDeposit = (initialDeposit && Number(initialDeposit) > 0)
     ? Number(initialDeposit)
     : Math.max(
-        1,
-        product?.payment?.minimumStart
-          ? Math.floor(product.payment.minimumStart * priceRatio)
-          : Math.floor((effectivePrice * 10) / 100)
-      );
+      1,
+      product?.payment?.minimumStart
+        ? Math.floor(product.payment.minimumStart * priceRatio)
+        : Math.floor((effectivePrice * 10) / 100)
+    );
   const effectiveQuantity = orderType === 'cash' ? Math.max(1, quantity) : 1;
   const paymentAmount = orderType === 'cash' ? (cashPrice * effectiveQuantity) : minDeposit;
 
@@ -326,6 +328,10 @@ export default function ClientOrderFlow({
   // Soumission de commande avec paiement à la livraison (COD)
   const handleDeliveryOrderSubmit = async (e) => {
     e.preventDefault();
+    if (isOutOfStock) {
+      setError('Désolé, cet article est actuellement en rupture de stock.');
+      return;
+    }
     if (!deliveryAddress.trim()) {
       setError('Veuillez renseigner votre adresse de livraison.');
       return;
@@ -374,264 +380,401 @@ export default function ClientOrderFlow({
         backendId: initRes?.cagnotte_id || null,
         message: 'La disponibilité de l’article vous sera communiquée par l’équipe en charge dans quelques instants.',
       });
-    } catch {
-      setSuccessModalData({
-        product: { ...product, p: effectivePrice },
-        selectedColor,
-        provider: 'Paiement à la livraison',
-        initialAmount: 0,
-        totalPrice: cashPrice * effectiveQuantity,
-        reference: orderRef,
-        transactionId: orderRef,
-        date: new Date().toISOString(),
-        isCash: true,
-        isCod: true,
-        quantity: effectiveQuantity,
-        deliveryAddress: deliveryAddress.trim(),
-        deliveryPhone: deliveryPhone.trim(),
-        deliveryNote: deliveryNote.trim(),
-        deliveryCoords,
-        commandeId: null,
-        message: 'La disponibilité de l’article vous sera communiquée par l’équipe en charge dans quelques instants.',
-      });
+
+      try {
+        window.dispatchEvent(new CustomEvent('takapay_cagnotte_updated'));
+        window.dispatchEvent(new CustomEvent('takapay_products_updated'));
+      } catch { /* ignore */ }
+    } catch (err) {
+      setError(err?.message || "Impossible d'enregistrer la commande. Cet article est peut-être indisponible.");
     } finally {
       setSubmitting(false);
     }
   };
 
-  // Étape 4 : Initiation et Validation Paiement
-  const handlePaymentSubmit = async (e) => {
-    e.preventDefault();
-    if (!provider) {
-      setError('Veuillez choisir votre moyen de paiement.');
-      return;
-    }
-    if (!paymentPhone.trim()) {
-      setError('Veuillez renseigner votre numéro de téléphone Mobile Money.');
+  const [autoOpenFeexpay, setAutoOpenFeexpay] = useState(false);
+
+  // Étape 4 : Initialisation FeexPay (MTN, Moov, Celtis, Carte Bancaire)
+  const handleInitiateFeexpay = async (shouldAutoOpen = false) => {
+    if (isOutOfStock) {
+      setError('Désolé, cet article est actuellement en rupture de stock.');
       return;
     }
     setError('');
+    setSubmitting(true);
     setPaymentFailed(false);
-    setIsProcessingPayment(true);
-    setPaymentCountdown(40);
-
-    // Envoi de la commande en arrière-plan sans bloquer la rotation
     try {
       const initRes = await adminService.initiatePayment({
         amount: paymentAmount,
         produit_id: product?.id,
         type_paiement: orderType,
         quantite: effectiveQuantity,
-        moyen_paiement: provider,
+        moyen_paiement: provider || 'MTN',
         user_id: activeUser?.id || user?.id,
-        telephone: paymentPhone.trim(),
-        client_nom: paymentName.trim(),
-        client_email: (email && email.trim()) || null,
+        telephone: paymentPhone.trim() || user?.telephone || '',
+        client_nom: paymentName.trim() || `${user?.prenom || ''} ${user?.nom || ''}`.trim() || 'Client',
+        client_email: (email && email.trim()) || user?.email || null,
+        adresse_livraison: deliveryAddress,
+        telephone_livraison: deliveryPhone,
+        note_livraison: deliveryNote,
+        coordonnees_gps: deliveryCoords,
       });
-      if (initRes) setPaymentData(initRes);
+      if (initRes) {
+        setPaymentData(initRes);
+        if (shouldAutoOpen) {
+          setAutoOpenFeexpay(true);
+        }
+      }
     } catch (err) {
-      console.warn('initiatePayment background notice:', err);
+      console.warn('initiatePayment notice:', err);
+      setError(err?.message || 'Erreur lors de la préparation du paiement FeexPay.');
+    } finally {
+      setSubmitting(false);
     }
   };
 
+  useEffect(() => {
+    if ((currentStep === 'payment' || step === 'payment' || step === 4) && (orderType === 'cagnotte' || cashPaymentMode === 'online') && !paymentData && !submitting && !paymentFailed && !successModalData && !isOutOfStock) {
+      handleInitiateFeexpay(true);
+    }
+  }, [currentStep, step, orderType, cashPaymentMode, paymentAmount, successModalData]);
+
+  // Déclenchement automatique fluide dès que FeexPay est prêt
+  useEffect(() => {
+    if (paymentData && autoOpenFeexpay) {
+      const tryOpen = () => {
+        const wrapper = document.querySelector('#feexpay-button-container > div');
+        if (wrapper) {
+          wrapper.dispatchEvent(new Event('feexpay:trigger'));
+          setAutoOpenFeexpay(false);
+          return true;
+        }
+        const btn = document.querySelector('#feexpay-button-container button');
+        if (btn) {
+          btn.click();
+          setAutoOpenFeexpay(false);
+          return true;
+        }
+        return false;
+      };
+
+      if (!tryOpen()) {
+        const interval = setInterval(() => {
+          if (tryOpen()) clearInterval(interval);
+        }, 50);
+        const timeout = setTimeout(() => {
+          clearInterval(interval);
+          setAutoOpenFeexpay(false);
+        }, 3000);
+        return () => {
+          clearInterval(interval);
+          clearTimeout(timeout);
+        };
+      }
+    }
+  }, [paymentData, autoOpenFeexpay]);
+
+  // Observer pour remplacer le logo FeexPay par le logo Takapay dans la modale
+  useEffect(() => {
+    const swapLogo = () => {
+      const logos = document.querySelectorAll('img[src*="feexpay_logo"], img[alt="Logo"]');
+      logos.forEach((img) => {
+        if (!img.dataset.takapayLogo) {
+          img.src = '/logo.png';
+          img.alt = 'Takapay';
+          img.style.maxHeight = '38px';
+          img.style.width = 'auto';
+          img.style.objectFit = 'contain';
+          img.dataset.takapayLogo = 'true';
+        }
+      });
+    };
+
+    const obs = new MutationObserver(swapLogo);
+    obs.observe(document.body, { childList: true, subtree: true });
+    swapLogo();
+
+    return () => obs.disconnect();
+  }, []);
+
+  // Watchdog FeexPay : arrêt immédiat de la rotation après 30s ou annulation
+  useEffect(() => {
+    const unregister = registerFeexpayWatchdog((event) => {
+      setPaymentData(null);
+      setIsProcessingPayment(false);
+      setPaymentCountdown(0);
+      if (event?.hadStarted) {
+        setPaymentFailed(true);
+      } else if (onBack && !successModalData) {
+        onBack();
+      }
+    });
+    return () => {
+      unregister();
+    };
+  }, [onBack, successModalData]);
+
   const handleFeexpayCallback = async (response) => {
     console.log('FeexPay callback reçu :', response);
-    // Après le passage par FeexPay : lancement du délai de 40 secondes avec spinner tournant
-    setPaymentData(null);
-    setPaymentFailed(false);
-    setIsProcessingPayment(true);
-    setPaymentCountdown(40);
+    const isSuccess = response && (
+      response.status?.toUpperCase() === 'SUCCESSFUL' ||
+      response.status?.toUpperCase() === 'SUCCESS' ||
+      response.status?.toUpperCase() === 'PAID'
+    );
+
+    if (!isSuccess) {
+      cancelFeexpayPayment('CANCELLED', true);
+      setPaymentData(null);
+      setIsProcessingPayment(false);
+      setPaymentCountdown(0);
+      setPaymentFailed(true);
+      return;
+    }
+
+    const orderRef = paymentData?.reference || response.reference;
+    const resolvedNetwork = response.reseau || window.__takapaySelectedNetwork || provider;
+    const customerEmail = response.email || (email && email.trim()) || (user?.email && !user.email.endsWith('@client.takapay.bj') ? user.email : null);
+    try {
+      const confirmation = await adminService.confirmPayment({
+        reference: orderRef,
+        status: 'successful',
+        transaction_id: response.transaction_id || response.id || response.reference || orderRef,
+        amount: response.amount || paymentAmount,
+        reseau: resolvedNetwork,
+        user_id: activeUser?.id || user?.id,
+        client_email: customerEmail,
+      });
+      if (confirmation?.status !== 'success') {
+        throw new Error(confirmation?.message || 'FeexPay n’a pas confirmé le paiement.');
+      }
+
+      // Persister l'adresse email réelle sur le profil utilisateur
+      if (customerEmail && user && (!user.email || user.email.endsWith('@client.takapay.bj'))) {
+        const updatedUser = { ...user, email: customerEmail };
+        onUserAuthSuccess(updatedUser, 'Paiement confirmé ! Votre reçu sera envoyé par email.');
+      }
+
+      setPaymentData(null);
+      setIsProcessingPayment(false);
+      setPaymentFailed(false);
+      setPaymentCountdown(20);
+
+      // Afficher le popup de félicitations avant la redirection vers les cagnottes ou commandes
+      setSuccessModalData({
+        product: { ...product, p: effectivePrice },
+        selectedColor,
+        provider: resolvedNetwork,
+        initialAmount: Number(confirmation.amount) || paymentAmount,
+        totalPrice: orderType === 'cash' ? (cashPrice * effectiveQuantity) : effectivePrice,
+        reference: orderRef,
+        transactionId: response.transaction_id || response.id || orderRef,
+        date: new Date().toISOString(),
+        isCash: orderType === 'cash',
+        quantity: effectiveQuantity,
+      });
+
+      try {
+        window.dispatchEvent(new CustomEvent('takapay_cagnotte_updated'));
+        window.dispatchEvent(new CustomEvent('takapay_products_updated'));
+      } catch { /* ignore */ }
+    } catch (err) {
+      console.error('Erreur confirmation backend :', err);
+      setPaymentData(null);
+      setIsProcessingPayment(false);
+      setPaymentFailed(false);
+      setError(`Le statut reçu de FeexPay n’a pas pu être vérifié par le serveur (${err.message || 'erreur réseau'}). La commande n’est pas encore confirmée. Référence : ${orderRef}`);
+    }
   };
 
   return (
     <div className="flow-shell auth-flow-shell">
-      <div className="page-top" style={{ position: 'relative', zIndex: 2 }}>
-          <button
-            type="button"
-            className="back-link"
-            onClick={onBack}
-          >
-            ← Retour à l’article
-          </button>
-        </div>
+      <div className="page-top">
+        <button
+          type="button"
+          className="back-link"
+          onClick={onBack}
+        >
+          ← Retour à l’article
+        </button>
+      </div>
 
-        <div className="flow-card" style={{ position: 'relative', zIndex: 2 }}>
-          {/* Étape 1 : Authentification */}
-          {currentStep === 'auth' && (
-            <div>
-              <span className="flow-label">ÉTAPE 1 · COMPTE CLIENT</span>
-              <h1>{authMode === 'signup' ? 'Créer votre compte' : 'Connexion sécurisée'}</h1>
-              <p className="flow-lead">
-                {authMode === 'signup'
-                  ? 'Renseignez vos coordonnées pour valider votre commande et ouvrir votre cagnotte.'
-                  : 'Connectez-vous avec votre numéro et votre code PIN personnel.'}
-              </p>
+      <div className="flow-card">
+        {/* Étape 1 : Authentification */}
+        {currentStep === 'auth' && (
+          <div>
+            <span className="flow-label">ÉTAPE 1 · COMPTE CLIENT</span>
+            <h1>{authMode === 'signup' ? 'Créer votre compte' : 'Connexion sécurisée'}</h1>
+            <p className="flow-lead">
+              {authMode === 'signup'
+                ? 'Renseignez vos coordonnées pour valider votre commande et ouvrir votre cagnotte.'
+                : 'Connectez-vous avec votre numéro et votre code PIN personnel.'}
+            </p>
 
-              <form onSubmit={handleAuthSubmit}>
-                {authMode === 'signup' ? (
-                  <>
-                    <div className="auth-names-row">
-                      <div>
-                        <label className="fl" htmlFor="signup-nom">Nom *</label>
-                        <input
-                          id="signup-nom"
-                          type="text"
-                          required
-                          className="fi"
-                          placeholder="Ex: DOSSOU"
-                          value={nom}
-                          onChange={(e) => setNom(e.target.value)}
-                        />
-                      </div>
-                      <div>
-                        <label className="fl" htmlFor="signup-prenom">Prénom *</label>
-                        <input
-                          id="signup-prenom"
-                          type="text"
-                          required
-                          className="fi"
-                          placeholder="Ex: Koffi"
-                          value={prenom}
-                          onChange={(e) => setPrenom(e.target.value)}
-                        />
-                      </div>
-                    </div>
-
-                    <label className="fl" htmlFor="signup-phone">Numéro de téléphone (Mobile Money) *</label>
-                    <input
-                      id="signup-phone"
-                      type="tel"
-                      required
-                      className="fi"
-                      placeholder="Ex: +229 97 00 00 00"
-                      value={phone}
-                      onChange={(e) => setPhone(e.target.value)}
-                    />
-
-                    <label className="fl" htmlFor="signup-email">Email (facultatif)</label>
-                    <input
-                      id="signup-email"
-                      type="email"
-                      className="fi"
-                      placeholder="koffi@exemple.com"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                    />
-
-                    <label className="terms-check">
+            <form onSubmit={handleAuthSubmit}>
+              {authMode === 'signup' ? (
+                <>
+                  <div className="auth-names-row">
+                    <div>
+                      <label className="fl" htmlFor="signup-nom">Nom *</label>
                       <input
-                        type="checkbox"
-                        checked={terms}
-                        onChange={(e) => setTerms(e.target.checked)}
+                        id="signup-nom"
+                        type="text"
+                        required
+                        className="fi"
+                        placeholder="Ex: DOSSOU"
+                        value={nom}
+                        onChange={(e) => setNom(e.target.value)}
                       />
-                      <span>
-                        J'accepte les conditions d'utilisation et la politique de confidentialité Takapay.
-                      </span>
-                    </label>
-                  </>
-                ) : (
-                  <>
-                    <label className="fl" htmlFor="login-id">Téléphone ou email</label>
-                    <input
-                      id="login-id"
-                      type="text"
-                      required
-                      className="fi"
-                      placeholder="Votre numéro de téléphone"
-                      value={loginId}
-                      onChange={(e) => setLoginId(e.target.value)}
-                    />
-
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '14px', marginBottom: '6px' }}>
-                      <label className="fl" htmlFor="login-pin" style={{ margin: 0 }}>Code PIN ou mot de passe</label>
-                      <button
-                        type="button"
-                        onClick={() => setShowForgotPinModal(true)}
-                        style={{
-                          background: 'none',
-                          border: 'none',
-                          color: 'var(--r, #c62828)',
-                          fontSize: '12.5px',
-                          fontWeight: 600,
-                          cursor: 'pointer',
-                          padding: 0,
-                        }}
-                      >
-                        Code oublié ?
-                      </button>
                     </div>
+                    <div>
+                      <label className="fl" htmlFor="signup-prenom">Prénom *</label>
+                      <input
+                        id="signup-prenom"
+                        type="text"
+                        required
+                        className="fi"
+                        placeholder="Ex: Koffi"
+                        value={prenom}
+                        onChange={(e) => setPrenom(e.target.value)}
+                      />
+                    </div>
+                  </div>
+
+                  <label className="fl" htmlFor="signup-phone">Numéro de téléphone (Mobile Money) *</label>
+                  <input
+                    id="signup-phone"
+                    type="tel"
+                    required
+                    className="fi"
+                    placeholder="Ex: +229 97 00 00 00"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                  />
+
+                  <label className="fl" htmlFor="signup-email">Email (facultatif)</label>
+                  <input
+                    id="signup-email"
+                    type="email"
+                    className="fi"
+                    placeholder="koffi@exemple.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                  />
+
+                  <label className="terms-check">
                     <input
-                      id="login-pin"
-                      type="password"
-                      required
-                      className="fi"
-                      placeholder="••••••"
-                      value={loginPin}
-                      onChange={(e) => setLoginPin(e.target.value)}
+                      type="checkbox"
+                      checked={terms}
+                      onChange={(e) => setTerms(e.target.checked)}
                     />
-                  </>
-                )}
+                    <span>
+                      J'accepte les conditions d'utilisation et la politique de confidentialité Takapay.
+                    </span>
+                  </label>
+                </>
+              ) : (
+                <>
+                  <label className="fl" htmlFor="login-id">Téléphone ou email</label>
+                  <input
+                    id="login-id"
+                    type="text"
+                    required
+                    className="fi"
+                    placeholder="Votre numéro de téléphone"
+                    value={loginId}
+                    onChange={(e) => setLoginId(e.target.value)}
+                  />
 
-                {authNotice && (
-                  <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#15803d', padding: '10px 14px', borderRadius: '10px', fontSize: '13px', margin: '8px 0', fontWeight: 600 }}>
-                    {authNotice}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '14px', marginBottom: '6px' }}>
+                    <label className="fl" htmlFor="login-pin" style={{ margin: 0 }}>Code PIN ou mot de passe</label>
+                    <button
+                      type="button"
+                      onClick={() => setShowForgotPinModal(true)}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: 'var(--r, #c62828)',
+                        fontSize: '12.5px',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        padding: 0,
+                      }}
+                    >
+                      Code oublié ?
+                    </button>
                   </div>
-                )}
+                  <input
+                    id="login-pin"
+                    type="password"
+                    required
+                    className="fi"
+                    placeholder="••••••"
+                    value={loginPin}
+                    onChange={(e) => setLoginPin(e.target.value)}
+                  />
+                </>
+              )}
 
-                {error && (
-                  <div style={{ color: 'var(--r)', fontSize: '13px', margin: '8px 0', fontWeight: 600 }}>
-                    {error}
-                  </div>
-                )}
+              {authNotice && (
+                <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#15803d', padding: '10px 14px', borderRadius: '10px', fontSize: '13px', margin: '8px 0', fontWeight: 600 }}>
+                  {authNotice}
+                </div>
+              )}
 
-                <button
-                  type="submit"
-                  className="client-btn w100"
-                  style={{ marginTop: '16px' }}
-                  disabled={submitting}
-                >
-                  {submitting
-                    ? 'Vérification...'
-                    : authMode === 'signup'
-                    ? 'Continuer'
-                    : 'Se connecter'}
-                </button>
-              </form>
+              {error && (
+                <div style={{ color: 'var(--r)', fontSize: '13px', margin: '8px 0', fontWeight: 600 }}>
+                  {error}
+                </div>
+              )}
 
-              <p className="auth-alternate">
-                {authMode === 'signup' ? 'Vous avez déjà un compte ?' : 'Pas encore de compte ?'}{' '}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setError('');
-                    setAuthMode(authMode === 'signup' ? 'login' : 'signup');
-                  }}
-                >
-                  {authMode === 'signup' ? 'Connectez-vous' : 'Créer un compte'}
-                </button>
-              </p>
-
-              <div className="auth-separator">
-                <span>ou</span>
-              </div>
-
-              {/* Bouton de connexion par Google ramené tout en bas */}
               <button
-                type="button"
-                className="google-auth-btn"
-                onClick={handleGoogleAuth}
+                type="submit"
+                className="client-btn w100"
+                style={{ marginTop: '16px' }}
                 disabled={submitting}
               >
-                <svg width="18" height="18" viewBox="0 0 24 24">
-                  <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
-                  <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-                  <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
-                  <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
-                </svg>
-                <span>{submitting ? 'Connexion en cours...' : 'Continuer avec Google'}</span>
+                {submitting
+                  ? 'Vérification...'
+                  : authMode === 'signup'
+                    ? 'Continuer'
+                    : 'Se connecter'}
               </button>
+            </form>
+
+            <p className="auth-alternate">
+              {authMode === 'signup' ? 'Vous avez déjà un compte ?' : 'Pas encore de compte ?'}{' '}
+              <button
+                type="button"
+                onClick={() => {
+                  setError('');
+                  setAuthMode(authMode === 'signup' ? 'login' : 'signup');
+                }}
+              >
+                {authMode === 'signup' ? 'Connectez-vous' : 'Créer un compte'}
+              </button>
+            </p>
+
+            <div className="auth-separator">
+              <span>ou</span>
             </div>
-          )}
+
+            {/* Bouton de connexion par Google ramené tout en bas */}
+            <button
+              type="button"
+              className="google-auth-btn"
+              onClick={handleGoogleAuth}
+              disabled={submitting}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24">
+                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
+                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
+              </svg>
+              <span>{submitting ? 'Connexion en cours...' : 'Continuer avec Google'}</span>
+            </button>
+          </div>
+        )}
 
         {/* Étape 2 : Créer le PIN */}
         {currentStep === 'pin-create' && (
@@ -779,334 +922,21 @@ export default function ClientOrderFlow({
           </div>
         )}
 
-        {/* Étape 4 : Choix du Moyen de Paiement */}
+        {/* Étape de Paiement Mobile Money : Ouverture directe de la modale FeexPay */}
         {currentStep === 'payment' && (
           <div>
-            <span className="flow-label">ÉTAPE 4 · MOYEN DE PAIEMENT</span>
-            <h1>Finaliser votre commande</h1>
-            <p className="flow-lead">
-              Votre compte est prêt. Choisissez votre portefeuille Mobile Money pour lancer votre premier versement.
-            </p>
-
-            {/* Affichage exclusif de la modalité de règlement sélectionnée */}
-            <div style={{ marginBottom: '16px' }}>
-              <div style={{ fontSize: '13px', fontWeight: 700, marginBottom: '8px', color: 'var(--tx)' }}>
-                Modalité de règlement :
+            {isOutOfStock && (
+              <div style={{ color: '#dc2626', fontSize: '13px', margin: '12px 0', padding: '10px 12px', background: '#fee2e2', border: '1px solid #fca5a5', borderRadius: '8px', fontWeight: 700 }}>
+                ⚠️ Cet article est actuellement en rupture de stock. La commande ne peut pas aboutir.
               </div>
-              {orderType === 'cash' ? (
-                <div
-                  style={{
-                    padding: '12px 14px',
-                    borderRadius: '12px',
-                    border: '1.5px solid #1e293b',
-                    background: 'rgba(30, 41, 59, 0.06)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                  }}
-                >
-                  <div>
-                    <div style={{ fontSize: '13px', fontWeight: 800, color: '#1e293b' }}>
-                      💵 Paiement comptant
-                    </div>
-                    <div style={{ fontSize: '11px', color: 'var(--mu)', marginTop: '3px' }}>
-                      Règlement direct intégral
-                    </div>
-                  </div>
-                  <span style={{ fontSize: '12px', fontWeight: 700, color: '#1e293b', background: 'rgba(30, 41, 59, 0.1)', padding: '4px 10px', borderRadius: '6px' }}>
-                    {formatFCFA(cashPrice)} / article
-                  </span>
-                </div>
-              ) : (
-                <div
-                  style={{
-                    padding: '12px 14px',
-                    borderRadius: '12px',
-                    border: '1.5px solid var(--r)',
-                    background: 'rgba(220, 38, 38, 0.06)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                  }}
-                >
-                  <div>
-                    <div style={{ fontSize: '13px', fontWeight: 800, color: 'var(--r)' }}>
-                      🎯 Mode Cagnotte Takapay
-                    </div>
-                    <div style={{ fontSize: '11px', color: 'var(--mu)', marginTop: '3px' }}>
-                      {product?.payment?.mode === 'libre'
-                        ? "Cotisations libres · Récupération dès 100% de la cagnotte atteinte"
-                        : "Cotisations échelonnées sécurisées"}
-                    </div>
-                  </div>
-                  <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--r)', background: 'rgba(220, 38, 38, 0.1)', padding: '4px 10px', borderRadius: '6px' }}>
-                    1er versement : {formatFCFA(minDeposit)}
-                  </span>
-                </div>
-              )}
-            </div>
-
-            {/* Récapitulatif de l'article */}
-            <div className="payment-summary">
-              <strong style={{ fontSize: '15px' }}>{product?.n}</strong>
-              {selectedColor && (
-                <div style={{ color: 'var(--mu)', fontSize: '12px', marginTop: '4px' }}>
-                  Couleur choisie : <b>{selectedColor.name || selectedColor}</b>
-                </div>
-              )}
-
-              {orderType === 'cash' ? (
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '10px' }}>
-                  <span style={{ color: 'var(--mu)', fontSize: '13px' }}>Quantité commandée :</span>
-                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
-                    <button
-                      type="button"
-                      disabled={quantity <= 1}
-                      onClick={() => { setQuantity((q) => Math.max(1, q - 1)); setPaymentData(null); }}
-                      style={{ width: '28px', height: '28px', borderRadius: '6px', border: '1px solid var(--bd)', cursor: quantity <= 1 ? 'not-allowed' : 'pointer', fontWeight: 800 }}
-                    >
-                      −
-                    </button>
-                    <b style={{ fontSize: '14px', minWidth: '24px', textAlign: 'center' }}>{quantity}</b>
-                    <button
-                      type="button"
-                      onClick={() => { setQuantity((q) => q + 1); setPaymentData(null); }}
-                      style={{ width: '28px', height: '28px', borderRadius: '6px', border: '1px solid var(--bd)', cursor: 'pointer', fontWeight: 800 }}
-                    >
-                      +
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div style={{ color: 'var(--mu)', fontSize: '12px', marginTop: '6px' }}>
-                  Quantité : <b>1 article</b>
-                </div>
-              )}
-
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '10px' }}>
-                <span style={{ color: 'var(--mu)', fontSize: '13px' }}>
-                  {orderType === 'cash' ? `Total comptant (${effectiveQuantity} × ${formatFCFA(cashPrice)}) :` : '1er versement à effectuer :'}
-                </span>
-                <strong style={{ fontSize: '16px', color: 'var(--r)' }}>
-                  {formatFCFA(paymentAmount)}
-                </strong>
-              </div>
-            </div>
-
-            {/* Affichage des erreurs au niveau global de l'étape de paiement */}
+            )}
             {error && (
               <div style={{ color: 'var(--r)', fontSize: '13px', margin: '12px 0', padding: '10px 12px', background: 'rgba(239, 68, 68, 0.08)', borderRadius: '8px', fontWeight: 600 }}>
                 {error}
               </div>
             )}
 
-            {/* Sélecteur de méthode de règlement en mode CASH */}
-            {orderType === 'cash' && (
-              <div style={{ marginBottom: '18px' }}>
-                <div style={{ fontSize: '13px', fontWeight: 700, marginBottom: '8px', color: 'var(--tx)' }}>
-                  Choisissez votre méthode de règlement :
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                  <button
-                    type="button"
-                    onClick={() => { setCashPaymentMode('delivery'); setPaymentData(null); }}
-                    style={{
-                      padding: '12px',
-                      borderRadius: '12px',
-                      border: cashPaymentMode === 'delivery' ? '2px solid var(--p, #dc2626)' : '1.5px solid #ded6ce',
-                      background: cashPaymentMode === 'delivery' ? 'rgba(220,38,38,0.06)' : '#ffffff',
-                      color: cashPaymentMode === 'delivery' ? 'var(--p, #dc2626)' : '#1b1716',
-                      fontWeight: 700,
-                      fontSize: '13px',
-                      cursor: 'pointer',
-                      textAlign: 'center',
-                    }}
-                  >
-                    <span style={{ fontSize: '20px', display: 'block', marginBottom: '4px' }}>🚚</span>
-                    Paiement à la livraison
-                    <small style={{ display: 'block', fontSize: '11px', color: '#706966', marginTop: '2px' }}>
-                      Règlement au livreur
-                    </small>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setCashPaymentMode('online')}
-                    style={{
-                      padding: '12px',
-                      borderRadius: '12px',
-                      border: cashPaymentMode === 'online' ? '2px solid var(--p, #dc2626)' : '1.5px solid #ded6ce',
-                      background: cashPaymentMode === 'online' ? 'rgba(220,38,38,0.06)' : '#ffffff',
-                      color: cashPaymentMode === 'online' ? 'var(--p, #dc2626)' : '#1b1716',
-                      fontWeight: 700,
-                      fontSize: '13px',
-                      cursor: 'pointer',
-                      textAlign: 'center',
-                    }}
-                  >
-                    <span style={{ fontSize: '20px', display: 'block', marginBottom: '4px' }}>📱</span>
-                    Mobile Money
-                    <small style={{ display: 'block', fontSize: '11px', color: '#706966', marginTop: '2px' }}>
-                      Payer en ligne
-                    </small>
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* CAS 1 : Paiement à la livraison */}
-            {orderType === 'cash' && cashPaymentMode === 'delivery' ? (
-              <form onSubmit={handleDeliveryOrderSubmit}>
-                {/* Information disponibilité */}
-                <div
-                  style={{
-                    background: '#f0fdf4',
-                    border: '1.5px solid #bbf7d0',
-                    borderRadius: '14px',
-                    padding: '14px 16px',
-                    marginBottom: '18px',
-                  }}
-                >
-                  <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
-                    <span style={{ fontSize: '20px' }}>ℹ️</span>
-                    <div style={{ fontSize: '13px', color: '#166534', lineHeight: 1.5 }}>
-                      <b>Information commande :</b><br />
-                      La disponibilité de l’article vous sera communiquée par l’équipe en charge dans quelques instants.
-                      Vous réglerez <b>{formatFCFA(paymentAmount)}</b> en espèces directement au livreur.
-                    </div>
-                  </div>
-                </div>
-
-                {/* Adresse de livraison */}
-                <div style={{ marginBottom: '14px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                    <label className="fl" htmlFor="delivery-address" style={{ margin: 0 }}>
-                      Adresse de livraison *
-                    </label>
-                    <div style={{ display: 'flex', gap: '8px' }}>
-                      {user?.adresse && (
-                        <button
-                          type="button"
-                          onClick={() => setDeliveryAddress(user.adresse)}
-                          style={{
-                            background: 'none',
-                            border: 'none',
-                            color: '#0369a1',
-                            fontSize: '11.5px',
-                            fontWeight: 700,
-                            cursor: 'pointer',
-                            textDecoration: 'underline',
-                          }}
-                        >
-                          Mon adresse de profil
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        onClick={handleGetLocation}
-                        disabled={isLocating}
-                        style={{
-                          background: 'none',
-                          border: 'none',
-                          color: 'var(--p, #dc2626)',
-                          fontSize: '11.5px',
-                          fontWeight: 700,
-                          cursor: isLocating ? 'wait' : 'pointer',
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '3px',
-                        }}
-                      >
-                        📍 {isLocating ? 'Localisation...' : 'Ma position'}
-                      </button>
-                    </div>
-                  </div>
-                  <input
-                    id="delivery-address"
-                    type="text"
-                    required
-                    className="fi"
-                    placeholder="Ex: Cotonou, Akpakpa, rue 124, maison jaune"
-                    value={deliveryAddress}
-                    onChange={(e) => setDeliveryAddress(e.target.value)}
-                  />
-                  {deliveryCoords && (
-                    <div style={{ marginTop: '8px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px', flexWrap: 'wrap', gap: '4px' }}>
-                        <small style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#16a34a', fontSize: '11px', fontWeight: 600 }}>
-                          <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '13px' }}>check_circle</span>
-                          <span>Position enregistrée avec succès pour la livraison</span>
-                        </small>
-                        <a
-                          href={`https://www.google.com/maps?q=${deliveryCoords.replace(/\s+/g, '')}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          style={{ fontSize: '11px', color: '#2563eb', textDecoration: 'none', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '3px' }}
-                        >
-                          <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '13px' }}>open_in_new</span>
-                          <span>Google Maps</span>
-                        </a>
-                      </div>
-                      <iframe
-                        title="Aperçu Google Maps de livraison"
-                        width="100%"
-                        height="130"
-                        style={{
-                          border: '1px solid var(--bd, #e2e8f0)',
-                          borderRadius: '8px',
-                          display: 'block',
-                        }}
-                        loading="lazy"
-                        src={`https://maps.google.com/maps?q=${deliveryCoords.replace(/\s+/g, '')}&hl=fr&z=15&output=embed`}
-                      />
-                    </div>
-                  )}
-                </div>
-
-                {/* Numéro pour le livreur */}
-                <div style={{ marginBottom: '14px' }}>
-                  <label className="fl" htmlFor="delivery-phone">
-                    Numéro de téléphone à contacter par le livreur *
-                  </label>
-                  <input
-                    id="delivery-phone"
-                    type="tel"
-                    required
-                    className="fi"
-                    placeholder="+229 97 00 00 00"
-                    value={deliveryPhone}
-                    onChange={(e) => setDeliveryPhone(e.target.value)}
-                  />
-                  <small style={{ color: '#706966', fontSize: '11.5px', display: 'block', marginTop: '4px' }}>
-                    Le livreur vous appellera sur ce numéro pour coordonner la remise en main propre.
-                  </small>
-                </div>
-
-                {/* Note facultative */}
-                <div style={{ marginBottom: '18px' }}>
-                  <label className="fl" htmlFor="delivery-note">
-                    Note d’information pour le livreur (facultatif)
-                  </label>
-                  <input
-                    id="delivery-note"
-                    type="text"
-                    className="fi"
-                    placeholder="Ex: Repère, sonnerie, instructions d'accès..."
-                    value={deliveryNote}
-                    onChange={(e) => setDeliveryNote(e.target.value)}
-                  />
-                </div>
-
-                <button
-                  type="submit"
-                  className="client-btn w100"
-                  disabled={submitting}
-                  style={{ padding: '16px', fontSize: '15px' }}
-                >
-                  {submitting ? 'Enregistrement de la commande...' : 'Confirmer la commande (Paiement à la livraison)'}
-                </button>
-              </form>
-            ) : paymentFailed ? (
+            {paymentFailed ? (
               <div style={{
                 padding: '32px 20px',
                 textAlign: 'center',
@@ -1132,10 +962,10 @@ export default function ClientOrderFlow({
                   ✕
                 </div>
                 <h3 style={{ fontSize: '18px', fontWeight: 800, color: '#991b1b', marginBottom: '8px' }}>
-                  Échec du paiement
+                  Paiement non finalisé
                 </h3>
                 <p style={{ fontSize: '13.5px', color: '#4b5563', lineHeight: 1.5, maxWidth: '380px', margin: '0 auto 20px' }}>
-                  Le délai de validation de 40 secondes est expiré. La transaction n'a pas été confirmée sur votre téléphone et aucun montant n'a été débité.
+                  La transaction a été annulée ou n'a pas pu être validée dans les 30 secondes. Aucun montant n'a été débité. Vous pouvez relancer le paiement dès maintenant.
                 </p>
                 <button
                   type="button"
@@ -1143,175 +973,50 @@ export default function ClientOrderFlow({
                   onClick={() => {
                     setPaymentFailed(false);
                     setIsProcessingPayment(false);
-                    setPaymentCountdown(40);
+                    setPaymentCountdown(0);
                     setPaymentData(null);
+                    handleInitiateFeexpay(true);
                   }}
                   style={{ padding: '14px', fontSize: '15px' }}
                 >
-                  🔄 Réessayer le paiement
+                  🔄 Relancer le paiement
                 </button>
               </div>
-            ) : paymentData ? (
-              <FeexPayProvider>
-                <div style={{ marginTop: '16px' }}>
-                  <div style={{ marginBottom: '14px', padding: '12px', background: 'rgba(22, 163, 74, 0.08)', borderRadius: '10px', fontSize: '13px', color: '#166534', fontWeight: 600 }}>
-                    Commande prête (Réf: {paymentData.reference}). Cliquez ci-dessous pour ouvrir le module sécurisé FeexPay.
-                  </div>
-
-                  <FeexPayButton
-                    id={paymentData.shop_id}
-                    token={paymentData.api_key}
-                    amount={paymentData.amount}
-                    description={`Takapay - ${product?.n || 'Commande'}`}
-                    mode={paymentData.mode || 'SANDBOX'}
-                    currency="XOF"
-                    customId={paymentData.reference}
-                    callback_info={{
-                      fullname: paymentName.trim() || `${activeUser?.prenom || user?.prenom || prenom || ''} ${activeUser?.nom || user?.nom || nom || ''}`.trim() || 'Client',
-                      first_name: (paymentName.trim().split(' ')[0]) || activeUser?.prenom || user?.prenom || prenom || 'Client',
-                      last_name: (paymentName.trim().split(' ').slice(1).join(' ')) || activeUser?.nom || user?.nom || nom || '',
-                      email: (email && email.trim()) || (activeUser?.email && !activeUser.email.endsWith('@client.takapay.bj') ? activeUser.email : '') || '',
-                      phone: paymentPhone.trim() || activeUser?.telephone || activeUser?.phone || user?.telephone || user?.phone || phone || '',
-                      phoneNumber: paymentPhone.trim() || activeUser?.telephone || activeUser?.phone || user?.telephone || user?.phone || phone || '',
-                      reseau: provider === 'Moov' ? 'MOOV' : 'MTN',
-                    }}
-                    callback={handleFeexpayCallback}
-                    buttonText={`Payer ${formatFCFA(paymentAmount)} avec FeexPay`}
-                    buttonClass="client-btn w100"
-                  />
-
-                  <button
-                    type="button"
-                    onClick={() => setPaymentData(null)}
-                    style={{
-                      marginTop: '12px',
-                      background: 'none',
-                      border: 'none',
-                      color: 'var(--mu)',
-                      fontSize: '13px',
-                      cursor: 'pointer',
-                      width: '100%',
-                      textAlign: 'center',
-                      textDecoration: 'underline',
-                    }}
-                  >
-                    ← Changer d'opérateur ou modifier
-                  </button>
-                </div>
-              </FeexPayProvider>
             ) : (
-              <form onSubmit={handlePaymentSubmit}>
-                {error && (
-                  <div style={{ color: '#dc2626', background: 'rgba(220,38,38,0.08)', padding: '10px 12px', borderRadius: '10px', fontSize: '13px', fontWeight: 600, marginBottom: '16px', textAlign: 'center' }}>
-                    {error}
+              <div style={{ textAlign: 'center', padding: '32px 16px' }}>
+                <div style={{ fontSize: '14px', fontWeight: 600, color: '#475569' }}>
+                  Ouverture du module de paiement...
+                </div>
+                {paymentData && (
+                  <div id="feexpay-button-container">
+                    <style>{`#feexpay-button-container > div > button { display: none !important; }`}</style>
+                    <FeexPayProvider>
+                      <FeexPayButton
+                        id={paymentData.shop_id}
+                        token={paymentData.api_key}
+                        amount={paymentData.amount}
+                        description={`Takapay ${product?.n || 'Commande'}`.replace(/[^a-zA-Z0-9 ]/g, '')}
+                        mode={paymentData.mode || 'SANDBOX'}
+                        currency="XOF"
+                        customId={paymentData.reference}
+                        callback_info={{
+                          fullname: paymentName.trim() || `${activeUser?.prenom || user?.prenom || prenom || ''} ${activeUser?.nom || user?.nom || nom || ''}`.trim() || 'Client',
+                          first_name: (paymentName.trim().split(' ')[0]) || activeUser?.prenom || user?.prenom || prenom || 'Client',
+                          last_name: (paymentName.trim().split(' ').slice(1).join(' ')) || activeUser?.nom || user?.nom || nom || '',
+                          email: (email && email.trim()) || (activeUser?.email && !activeUser.email.endsWith('@client.takapay.bj') ? activeUser.email : '') || '',
+                          phone: paymentPhone.trim() || activeUser?.telephone || activeUser?.phone || user?.telephone || user?.phone || phone || '',
+                          phoneNumber: paymentPhone.trim() || activeUser?.telephone || activeUser?.phone || user?.telephone || user?.phone || phone || '',
+                          reseau: provider,
+                          network: provider,
+                        }}
+                        callback={handleFeexpayCallback}
+                        buttonText={`Payer ${formatFCFA(paymentAmount)}`}
+                        buttonClass="client-btn w100"
+                      />
+                    </FeexPayProvider>
                   </div>
                 )}
-                <div className="provider-list">
-                  <button
-                    type="button"
-                    className={`provider-option ${provider === 'MTN' ? 'on' : ''}`}
-                    onClick={() => setProvider('MTN')}
-                  >
-                    <span className="provider-mark" style={{ background: '#fef08a', color: '#854d0e' }}>
-                      M
-                    </span>
-                    <span className="provider-copy">
-                      <b>MTN Mobile Money</b>
-                      <small>Paiement instantané depuis votre compte MTN Bénin</small>
-                    </span>
-                    <span style={{ marginLeft: 'auto', fontWeight: 800 }}>
-                      {provider === 'MTN' ? '●' : '○'}
-                    </span>
-                  </button>
-
-                  <button
-                    type="button"
-                    className={`provider-option ${provider === 'Moov' ? 'on' : ''}`}
-                    onClick={() => setProvider('Moov')}
-                  >
-                    <span className="provider-mark" style={{ background: '#fed7aa', color: '#9a3412' }}>
-                      M
-                    </span>
-                    <span className="provider-copy">
-                      <b>Moov Money</b>
-                      <small>Règlement sécurisé via Moov Money Bénin</small>
-                    </span>
-                    <span style={{ marginLeft: 'auto', fontWeight: 800 }}>
-                      {provider === 'Moov' ? '●' : '○'}
-                    </span>
-                  </button>
-                </div>
- 
-                {/* Coordonnées de paiement pré-remplies (directement insérées, modifiables) */}
-                <div style={{ marginTop: '16px', marginBottom: '14px' }}>
-                  <label className="fl" htmlFor="client-payment-phone">
-                    Numéro Mobile Money pour le débit *
-                  </label>
-                  <input
-                    id="client-payment-phone"
-                    type="tel"
-                    required
-                    className="fi"
-                    placeholder="+229 97 00 00 00"
-                    value={paymentPhone}
-                    onChange={(e) => setPaymentPhone(e.target.value)}
-                  />
-                  <small style={{ color: '#706966', fontSize: '11.5px', display: 'block', marginTop: '4px' }}>
-                    Numéro enregistré à l’inscription. Vous pouvez l’effacer et le remplacer si vous payez depuis un autre numéro.
-                  </small>
-                </div>
-
-                <div style={{ marginBottom: '14px' }}>
-                  <label className="fl" htmlFor="client-payment-name">
-                    Nom et prénom du client *
-                  </label>
-                  <input
-                    id="client-payment-name"
-                    type="text"
-                    required
-                    className="fi"
-                    placeholder="Ex: Jean DOSSOU"
-                    value={paymentName}
-                    onChange={(e) => setPaymentName(e.target.value)}
-                  />
-                </div>
-
-                <div style={{ marginBottom: '14px' }}>
-                  <label className="fl" htmlFor="client-receipt-email">
-                    Adresse email pour recevoir le reçu {(!email || email.endsWith('@client.takapay.bj')) ? '(facultatif)' : ''}
-                  </label>
-                  <input
-                    id="client-receipt-email"
-                    type="email"
-                    className="fi"
-                    placeholder="Ex: votre.email@gmail.com"
-                    value={email && !email.endsWith('@client.takapay.bj') ? email : ''}
-                    onChange={(e) => setEmail(e.target.value)}
-                  />
-                </div>
-
-                <div className="checkout-note">
-                  🔒 Transaction sécurisée par notification push Mobile Money sur votre téléphone via FeexPay.
-                </div>
-
-                <button
-                  type="submit"
-                  className="client-btn w100"
-                  disabled={submitting || isProcessingPayment}
-                  style={{
-                    padding: '16px',
-                    fontSize: '15px',
-                    cursor: (submitting || isProcessingPayment) ? 'wait' : 'pointer',
-                    opacity: (submitting || isProcessingPayment) ? 0.8 : 1,
-                  }}
-                >
-                  {isProcessingPayment
-                    ? 'Traitement en cours...'
-                    : submitting
-                    ? 'Préparation FeexPay...'
-                    : `Valider avec ${provider === 'MTN' ? 'MTN MoMo' : 'Moov Money'}`}
-                </button>
-              </form>
+              </div>
             )}
           </div>
         )}
@@ -1365,8 +1070,8 @@ export default function ClientOrderFlow({
               {successModalData.isCod
                 ? 'Commande enregistrée avec succès !'
                 : successModalData.isCash
-                ? 'Paiement confirmé avec succès !'
-                : 'Félicitations ! Votre cagnotte est créée !'}
+                  ? 'Paiement confirmé avec succès !'
+                  : 'Félicitations ! Votre cagnotte est créée !'}
             </h2>
 
             <p style={{ fontSize: '14px', color: '#4b5563', lineHeight: 1.5, margin: '0 0 20px' }}>

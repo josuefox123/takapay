@@ -1,4 +1,24 @@
 const API_BASE = '/api';
+const DASHBOARD_STATS_UPDATE_KEY = 'takapay_dashboard_stats_updated';
+const DASHBOARD_STATS_UPDATE_EVENT = 'takapay:dashboard-stats-updated';
+
+const readCachedList = (key) => {
+  try {
+    const value = localStorage.getItem(key);
+    const parsed = value ? JSON.parse(value) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
+
+const writeCachedList = (key, list) => {
+  try {
+    localStorage.setItem(key, JSON.stringify(list));
+  } catch {
+    // Le cache reste facultatif si le stockage local est indisponible.
+  }
+};
 
 const EMPTY_STATS = {
   kpis: {
@@ -23,6 +43,10 @@ export const adminService = {
 
   getClientToken() {
     return localStorage.getItem('takapay_client_token') || localStorage.getItem('takapay_admin_token');
+  },
+
+  getCachedProduits() {
+    return readCachedList('takapay_backend_products');
   },
 
   async initiatePayment(payload) {
@@ -59,6 +83,14 @@ export const adminService = {
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       throw new Error(data.message || 'Erreur lors de la confirmation du paiement.');
+    }
+    if (data.status === 'success') {
+      window.dispatchEvent(new Event(DASHBOARD_STATS_UPDATE_EVENT));
+      try {
+        localStorage.setItem(DASHBOARD_STATS_UPDATE_KEY, String(Date.now()));
+      } catch {
+        // La mise à jour immédiate entre onglets reste facultative.
+      }
     }
     return data;
   },
@@ -477,13 +509,14 @@ export const adminService = {
         const json = await res.json();
         const list = json.data || json;
         if (Array.isArray(list)) {
+          if (!all) writeCachedList('takapay_public_carousels', list);
           return list;
         }
       }
     } catch (_e) {
       void _e;
     }
-    return [];
+    return all ? [] : readCachedList('takapay_public_carousels');
   },
 
   async createCarousel(formData) {
@@ -565,26 +598,24 @@ export const adminService = {
 
   async getDashboardStats() {
     const token = this.getToken();
-    if (token) {
-      try {
-        const res = await fetch(`${API_BASE}/admin/stats`, {
+    if (!token) {
+      throw new Error('Session administrateur expirée. Veuillez vous reconnecter.');
+    }
+    const res = await fetch(`${API_BASE}/admin/stats`, {
           headers: {
             Authorization: `Bearer ${token}`,
             Accept: 'application/json',
           },
         });
-        if (res.ok) {
-          const data = await res.json();
-          return {
-            ...EMPTY_STATS,
-            ...data,
-          };
-        }
-      } catch {
-        // Échec API : on affiche l'état vide plutôt que des données inventées
-      }
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.message || `Impossible de charger les statistiques (${res.status}).`);
     }
-    return EMPTY_STATS;
+
+    return {
+      ...EMPTY_STATS,
+      ...data,
+    };
   },
 
   // 1. GESTION DES PRODUITS
@@ -660,13 +691,33 @@ export const adminService = {
         const json = await res.json();
         const list = json.data || json;
         if (Array.isArray(list)) {
+          writeCachedList('takapay_backend_products', list);
           return list;
         }
       }
     } catch {
       // Fallback
     }
-    return [];
+    return readCachedList('takapay_backend_products');
+  },
+
+  async getAdminProduits() {
+    const token = this.getToken();
+    const res = await fetch(`${API_BASE}/admin/produits`, {
+      headers: {
+        ...(token ? { Authorization: 'Bearer ' + token } : {}),
+        Accept: 'application/json',
+      },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data.message || `Impossible de charger les produits (${res.status}).`);
+    }
+    const produits = data.data || data;
+    if (!Array.isArray(produits)) {
+      throw new Error('Réponse invalide lors du chargement des produits administrateur.');
+    }
+    return produits;
   },
 
   async deleteProduit(produitId) {
@@ -763,6 +814,7 @@ export const adminService = {
         const json = await res.json();
         const apiList = json.data || json;
         if (Array.isArray(apiList)) {
+          writeCachedList('takapay_backend_categories', apiList);
           return apiList;
         }
       }
@@ -770,7 +822,26 @@ export const adminService = {
       void _error;
     }
 
-    return [];
+    return readCachedList('takapay_backend_categories');
+  },
+
+  async getAdminCategories() {
+    const token = this.getToken();
+    const res = await fetch(`${API_BASE}/admin/categories`, {
+      headers: {
+        ...(token ? { Authorization: 'Bearer ' + token } : {}),
+        Accept: 'application/json',
+      },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data.message || `Impossible de charger les catégories (${res.status}).`);
+    }
+    const categories = data.data || data;
+    if (!Array.isArray(categories)) {
+      throw new Error('Réponse invalide lors du chargement des catégories administrateur.');
+    }
+    return categories;
   },
 
   async createCategorie(payload) {
@@ -806,6 +877,42 @@ export const adminService = {
     return { success: true, data: created };
   },
 
+  async updateCategorie(id, payload) {
+    const token = this.getToken();
+    if (!token) {
+      throw new Error("Session expirée. Veuillez vous reconnecter en tant qu'administrateur.");
+    }
+
+    const res = await fetch(`${API_BASE}/categories/${id}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer ' + token,
+        Accept: 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const response = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const error = new Error(
+        (response.errors && Object.values(response.errors).flat().join(' ')) ||
+          response.message ||
+          'Erreur lors de la modification de la catégorie.'
+      );
+      error.status = res.status;
+      error.errors = response.errors;
+      error.data = response;
+      throw error;
+    }
+
+    const updated = response.data || response;
+    window.dispatchEvent(
+      new CustomEvent('takapay_categories_updated', { detail: updated })
+    );
+    return { success: true, data: updated };
+  },
+
   async getSousCategories() {
     try {
       const res = await fetch(`${API_BASE}/sous-categories`, {
@@ -822,6 +929,25 @@ export const adminService = {
       void _error;
     }
     return [];
+  },
+
+  async getAdminSousCategories() {
+    const token = this.getToken();
+    const res = await fetch(`${API_BASE}/admin/sous-categories`, {
+      headers: {
+        ...(token ? { Authorization: 'Bearer ' + token } : {}),
+        Accept: 'application/json',
+      },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data.message || `Impossible de charger les sous-catégories (${res.status}).`);
+    }
+    const sousCategories = data.data || data;
+    if (!Array.isArray(sousCategories)) {
+      throw new Error('Réponse invalide lors du chargement des sous-catégories administrateur.');
+    }
+    return sousCategories;
   },
 
   async createSousCategorie(payload) {
@@ -855,6 +981,42 @@ export const adminService = {
       new CustomEvent('takapay_categories_updated', { detail: created })
     );
     return { success: true, data: created };
+  },
+
+  async updateSousCategorie(id, payload) {
+    const token = this.getToken();
+    if (!token) {
+      throw new Error("Session expirée. Veuillez vous reconnecter en tant qu'administrateur.");
+    }
+
+    const res = await fetch(`${API_BASE}/sous-categories/${id}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer ' + token,
+        Accept: 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const response = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const error = new Error(
+        (response.errors && Object.values(response.errors).flat().join(' ')) ||
+          response.message ||
+          'Erreur lors de la modification de la sous-catégorie.'
+      );
+      error.status = res.status;
+      error.errors = response.errors;
+      error.data = response;
+      throw error;
+    }
+
+    const updated = response.data || response;
+    window.dispatchEvent(
+      new CustomEvent('takapay_categories_updated', { detail: updated })
+    );
+    return { success: true, data: updated };
   },
 
   async deleteCategorie(id) {
@@ -991,6 +1153,22 @@ export const adminService = {
     return [];
   },
 
+  async deleteUnpaidCagnotte(cagnotteId) {
+    const token = this.getClientToken();
+    const res = await fetch(`${API_BASE}/cagnottes/${cagnotteId}/non-payee`, {
+      method: 'DELETE',
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        Accept: 'application/json',
+      },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data.message || 'Impossible de supprimer cette cagnotte.');
+    }
+    return data;
+  },
+
   // 3. GESTION DES DOCUMENTS KYC
   async getDocuments() {
     const token = this.getToken();
@@ -1089,6 +1267,44 @@ export const adminService = {
       void _error;
     }
     return true;
+  },
+
+  async createUser(payload) {
+    const token = this.getToken();
+    const res = await fetch(`${API_BASE}/users`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const msg = data.message || Object.values(data.errors || {})[0]?.[0] || "Erreur lors de la création de l'utilisateur.";
+      throw new Error(msg);
+    }
+    return data;
+  },
+
+  async updatePassword(payload) {
+    const token = this.getToken();
+    const res = await fetch(`${API_BASE}/profile/password`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const msg = data.message || Object.values(data.errors || {})[0]?.[0] || 'Erreur lors de la mise à jour du mot de passe.';
+      throw new Error(msg);
+    }
+    return data;
   },
 
   // 5. GESTION DES TRANSACTIONS
@@ -1318,4 +1534,324 @@ export const adminService = {
   },
 };
 
-  export default adminService;
+// --- FeexPay Watchdog : Arrêt de la rotation après 30s ou annulation ---
+let isWatchdogInitialized = false;
+let currentWatchdogCallback = null;
+let watchdogPaymentTimer = null;
+let watchdogFastPoll = null;
+let isPaymentCancelled = false;
+let paymentStartTime = 0;
+let activeTransactionRef = null;
+
+export const cancelFeexpayPayment = (reason = 'CANCELLED', wasSubmitted = null) => {
+  const hadStarted = wasSubmitted !== null ? wasSubmitted : (paymentStartTime > 0);
+  isPaymentCancelled = true;
+  if (watchdogPaymentTimer) {
+    clearTimeout(watchdogPaymentTimer);
+    watchdogPaymentTimer = null;
+  }
+  if (watchdogFastPoll) {
+    clearInterval(watchdogFastPoll);
+    watchdogFastPoll = null;
+  }
+  paymentStartTime = 0;
+  activeTransactionRef = null;
+
+  if (typeof currentWatchdogCallback === 'function') {
+    try {
+      currentWatchdogCallback({
+        status: 'FAILED',
+        reason,
+        hadStarted,
+        message: reason === 'TIMEOUT'
+          ? 'Le paiement a expiré après 30 secondes d’attente. Aucun montant n’a été débité.'
+          : 'La transaction a été annulée.'
+      });
+    } catch (e) {
+      console.warn('Watchdog callback error:', e);
+    }
+  }
+
+  // Fermeture forcée des modales FeexPay résiduelles pour stopper immédiatement tout spinner
+  if (typeof document !== 'undefined') {
+    setTimeout(() => {
+      document.querySelectorAll('div.fixed.inset-0.z-50').forEach((el) => {
+        if (
+          el.textContent.includes('FeexPay') ||
+          el.querySelector('img[src*="logo"]') ||
+          el.textContent.includes('Remplissez les champs') ||
+          el.textContent.includes('Traitement en cours')
+        ) {
+          el.remove();
+        }
+      });
+    }, 40);
+  }
+};
+
+export const registerFeexpayWatchdog = (callback) => {
+  currentWatchdogCallback = callback;
+  if (isWatchdogInitialized) {
+    return () => {
+      if (currentWatchdogCallback === callback) {
+        currentWatchdogCallback = null;
+      }
+    };
+  }
+  isWatchdogInitialized = true;
+
+  if (typeof window === 'undefined') return () => {};
+
+  const originalFetch = window.fetch;
+
+  window.fetch = async function (...args) {
+    const url = typeof args[0] === 'string' ? args[0] : (args[0]?.url || '');
+
+    // 1. Déclenchement de la demande de paiement FeexPay
+    if (url.includes('api.feexpay.me/api/transactions/requesttopay/integration')) {
+      if (args[1] && typeof args[1].body === 'string' && window.__takapaySelectedNetwork) {
+        try {
+          const bodyObj = JSON.parse(args[1].body);
+          const net = window.__takapaySelectedNetwork;
+          bodyObj.reseau = net === 'CELTIIS' ? 'CELTIIS BJ' : net;
+          if (bodyObj.description) {
+            bodyObj.description = String(bodyObj.description).replace(/[^a-zA-Z0-9 ]/g, '');
+          }
+          args[1] = { ...args[1], body: JSON.stringify(bodyObj) };
+        } catch { /* ignore */ }
+      }
+      isPaymentCancelled = false;
+      paymentStartTime = Date.now();
+      if (watchdogPaymentTimer) clearTimeout(watchdogPaymentTimer);
+      if (watchdogFastPoll) clearInterval(watchdogFastPoll);
+
+      // Limite stricte de 30 secondes demandée : si non validé, arrêt immédiat du spinner
+      watchdogPaymentTimer = setTimeout(() => {
+        console.warn('[Takapay] ⏱️ 30s écoulées sans validation : arrêt immédiat de la rotation.');
+        cancelFeexpayPayment('TIMEOUT', true);
+      }, 30000);
+
+      try {
+        const res = await originalFetch.apply(this, args);
+        const clone = res.clone();
+        clone.json().then((data) => {
+          if (data?.reference) {
+            activeTransactionRef = data.reference;
+            // Polling rapide toutes les 2.5s pour détecter l'annulation téléphone immédiatement
+            watchdogFastPoll = setInterval(async () => {
+              if (isPaymentCancelled || !activeTransactionRef) {
+                clearInterval(watchdogFastPoll);
+                return;
+              }
+              try {
+                const pollRes = await originalFetch(`https://api.feexpay.me/api/transactions/getrequesttopay/integration/${activeTransactionRef}`);
+                if (!pollRes.ok) return;
+                const pollData = await pollRes.json();
+                const st = pollData?.status?.toUpperCase();
+                if (st === 'FAILED' || st === 'CANCELLED' || pollData?.reason?.includes('CANCEL') || pollData?.reason?.includes('LOW_BALANCE')) {
+                  clearInterval(watchdogFastPoll);
+                  cancelFeexpayPayment('CANCELLED', true);
+                } else if (st === 'SUCCESSFUL' || st === 'SUCCESS') {
+                  clearInterval(watchdogFastPoll);
+                  if (watchdogPaymentTimer) clearTimeout(watchdogPaymentTimer);
+                }
+              } catch { /* ignore */ }
+            }, 2500);
+          } else if (data?.statusCode === '92' || data?.status === 'FAILED') {
+            cancelFeexpayPayment('CANCELLED', true);
+          }
+        }).catch(() => {});
+        return res;
+      } catch (err) {
+        cancelFeexpayPayment('CANCELLED', true);
+        throw err;
+      }
+    }
+
+    // 2. Interception du polling FeexPay pour stopper son spinner
+    if (url.includes('api.feexpay.me/api/transactions/getrequesttopay/integration/')) {
+      const elapsed = Date.now() - paymentStartTime;
+      if (isPaymentCancelled || (paymentStartTime > 0 && elapsed >= 30000)) {
+        return new Response(JSON.stringify({
+          status: 'FAILED',
+          reason: isPaymentCancelled ? 'TRANSACTION_CANCELLED' : 'TIMEOUT',
+          message: isPaymentCancelled ? 'La transaction a été annulée.' : 'Délai de paiement de 30 secondes dépassé.'
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+
+      const res = await originalFetch.apply(this, args);
+      try {
+        const clone = res.clone();
+        clone.json().then((pollData) => {
+          const st = pollData?.status?.toUpperCase();
+          if (st === 'FAILED' || st === 'CANCELLED' || pollData?.reason?.includes('CANCEL')) {
+            cancelFeexpayPayment('CANCELLED', true);
+          } else if (st === 'SUCCESSFUL' || st === 'SUCCESS') {
+            if (watchdogPaymentTimer) clearTimeout(watchdogPaymentTimer);
+            if (watchdogFastPoll) clearInterval(watchdogFastPoll);
+          }
+        }).catch(() => {});
+      } catch { /* ignore */ }
+      return res;
+    }
+
+    return originalFetch.apply(this, args);
+  };
+
+  // 3. Écoute des clics sur "Retour" ou "Fermer (X)" dans la fenêtre FeexPay
+  document.addEventListener('click', (e) => {
+    const target = e.target;
+    if (!target) return;
+    const btn = target.closest('button');
+    if (!btn) return;
+
+    const isRetour = btn.textContent?.trim() === 'Retour' && btn.closest('.fixed.inset-0.z-50');
+    const isClose = (btn.getAttribute('aria-label') === 'Fermer la passerelle de paiement') ||
+                    (btn.closest('.fixed.inset-0.z-50') && btn.querySelector('path[d*="M6 18L18 6"]'));
+    if (isRetour || isClose) {
+      console.log('[Takapay] Annulation détectée (clic Retour/Fermer FeexPay).');
+      cancelFeexpayPayment('CANCELLED');
+    }
+  }, true);
+
+  // 4. Personnalisation de la modale FeexPay : suppression Carte Bancaire / Wallet et sélection directe MTN, MOOV, CELTIS
+  const customizeFeexpayModal = () => {
+    document.querySelectorAll('div.fixed.inset-0.z-50').forEach((modal) => {
+      // Remplacement du logo FeexPay par Takapay
+      modal.querySelectorAll('img[src*="feexpay_logo"], img[alt="Logo"]').forEach((img) => {
+        if (!img.dataset.takapayLogo) {
+          img.src = '/logo.png';
+          img.alt = 'Takapay';
+          img.style.maxHeight = '38px';
+          img.style.width = 'auto';
+          img.style.objectFit = 'contain';
+          img.dataset.takapayLogo = 'true';
+        }
+      });
+
+      // Remplacement de Mobile Money / Carte Bancaire / Wallet par MTN / MOOV / CELTIS
+      const allTabBars = Array.from(modal.querySelectorAll('div.flex.justify-center.mb-6.border-b.pb-4, [data-takapay-networks="true"]'));
+      const tabsContainer = allTabBars[0];
+
+      const applyNetworkSelection = (netValue) => {
+        window.__takapaySelectedNetwork = netValue;
+        const displayLabel = netValue === 'CELTIIS' ? 'CELTIS' : netValue;
+
+        modal.querySelectorAll('select').forEach((sel) => {
+          const hasOption = Array.from(sel.options || []).some((opt) => opt.value === netValue);
+          if (hasOption && sel.value !== netValue) {
+            const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value')?.set;
+            if (nativeSetter) {
+              nativeSetter.call(sel, netValue);
+            } else {
+              sel.value = netValue;
+            }
+            sel.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+        });
+
+        modal.querySelectorAll('[data-takapay-network-display]').forEach((el) => {
+          el.textContent = displayLabel;
+        });
+
+        if (tabsContainer) {
+          Array.from(tabsContainer.children).forEach((card) => {
+            const cardNet = card.dataset.netValue || (card.textContent.includes('MOOV') ? 'MOOV' : card.textContent.includes('CELTIS') ? 'CELTIIS' : 'MTN');
+            card.dataset.netValue = cardNet;
+            const isSelected = cardNet === netValue;
+            card.className = `flex flex-col items-center justify-center flex-1 px-4 py-2 cursor-pointer rounded border ${
+              isSelected ? 'bg-[#fff7ed] border-[#D45D00] border-2' : 'bg-white border-[#D45D00]'
+            }`;
+          });
+        }
+      };
+
+      if (tabsContainer && !tabsContainer.dataset.takapayBound) {
+        if (tabsContainer.textContent.includes('Carte Bancaire') || tabsContainer.textContent.includes('Wallet')) {
+          const mobileTab = Array.from(tabsContainer.children).find((c) => c.textContent.includes('Mobile Money'));
+          if (mobileTab) mobileTab.click();
+
+          tabsContainer.dataset.takapayNetworks = 'true';
+          tabsContainer.className = 'flex justify-center mb-6 border-b pb-4 w-full gap-3';
+          tabsContainer.innerHTML = '';
+
+          const networks = [
+            { label: 'MTN', value: 'MTN', logo: '/assets/mtn logo.png' },
+            { label: 'MOOV', value: 'MOOV', logo: '/assets/logo moov.png' },
+            { label: 'CELTIS', value: 'CELTIIS', logo: '/assets/logo celtis.jpeg' },
+          ];
+
+          const initialNet = window.__takapaySelectedNetwork || 'MTN';
+          networks.forEach((net) => {
+            const isSelected = initialNet === net.value;
+            const card = document.createElement('div');
+            card.dataset.netValue = net.value;
+            card.className = `flex flex-col items-center justify-center flex-1 px-4 py-2 cursor-pointer rounded border ${
+              isSelected ? 'bg-[#fff7ed] border-[#D45D00] border-2' : 'bg-white border-[#D45D00]'
+            }`;
+            card.innerHTML = `
+              <div class="w-12 h-8 flex items-center justify-center mb-1">
+                <img src="${net.logo}" alt="${net.label}" style="max-height:28px;max-width:44px;object-fit:contain;" />
+              </div>
+              <span class="text-xs font-bold">${net.label}</span>
+            `;
+            tabsContainer.appendChild(card);
+          });
+        }
+
+        tabsContainer.dataset.takapayBound = 'true';
+        Array.from(tabsContainer.children).forEach((card) => {
+          const cardNet = card.dataset.netValue || (card.textContent.includes('MOOV') ? 'MOOV' : card.textContent.includes('CELTIS') ? 'CELTIIS' : 'MTN');
+          card.dataset.netValue = cardNet;
+          card.addEventListener('click', () => applyNetworkSelection(cardNet));
+        });
+      }
+
+      // Remplacer tout <select> de réseau (MTN/MOOV/CELTIIS) par l'affichage statique du nom du réseau choisi
+      modal.querySelectorAll('select').forEach((sel) => {
+        const isNetworkSelect = Array.from(sel.options || []).some((opt) => opt.value === 'MTN');
+        if (isNetworkSelect) {
+          const wrapper = sel.parentElement;
+          if (wrapper) {
+            sel.style.display = 'none';
+            const arrow = wrapper.querySelector('div.pointer-events-none');
+            if (arrow) arrow.style.display = 'none';
+            let labelBox = wrapper.querySelector('[data-takapay-network-display]');
+            if (!labelBox) {
+              labelBox = document.createElement('div');
+              labelBox.dataset.takapayNetworkDisplay = 'true';
+              labelBox.className = 'block w-full px-3 py-2 border rounded-md bg-gray-50 font-bold text-gray-800 text-xs flex items-center';
+              wrapper.appendChild(labelBox);
+            }
+            const cur = window.__takapaySelectedNetwork || sel.value || 'MTN';
+            const expectedText = cur === 'CELTIIS' ? 'CELTIS' : cur;
+            if (labelBox.textContent !== expectedText) {
+              labelBox.textContent = expectedText;
+            }
+          }
+        }
+      });
+    });
+  };
+
+  const modalObs = new MutationObserver(customizeFeexpayModal);
+  if (document.body) {
+    modalObs.observe(document.body, { childList: true, subtree: true });
+    customizeFeexpayModal();
+  }
+
+  return () => {
+    if (currentWatchdogCallback === callback) {
+      currentWatchdogCallback = null;
+    }
+  };
+};
+
+adminService.registerFeexpayWatchdog = registerFeexpayWatchdog;
+adminService.cancelFeexpayPayment = cancelFeexpayPayment;
+
+export default adminService;
+

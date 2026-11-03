@@ -119,6 +119,15 @@ if (typeof window !== 'undefined') {
 
   const tryPrefillFeexpayModal = () => {
     try {
+      // Détection et marquage de la modal FeexPay pour le style et le z-index
+      const feexpayModalEl = document.querySelector('img[src*="feexpay"]')?.closest('.fixed.inset-0') ||
+        document.querySelector('input[placeholder="Numéro de téléphone sans indicatif"]')?.closest('.fixed.inset-0');
+      if (feexpayModalEl && !feexpayModalEl.classList.contains('feexpay-modal-overlay-custom')) {
+        feexpayModalEl.classList.add('feexpay-modal-overlay-custom');
+        const card = feexpayModalEl.querySelector('.bg-white.rounded-lg') || feexpayModalEl.querySelector('.max-w-md');
+        if (card) card.classList.add('feexpay-modal-card-custom');
+      }
+
       const savedUserStr = localStorage.getItem('takapay-client-user');
       const savedUser = savedUserStr ? JSON.parse(savedUserStr) : null;
       if (!savedUser) return;

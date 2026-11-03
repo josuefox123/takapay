@@ -70,6 +70,7 @@ export default function ClientProductDetail({
   }, [user]);
 
   const handleChoosePayNow = () => {
+    if (isOutOfStock) return;
     setShowPaymentModal(false);
     setPaymentModalStep('choice');
     onStartOrder(product, chosenColor, {
@@ -79,6 +80,7 @@ export default function ClientProductDetail({
   };
 
   const handleChoosePayOnDelivery = () => {
+    if (isOutOfStock) return;
     setPaymentModalStep('delivery_form');
   };
 
@@ -172,6 +174,9 @@ export default function ClientProductDetail({
       if (initRes?.reference) orderRef = initRes.reference;
     } catch (err) {
       console.warn('Backend initiation COD fallback to local:', err);
+      setDeliveryError(err?.message || "Impossible d'enregistrer la commande. Cet article n'est peut-être plus disponible.");
+      setDeliverySubmitting(false);
+      return;
     }
 
     const orderData = {
@@ -451,27 +456,49 @@ export default function ClientProductDetail({
   }, [product?.id, product?.n, absoluteImageUrl, productPublicUrl]);
 
   // Message personnalisé pour WhatsApp envoyé directement au 0198741111 (+2290198741111)
-  // Formaté exactement comme CoinAfrique : texte d'intérêt + détails, terminé par le lien de l'article pour générer l'aperçu photo cliquable
-  const whatsappMessage = [
-    `Bonjour Takapay ! 👋`,
-    `Votre article *"${product?.n || product?.nom || 'Article'}"* m'intéresse sur Takapay.`,
-    ``,
-    `📋 *DÉTAILS :*`,
-    `• *Formule :* ${modeText}`,
-    colorText ? `• *Option :* ${colorText}` : null,
-    (clientNom || clientTel) ? `• *Client :* ${[clientNom, clientTel].filter(Boolean).join(' - ')}` : null,
-    ``,
+  // Formaté de façon propre, sans caractères spéciaux pouvant se transformer en '?' (émojis, puces, espaces insécables)
+  const cleanModeText = String(modeText || '')
+    .replace(/[\u202F\u00A0]/g, ' ')
+    .replace(/[·•]/g, '-');
+
+  const rawWhatsappLines = [
+    'Bonjour Takapay,',
+    `Votre article "${product?.n || product?.nom || 'Article'}" m'intéresse sur Takapay.`,
+    'Est-il toujours disponible ?',
+    '',
+    'Détails :',
+    `- Formule : ${cleanModeText}`,
+    colorText ? `- Option : ${colorText}` : null,
+    (clientNom || clientTel) ? `- Client : ${[clientNom, clientTel].filter(Boolean).join(' - ')}` : null,
+    '',
     productPublicUrl,
-  ].filter((line) => line !== null).join('\n');
+  ];
+
+  const whatsappMessage = rawWhatsappLines
+    .filter((line) => line !== null)
+    .join('\n')
+    .replace(/[\u202F\u00A0]/g, ' ')
+    .replace(/[’‘]/g, "'")
+    .replace(/[“”]/g, '"')
+    .replace(/[•·]/g, '-');
 
   const whatsappUrl = `https://wa.me/2290198741111?text=${encodeURIComponent(whatsappMessage)}`;
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      window.__takapay_product_whatsapp_url = whatsappUrl;
+      return () => {
+        delete window.__takapay_product_whatsapp_url;
+      };
+    }
+  }, [whatsappUrl]);
 
   // 1er versement minimum pour la cagnotte (10% par défaut)
   const basePrice = Number(product.p) > 0 ? Number(product.p) : 1;
   const priceRatio = currentPrice / basePrice;
   const minStart = hasCustomPrice
-    ? Math.round(currentPrice * 0.1)
-    : (pay.minimumStart ? Math.round(pay.minimumStart * priceRatio) : Math.round(currentPrice * 0.1));
+    ? Math.floor(currentPrice * 0.1)
+    : (pay.minimumStart ? Math.floor(pay.minimumStart * priceRatio) : Math.floor(currentPrice * 0.1));
 
   // Catégorie et sous-catégorie sécurisées
   const categoryName =
@@ -487,6 +514,8 @@ export default function ClientProductDetail({
     product.sous_categorie_nom ||
     (typeof product.sous_categorie === 'string' ? product.sous_categorie : product.sous_categorie?.nom) ||
     'Article';
+
+  const isOutOfStock = product?.stockCount !== null && product?.stockCount !== undefined && Number(product.stockCount) <= 0;
 
   return (
     <div className="page-shell">
@@ -664,9 +693,29 @@ export default function ClientProductDetail({
             <span style={{ fontSize: '12px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.8px', color: 'var(--r)' }}>
               {product.brand || categoryName} · {subcategoryName}
             </span>
-            <span className="stock-tag" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '11.5px', padding: '4px 12px' }}>
-              <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#16a34a', display: 'inline-block' }} />
-              {product.stockCount !== null ? `${product.stockCount} en stock` : 'Disponible'}
+            <span
+              className="stock-tag"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                fontSize: '11.5px',
+                padding: '4px 12px',
+                background: isOutOfStock ? '#fee2e2' : undefined,
+                color: isOutOfStock ? '#dc2626' : undefined,
+                borderColor: isOutOfStock ? '#fca5a5' : undefined,
+              }}
+            >
+              <span
+                style={{
+                  width: '7px',
+                  height: '7px',
+                  borderRadius: '50%',
+                  background: isOutOfStock ? '#dc2626' : '#16a34a',
+                  display: 'inline-block',
+                }}
+              />
+              {isOutOfStock ? 'Rupture de stock' : (product.stockCount !== null ? `${product.stockCount} en stock` : 'Disponible')}
             </span>
           </div>
 
@@ -1161,25 +1210,27 @@ export default function ClientProductDetail({
           </div>
 
           {/* ACTIONS D'ACHAT DIRECT (PAS DE PANIER) */}
-          <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginTop: '16px', flexWrap: 'wrap' }}>
+          <div style={{ marginTop: '16px' }}>
             <button
               type="button"
-              className="btn btn-primary"
+              className="client-btn btn btn-primary"
+              disabled={isOutOfStock}
               style={{
-                flex: 1,
-                minWidth: '200px',
+                width: '100%',
                 borderRadius: '12px',
                 fontWeight: 800,
-                background: 'var(--r)',
-                boxShadow: '0 4px 14px rgba(220, 38, 38, 0.3)',
+                background: isOutOfStock ? '#9ca3af' : 'var(--r)',
+                boxShadow: isOutOfStock ? 'none' : '0 4px 14px rgba(220, 38, 38, 0.3)',
                 display: 'inline-flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 gap: '8px',
-                cursor: 'pointer',
+                cursor: isOutOfStock ? 'not-allowed' : 'pointer',
                 height: '46px',
+                opacity: isOutOfStock ? 0.75 : 1,
               }}
               onClick={() => {
+                if (isOutOfStock) return;
                 if (orderMode === 'cash') {
                   setShowPaymentModal(true);
                   setPaymentModalStep('choice');
@@ -1193,38 +1244,27 @@ export default function ClientProductDetail({
                 }
               }}
             >
-              <span>Passer ma commande</span>
+              <span>{isOutOfStock ? 'Rupture de stock' : 'Passer ma commande'}</span>
             </button>
-
-            <a
-              href={whatsappUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{
-                padding: '0 18px',
-                height: '46px',
-                borderRadius: '12px',
-                background: '#25D366',
-                color: '#ffffff',
-                fontWeight: 800,
-                fontSize: '13.5px',
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '8px',
-                textDecoration: 'none',
-                boxShadow: '0 4px 14px rgba(37, 211, 102, 0.28)',
-                whiteSpace: 'nowrap',
-              }}
-              title="Intéressé(e) ? Échanger sur WhatsApp au 01 98 74 11 11"
-            >
-              <svg viewBox="0 0 24 24" width="20" height="20" fill="none">
-                <path fill="#ffffff" d="M12.04 2c-5.46 0-9.91 4.45-9.91 9.91 0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38c1.45.79 3.08 1.21 4.74 1.21 5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.82 9.82 0 0 0 12.04 2z" />
-                <path fill="#25D366" fillRule="evenodd" clipRule="evenodd" d="M17.51 14.38c-.3-.15-1.77-.87-2.04-.97-.28-.1-.48-.15-.68.15-.2.3-.77.97-.95 1.17-.17.2-.35.22-.65.07-.3-.15-1.26-.46-2.4-1.48-.89-.79-1.49-1.77-1.66-2.07-.18-.3-.02-.46.13-.61.13-.14.3-.35.45-.52.15-.18.2-.3.3-.5.1-.2.05-.38-.02-.53-.08-.15-.68-1.64-.93-2.24-.25-.6-.5-.52-.68-.53-.18-.01-.38-.01-.58-.01-.2 0-.53.07-.81.38-.28.3-1.07 1.05-1.07 2.56 0 1.51 1.1 2.97 1.25 3.17.15.2 2.16 3.3 5.23 4.63.73.32 1.3.51 1.74.65.73.23 1.4.2 1.93.12.59-.09 1.77-.72 2.02-1.42.25-.7.25-1.3.17-1.42-.07-.13-.27-.2-.57-.35z" />
-              </svg>
-              <span>Infos via WhatsApp</span>
-            </a>
           </div>
+
+          {isOutOfStock && (
+            <div
+              style={{
+                marginTop: '10px',
+                padding: '8px 12px',
+                borderRadius: '8px',
+                background: '#fee2e2',
+                color: '#dc2626',
+                fontSize: '12.5px',
+                fontWeight: 600,
+                textAlign: 'center',
+                border: '1px solid #fca5a5',
+              }}
+            >
+              Cet article est actuellement en rupture de stock.
+            </div>
+          )}
 
           <p className="auth-footnote" style={{ marginTop: '12px', textAlign: 'center', fontSize: '11.5px', color: 'var(--mu)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
             <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '15px' }}>lock</span>
@@ -1241,10 +1281,10 @@ export default function ClientProductDetail({
               <span>Livraison estimée</span>
             </div>
             <p className="aside-info-card-text">
-              <strong>Cotonou & Calavi :</strong> 24–48 h (1 000 – 2 000 FCFA)
+              <strong>Cotonou & Calavi :</strong> (1 000 – 2 000 FCFA)
             </p>
             <p className="aside-info-card-text">
-              <strong>Porto-Novo & Parakou :</strong> 48–72 h
+              <strong>Porto-Novo & Parakou</strong>
             </p>
             <p className="aside-info-card-text" style={{ fontSize: '11.5px', color: '#16a34a', marginTop: '6px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px' }}>
               <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '15px' }}>check_circle</span>
@@ -1266,40 +1306,37 @@ export default function ClientProductDetail({
             </p>
           </div>
 
-          {/* Carte 3 : Support & Service client */}
+          {/* Carte 3 : Service Clientèle */}
           <div className="aside-info-card">
             <div className="aside-info-card-title">
-              <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '20px', color: '#25D366' }}>chat</span>
-              <span>Besoin d'aide ou d'infos ?</span>
+              <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '20px', color: 'var(--r, #dc2626)' }}>support_agent</span>
+              <span>Service Clientèle</span>
             </div>
             <p className="aside-info-card-text">
-              Intéressé(e) par cet article ? Échangez directement avec nos conseillers sur WhatsApp au <strong>01 98 74 11 11</strong>.
+              Une question sur cet article ou besoin d'assistance ? Échangez directement avec nos conseillers clientèle.
             </p>
-            <a
-              href={whatsappUrl}
-              target="_blank"
-              rel="noopener noreferrer"
+            <button
+              type="button"
+              onClick={() => window.dispatchEvent(new CustomEvent('takapay_open_support'))}
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
                 gap: '8px',
                 marginTop: '10px',
                 padding: '9px 16px',
-                background: '#25D366',
+                background: 'var(--r, #dc2626)',
                 color: '#ffffff',
                 borderRadius: '10px',
+                border: 'none',
                 fontSize: '12.5px',
                 fontWeight: 800,
-                textDecoration: 'none',
-                boxShadow: '0 2px 8px rgba(37, 211, 102, 0.25)',
+                cursor: 'pointer',
+                boxShadow: '0 2px 8px rgba(220, 38, 38, 0.25)',
               }}
             >
-              <svg viewBox="0 0 24 24" width="18" height="18" fill="none">
-                <path fill="#ffffff" d="M12.04 2c-5.46 0-9.91 4.45-9.91 9.91 0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38c1.45.79 3.08 1.21 4.74 1.21 5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.82 9.82 0 0 0 12.04 2z" />
-                <path fill="#25D366" fillRule="evenodd" clipRule="evenodd" d="M17.51 14.38c-.3-.15-1.77-.87-2.04-.97-.28-.1-.48-.15-.68.15-.2.3-.77.97-.95 1.17-.17.2-.35.22-.65.07-.3-.15-1.26-.46-2.4-1.48-.89-.79-1.49-1.77-1.66-2.07-.18-.3-.02-.46.13-.61.13-.14.3-.35.45-.52.15-.18.2-.3.3-.5.1-.2.05-.38-.02-.53-.08-.15-.68-1.64-.93-2.24-.25-.6-.5-.52-.68-.53-.18-.01-.38-.01-.58-.01-.2 0-.53.07-.81.38-.28.3-1.07 1.05-1.07 2.56 0 1.51 1.1 2.97 1.25 3.17.15.2 2.16 3.3 5.23 4.63.73.32 1.3.51 1.74.65.73.23 1.4.2 1.93.12.59-.09 1.77-.72 2.02-1.42.25-.7.25-1.3.17-1.42-.07-.13-.27-.2-.57-.35z" />
-              </svg>
-              <span>Discuter sur WhatsApp →</span>
-            </a>
+              <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '18px' }}>chat</span>
+              <span>Discuter avec le Service Clientèle →</span>
+            </button>
           </div>
 
           {/* Carte 4 : Partager l'article */}
@@ -1405,7 +1442,7 @@ export default function ClientProductDetail({
               Présentation détaillée de l'article
             </h3>
             <p style={{ margin: '0 0 16px', lineHeight: 1.7, color: 'var(--mu)', whiteSpace: 'pre-line' }}>
-              {product.d || "Cet article est certifié par Takapay et provient de notre réseau de distributeurs agréés au Bénin. Il offre une fiabilité remarquable et bénéficie d'une garantie constructeur intégrale."}
+              {product.d || 'Découvrez les caractéristiques et les modalités de cet article proposé sur TakaPay.'}
             </p>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px', marginTop: '16px' }}>
@@ -1423,7 +1460,9 @@ export default function ClientProductDetail({
               </div>
               <div style={{ padding: '12px 14px', background: 'var(--sf)', borderRadius: '12px', border: '1px solid var(--bd)' }}>
                 <small style={{ color: 'var(--mu)', display: 'block', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase' }}>Disponibilité</small>
-                <b style={{ color: 'var(--tx)', fontSize: '13.5px' }}>{product.stockCount !== null ? `${product.stockCount} unités disponibles` : 'Disponible immédiatement'}</b>
+                <b style={{ color: isOutOfStock ? '#dc2626' : 'var(--tx)', fontSize: '13.5px' }}>
+                  {isOutOfStock ? 'Actuellement en rupture de stock' : (product.stockCount !== null ? `${product.stockCount} unités disponibles` : 'Disponible immédiatement')}
+                </b>
               </div>
             </div>
           </div>
@@ -1602,10 +1641,12 @@ export default function ClientProductDetail({
               <div style={{ padding: '16px', background: 'var(--sf)', borderRadius: '14px', border: '1px solid var(--bd)' }}>
                 <b style={{ color: 'var(--tx)', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
                   <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '18px', color: 'var(--r)' }}>verified_user</span>
-                  <span>Garantie Constructeur</span>
+                  <span>Garantie indiquée pour cet article</span>
                 </b>
                 <p style={{ margin: 0, fontSize: '12.5px', color: 'var(--mu)', lineHeight: 1.5 }}>
-                  Chaque article neuf dispose d'une garantie légale d'au moins 6 à 12 mois contre tout défaut de fabrication.
+                  {product.garantie
+                    ? `Cet article bénéficie d'une garantie de ${product.garantie}.`
+                    : "Aucune durée de garantie spécifique n'a été renseignée pour cet article. Contactez notre support pour connaître les conditions applicables."}
                 </p>
               </div>
               <div style={{ padding: '16px', background: 'var(--sf)', borderRadius: '14px', border: '1px solid var(--bd)' }}>

@@ -15,7 +15,15 @@ class Categorie extends Model
     protected $fillable = [
         'nom',
         'image',
+        'actif',
     ];
+
+    protected function casts(): array
+    {
+        return [
+            'actif' => 'boolean',
+        ];
+    }
 
     public function sousCategories(): HasMany
     {

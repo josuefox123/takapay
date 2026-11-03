@@ -7,7 +7,26 @@ export { TAKAPAY_CATEGORIES };
  */
 export const resolveImageUrl = (path) => {
   if (!path || typeof path !== 'string') return '';
-  if (path.startsWith('blob:') || path.startsWith('data:') || path.startsWith('http://') || path.startsWith('https://')) {
+  if (path.startsWith('blob:') || path.startsWith('data:') || path.startsWith('/assets/')) {
+    return path;
+  }
+  if (path.startsWith('http://') || path.startsWith('https://')) {
+    try {
+      const url = new URL(path);
+      const isLocalHost = ['localhost', '127.0.0.1'].includes(url.hostname);
+      const currentHostIsLocal = typeof window !== 'undefined'
+        && ['localhost', '127.0.0.1'].includes(window.location.hostname);
+      const isSameOrigin = typeof window !== 'undefined'
+        && url.origin === window.location.origin;
+      if (
+        url.pathname.startsWith('/storage/')
+        && (isSameOrigin || (isLocalHost && currentHostIsLocal))
+      ) {
+        return `${url.pathname}${url.search}${url.hash}`;
+      }
+    } catch {
+      return path;
+    }
     return path;
   }
   if (path.startsWith('/api/videos/')) {
@@ -66,6 +85,13 @@ export const mapAdminProductToClient = (p) => {
   const discountedPrice = promoPercent > 0 ? Math.round(price * (1 - promoPercent / 100)) : price;
   const discountedCashPrice = promoPercent > 0 ? Math.round(cashPrice * (1 - promoPercent / 100)) : cashPrice;
   const oldPrice = promoPercent > 0 ? price : null;
+  const garantieDuree = Number(p.garantie_duree || 0);
+  const garantieUnite = p.garantie_unite || 'mois';
+  const garantieUniteLabel = garantieUnite === 'jours'
+    ? (garantieDuree === 1 ? 'jour' : 'jours')
+    : garantieUnite === 'ans'
+      ? (garantieDuree === 1 ? 'an' : 'ans')
+      : 'mois';
 
   // Récupérer les images réelles du produit depuis image_produits (MySQL) ou images (formulaire admin)
   const rawImages = Array.isArray(p.image_produits) && p.image_produits.length > 0
@@ -109,6 +135,9 @@ export const mapAdminProductToClient = (p) => {
       ? p.sous_categorie
       : p.sous_categorie?.nom || p.subcategory || 'Articles');
 
+  const isArchivedCategory =
+    p.sous_categorie?.actif === false || p.sous_categorie?.categorie?.actif === false;
+
   let categoryName =
     p.categorie_nom ||
     p.sous_categorie?.categorie?.nom ||
@@ -148,9 +177,15 @@ export const mapAdminProductToClient = (p) => {
     im: primaryImg,
     images: imageList,
     video: p.video ? (typeof p.video === 'string' ? resolveImageUrl(p.video) : (p.video.chemin ? resolveImageUrl(p.video.chemin) : p.video)) : null,
-    stockCount: p.stock !== undefined ? Number(p.stock) : 15,
+    stockCount: (p.stock !== undefined && p.stock !== null) ? Number(p.stock) : (p.stockCount !== undefined ? Number(p.stockCount) : 0),
+    has_cagnotte: Boolean(p.has_cagnotte || Number(p.cagnottes_count) > 0),
+    has_active_cagnotte: Boolean(p.has_active_cagnotte || Number(p.cagnottes_actives_count) > 0),
+    categoryArchived: isArchivedCategory,
     availabilityDuration: p.duree ? `${p.duree} mois de disponibilité` : 'Disponible',
     duree: Number(p.duree || 6),
+    garantie_duree: garantieDuree || null,
+    garantie_unite: garantieDuree ? garantieUnite : null,
+    garantie: garantieDuree ? `${garantieDuree} ${garantieUniteLabel}` : null,
     d: p.description || p.d || 'Article de qualité certifiée disponible sur TakaPay.',
     colors: (() => {
       if (p.couleur) {
@@ -213,7 +248,7 @@ export const mapAdminProductToClient = (p) => {
     seuilLivraison: seuilLivraisonVal,
     payment: {
       mode: param.mode_paiement === 'libre' ? 'libre' : 'echelon',
-      minimumStart: Number(param.prix_minimum || Math.round(price * 0.1)),
+      minimumStart: Number(param.prix_minimum ? Math.floor(Number(param.prix_minimum)) : Math.floor(price * 0.1)),
       installmentAmount: param.mode_paiement === 'libre' ? null : Number(param.prix_echelonne || Math.round(price / Math.max(1, p.duree || 6))),
       frequency: param.mode_paiement === 'libre' ? null : (param.frequence || 'mensuelle'),
       estimatedEnd: param.mode_paiement === 'libre' ? null : `${p.duree || 6} mois`,
@@ -350,6 +385,11 @@ export const syncCategoriesFromDb = async () => {
 export const getCachedProducts = () => {
   if (typeof window === 'undefined') return [];
   try {
+    localStorage.removeItem('takapay_created_products');
+    localStorage.removeItem('takapay_created_categories');
+    localStorage.removeItem('takapay_created_subcategories');
+    localStorage.removeItem('takapay-notifications');
+    localStorage.removeItem('takapay-demo-cagnotte');
     const raw = localStorage.getItem('takapay_cached_products');
     if (!raw) return [];
     const list = JSON.parse(raw);
@@ -389,6 +429,18 @@ export const getMergedProducts = () => {
     return cached;
   }
   return getStoredCustomProducts();
+};
+
+export const getCachedLiveProducts = () => {
+  try {
+    const raw = localStorage.getItem('takapay_backend_products');
+    const cached = raw ? JSON.parse(raw) : [];
+    return Array.isArray(cached)
+      ? cached.map(mapAdminProductToClient).filter(Boolean)
+      : [];
+  } catch {
+    return [];
+  }
 };
 
 export const BASE_PRODUCTS = PRODUCTS;
@@ -590,29 +642,42 @@ export const mapBackendCagnotteToClient = (c) => {
   }
   if (!primaryImg) primaryImg = '';
 
-  const txs = Array.isArray(c.transactions) ? c.transactions.map((t) => {
-    const isRefundTx =
+  const rawTransactions = Array.isArray(c.transactions) ? c.transactions : [];
+  const isRefundTransaction = (t) =>
       t.type === 'remboursement' ||
       t.type === 'annulation' ||
       (t.reference_externe && (t.reference_externe.startsWith('REM-') || t.reference_externe.includes('ANNUL')));
-    const isExecuted = t.statut === 'succes' || t.statut === 'reussi' || t.statut === 'Argent renvoyé';
+  const txs = rawTransactions.map((t) => {
+    const isRefundTx = isRefundTransaction(t);
+    const normalizedStatus = String(t.statut || '').toLowerCase();
+    const isExecuted = ['succes', 'reussi', 'argent renvoyé', 'effectue'].includes(normalizedStatus);
+    const isFailed = ['echoue', 'échec', 'échoué', 'failed', 'cancelled'].includes(normalizedStatus);
+    const isPending = normalizedStatus === 'en_attente';
+
     return {
       id: `tx-${t.id}`,
       reference: t.reference_externe || `TK-${t.id}`,
       titre: isRefundTx
         ? (isExecuted ? 'Argent renvoyé (Remboursement)' : 'Remboursement en attente')
-        : 'Versement cagnotte (Cotisation)',
-      methode: isRefundTx ? (t.moyen_paiement || c.moyen_paiement || 'Mobile Money') : (t.moyen_paiement || c.moyen_paiement || 'MTN Mobile Money'),
+        : 'Versement cagnotte',
+      methode: t.moyen_paiement || c.moyen_paiement || 'MTN Mobile Money',
       date: t.date ? new Date(t.date).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Récemment',
       montant: Number(t.montant || 0),
       statut: isRefundTx
-        ? (isExecuted ? 'Argent renvoyé' : 'En attente')
-        : (isExecuted ? 'Réussi' : (t.statut || 'Réussi')),
+        ? (isExecuted ? 'Argent renvoyé' : (isPending ? 'En attente' : (t.statut || 'En attente')))
+        : (isExecuted ? 'Réussi' : (isFailed ? 'Échoué' : (isPending ? 'En attente' : (t.statut || 'En attente')))),
       type: isRefundTx ? 'remboursement' : (t.type || 'versement'),
       periode: 'aujourdhui',
     };
-  }) : [];
-
+  });
+  const hasConfirmedPayment = rawTransactions.some((t) =>
+    !isRefundTransaction(t) &&
+    ['succes', 'reussi'].includes(String(t.statut).toLowerCase())
+  );
+  const isPaymentFailed = rawTransactions.some((t) =>
+    !isRefundTransaction(t) &&
+    ['echoue', 'échec', 'échoué', 'failed', 'cancelled'].includes(String(t.statut || '').toLowerCase())
+  ) || c.statut === 'echec_paiement';
   const subcategoryName =
     prod.sous_categorie?.nom ||
     prod.sous_categorie_nom ||
@@ -653,13 +718,32 @@ export const mapBackendCagnotteToClient = (c) => {
     c.moyen_paiement === 'cash' ||
     txs.some((t) => t.type === 'commande_cash' || t.type === 'paiement_cash')
   );
-
   const articleRecu = Boolean(
     c.articleRecu ||
     c.statut === 'livree' ||
     c.statut === 'recu' ||
     (isCod && (c.statut === 'terminee' || c.statut === 'completed'))
   );
+  const isCashPaid = isCash && !isCod && (
+    hasConfirmedPayment ||
+    (rawTransactions.length === 0 && paid >= total && c.statut === 'terminee')
+  );
+  const displayedPaid = isCash && !isCod ? (isCashPaid ? total : paid) : paid;
+  const displayedRemaining = Math.max(0, total - displayedPaid);
+  const displayedPercent = total > 0 ? Math.min(100, Math.round((displayedPaid / total) * 100)) : 0;
+  const canDelete = displayedPaid <= 0
+    && !hasConfirmedPayment
+    && !isCod
+    && !['terminee', 'completed', 'annulee', 'cancelled', 'annulation_demandee'].includes(c.statut);
+  const clientStatus = articleRecu
+    ? 'completed'
+    : (['annulee', 'cancelled', 'annulation_demandee'].includes(c.statut)
+        ? 'cancelled'
+        : (isPaymentFailed
+            ? 'payment_failed'
+            : (isCash
+                ? (isCod ? 'active' : (isCashPaid ? 'completed' : 'active'))
+                : (c.statut === 'terminee' || percent >= 100 ? 'completed' : 'active'))));
 
   const isLibre = param.mode_paiement === 'libre';
   const mode = isCod ? 'cash_cod' : (isCash ? 'cash' : (isLibre ? 'libre' : 'echelonne'));
@@ -746,40 +830,37 @@ export const mapBackendCagnotteToClient = (c) => {
     dateCommande: c.created_at ? new Date(c.created_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Récemment',
     created_at: c.created_at || null,
     prixTotal: total,
-    montantVerse: isCash && !isCod ? total : paid,
-    resteAPayer: isCash ? (isCod ? total : 0) : remaining,
-    pourcentage: isCash ? (isCod ? 0 : 100) : percent,
+    montantVerse: displayedPaid,
+    resteAPayer: displayedRemaining,
+    pourcentage: displayedPercent,
     prochainVersement: (isLibre || isCash) ? null : {
       montant: remaining > 0 ? Math.min(installmentAmount || remaining, remaining) : 0,
       date: nextDueDateFormatted,
     },
     dateFinEstimee: (isLibre || isCash) ? null : estimatedEndFormatted,
     moisRestants: (isLibre || isCash) ? null : moisRestants,
+    statut: clientStatus,
+    isPaymentFailed,
+    hasConfirmedPayment,
+    canDelete,
     rawStatut: c.statut,
     montantRemboursement: c.montant_remboursement || c.montantRemboursement || null,
     fraisAnnulation: c.frais_annulation || c.fraisAnnulation || null,
     telephoneRemboursement: c.telephone_remboursement || c.telephoneRemboursement || null,
     dateDemandeAnnulation: c.date_demande_annulation || c.dateDemandeAnnulation || null,
-    statut: articleRecu
-      ? 'completed'
-      : (c.statut === 'annulee' || c.statut === 'cancelled' || c.statut === 'annulation_demandee'
-          ? (c.statut === 'annulation_demandee' ? 'annulation_demandee' : 'cancelled')
-          : (isCash
-              ? (isCod ? 'active' : 'completed')
-              : (c.statut === 'terminee' || percent >= 100 ? 'completed' : 'active'))),
-    transactions: txs.length > 0 ? txs : [
+    transactions: txs.length > 0 ? txs : (isCod || paid > 0 ? [
       {
         id: `tx-init-${c.id}`,
         reference: `TK-INIT-${c.id}`,
         titre: isCod ? 'Paiement à la livraison' : (isCash ? 'Paiement comptant' : 'Versement initial'),
         methode: isCod ? 'Espèces à la livraison' : (c.moyen_paiement || 'Mobile Money'),
         date: c.created_at ? new Date(c.created_at).toLocaleDateString('fr-FR') : 'Récemment',
-        montant: total,
+        montant: isCod ? total : paid,
         statut: isCod ? (articleRecu ? 'Réussi' : 'En attente') : 'Réussi',
         type: isCod ? 'paiement_livraison' : (isCash ? 'commande_cash' : 'versement'),
         periode: 'aujourdhui',
       }
-    ],
+    ] : []),
   };
 };
 
@@ -816,5 +897,3 @@ export const getStoredCagnottes = (_user = null) => {
 
 
 export const DEFAULT_NOTIFICATIONS = [];
-
-

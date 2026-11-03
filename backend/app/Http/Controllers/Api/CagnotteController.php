@@ -12,6 +12,7 @@ use App\Models\Notification;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -58,7 +59,21 @@ class CagnotteController extends Controller
      */
     public function store(StoreCagnotteRequest $request): JsonResponse
     {
-        $cagnotte = Cagnotte::create($request->validated());
+        $data = $request->validated();
+        if (!empty($data['produit_id'])) {
+            $produit = \App\Models\Produit::find($data['produit_id']);
+            if ($produit && $produit->stock <= 0) {
+                return response()->json([
+                    'message' => 'Désolé, cet article est actuellement en rupture de stock.',
+                ], 422);
+            }
+        }
+
+        $cagnotte = Cagnotte::create($data);
+
+        if ($cagnotte->produit) {
+            $cagnotte->produit->decrement('stock', 1);
+        }
 
         return (new CagnotteResource($cagnotte))
             ->response()
@@ -94,6 +109,50 @@ class CagnotteController extends Controller
 
         return response()->json([
             'message' => 'Cagnotte supprimée avec succès.'
+        ]);
+    }
+
+    /**
+     * Supprimer une cagnotte non payée appartenant au client connecté.
+     */
+    public function destroyUnpaid(Request $request, Cagnotte $cagnotte): JsonResponse
+    {
+        $user = $request->user('sanctum');
+        abort_unless($user && ($user->isAdmin() || $cagnotte->utilisateur_id === $user->id), 404);
+
+        $hasSuccessfulPayment = $cagnotte->transactions()
+            ->whereIn('statut', ['succes', 'reussi'])
+            ->exists();
+        $isCashOnDelivery = strtolower((string) $cagnotte->moyen_paiement) === 'livraison'
+            || $cagnotte->transactions()->where('type', 'paiement_livraison')->exists();
+
+        if (
+            (float) $cagnotte->montant_verse > 0
+            || $hasSuccessfulPayment
+            || $isCashOnDelivery
+            || in_array($cagnotte->statut, ['terminee', 'annulee', 'annulation_demandee'], true)
+        ) {
+            return response()->json([
+                'message' => 'Seule une cagnotte sans paiement confirmé peut être supprimée.',
+            ], 422);
+        }
+
+        DB::transaction(function () use ($cagnotte) {
+            $commandeIds = $cagnotte->transactions()
+                ->whereNotNull('commande_id')
+                ->pluck('commande_id');
+
+            if ($commandeIds->isNotEmpty()) {
+                Commande::whereIn('id', $commandeIds)
+                    ->where('statut', 'en_attente')
+                    ->update(['statut' => 'annulee']);
+            }
+
+            $cagnotte->delete();
+        });
+
+        return response()->json([
+            'message' => 'Cagnotte non payée supprimée.',
         ]);
     }
 
@@ -174,6 +233,11 @@ class CagnotteController extends Controller
             'date_demande_annulation' => now(),
         ]);
 
+        // Incrémentation du stock disponible car la commande / cagnotte est annulée
+        if ($cagnotte->produit) {
+            $cagnotte->produit->increment('stock', 1);
+        }
+
         if ($totalVerse > 0) {
             $cagnotte->transactions()->create([
                 'reference_externe' => 'REM-' . strtoupper(uniqid()),
@@ -207,21 +271,27 @@ class CagnotteController extends Controller
     }
 
     /**
-     * Rétablir une cagnotte dont l'annulation a été demandée (tant que le remboursement n'a pas été envoyé).
+     * Rétablir une cagnotte annulée ou en cours d'annulation.
      */
     public function reactiver(Request $request, Cagnotte $cagnotte): JsonResponse
     {
-        if ($cagnotte->statut !== 'annulation_demandee') {
+        if (!in_array($cagnotte->statut, ['annulation_demandee', 'annulee'])) {
             return response()->json([
-                'message' => 'Seule une cagnotte en attente de remboursement peut être rétablie.',
+                'message' => 'Seule une cagnotte annulée ou en attente de remboursement peut être rétablie.',
+            ], 422);
+        }
+
+        // Vérification de stock disponible avant réactivation
+        $produit = $cagnotte->produit;
+        if ($produit && $produit->stock <= 0) {
+            return response()->json([
+                'message' => 'Impossible de rétablir cette cagnotte : cet article est actuellement en rupture de stock.',
             ], 422);
         }
 
         $inputStatut = $request->input('statut');
-        $newStatut = 'active';
-        if ($inputStatut === 'en_attente' || $cagnotte->moyen_paiement === 'livraison') {
-            $newStatut = 'en_attente';
-        }
+        $isCash = $cagnotte->moyen_paiement === 'livraison' || str_starts_with((string) ($cagnotte->transactions()->latest()->first()?->reference_externe ?? ''), 'CMD_COD_');
+        $newStatut = ($inputStatut === 'en_attente' || $isCash) ? 'en_attente' : 'en_cours';
 
         $cagnotte->update([
             'statut' => $newStatut,
@@ -231,11 +301,19 @@ class CagnotteController extends Controller
             'date_demande_annulation' => null,
         ]);
 
-        // Supprimer la transaction provisoire de remboursement en attente
-        $cagnotte->transactions()
-            ->where('type', 'remboursement')
-            ->where('statut', 'en_attente')
-            ->delete();
+        // Nettoyage de la transaction de remboursement en attente
+        $cagnotte->transactions()->where('type', 'remboursement')->where('statut', 'en_attente')->delete();
+
+        // Décrémenter à nouveau le stock puisque la cagnotte redevient active
+        if ($produit) {
+            $produit->decrement('stock', 1);
+        }
+
+        $clientEmail = $request->input('email')
+            ?? $cagnotte->utilisateur?->email
+            ?? $request->user('sanctum')?->email;
+
+        $cagnotte->sendCagnotteRetablieNotification($clientEmail);
 
         return response()->json([
             'success' => true,

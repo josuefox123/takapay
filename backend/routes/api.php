@@ -71,6 +71,7 @@ Route::get('commandes', [CommandeController::class, 'index'])->name('commandes.i
 Route::get('carousels', [CarouselController::class, 'index'])->name('carousels.index');
 Route::put('profile', [AuthController::class, 'updateProfile'])->name('profile.update');
 Route::put('profile/pin', [AuthController::class, 'updatePin'])->name('profile.update-pin');
+Route::put('profile/password', [AuthController::class, 'updatePassword'])->name('profile.update-password');
 Route::post('cagnottes/{cagnotte}/confirmer-reception', [CagnotteController::class, 'confirmerReception'])->name('cagnottes.confirmer-reception');
 Route::post('cagnottes/{cagnotte}/annuler', [CagnotteController::class, 'demanderAnnulation'])->name('cagnottes.annuler');
 Route::post('cagnottes/{cagnotte}/reactiver', [CagnotteController::class, 'reactiver'])->name('cagnottes.reactiver');
@@ -99,6 +100,7 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
     // Authentification & Profil
     Route::get('/me', [AuthController::class, 'me']);
     Route::post('/logout', [AuthController::class, 'logout']);
+    Route::delete('cagnottes/{cagnotte}/non-payee', [CagnotteController::class, 'destroyUnpaid']);
 
     /*
     |--------------------------------------------------------------------------
@@ -111,6 +113,9 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
         Route::prefix('admin')->group(function () {
             // Statistiques du tableau de bord
             Route::get('/stats', [AdminStatsController::class, 'stats']);
+            Route::get('/categories', [CategorieController::class, 'adminIndex']);
+            Route::get('/sous-categories', [SousCategorieController::class, 'adminIndex']);
+            Route::get('/produits', [ProduitController::class, 'adminIndex']);
 
             // Commandes (vue admin avec relations)
             Route::get('/commandes', [CommandeController::class, 'adminIndex']);

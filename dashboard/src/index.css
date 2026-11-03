@@ -1,4 +1,21 @@
+@import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200');
 @import "tailwindcss";
+
+.material-symbols-outlined {
+  font-family: 'Material Symbols Outlined' !important;
+  font-weight: 400;
+  font-style: normal;
+  font-size: 24px;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  -webkit-font-feature-settings: 'liga';
+  -webkit-font-smoothing: antialiased;
+}
 
 @theme {
   --color-brand-red: #c62828;
@@ -1626,4 +1643,14 @@ html.motion-ready .way-card.reveal-on-scroll.is-visible:nth-child(2) {
     animation-iteration-count: 1 !important;
     transition-duration: .01ms !important;
   }
+}
+
+/* Remplacement du logo FeexPay par le logo Takapay dans la modale de paiement */
+div.fixed.inset-0.z-50 img[src*="feexpay_logo"],
+div.fixed.inset-0.z-50 img[alt="Logo"],
+.feexpay-modal img[src*="feexpay_logo"] {
+  content: url('/logo.png') !important;
+  max-height: 38px !important;
+  width: auto !important;
+  object-fit: contain !important;
 }

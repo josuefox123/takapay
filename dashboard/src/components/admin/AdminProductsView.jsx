@@ -1,16 +1,17 @@
 import { useState, useEffect } from 'react';
+import { Archive, Check, FolderTree, ImagePlus, Pencil, Trash2, X } from 'lucide-react';
 import AdminIcon from './AdminIcon';
 import { adminService } from '../../services/adminService';
 import { resolveImageUrl } from '../../data/clientStore';
 
 export default function AdminProductsView({ onShowToast }) {
-  const [produits, setProduits] = useState([]);
+  const [produits, setProduits] = useState(() => adminService.getCachedProduits());
   const [categories, setCategories] = useState([]);
   const [sousCategories, setSousCategories] = useState([]);
   const [promotions, setPromotions] = useState([]);
   const [search, setSearch] = useState('');
   const [selectedCat, setSelectedCat] = useState('tous');
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => adminService.getCachedProduits().length === 0);
   const [submitting, setSubmitting] = useState(false);
 
   // Mode de vue : 'list' | 'create' | 'edit' | 'categories'
@@ -40,6 +41,8 @@ export default function AdminProductsView({ onShowToast }) {
     description: '',
     stock: 10,
     duree: 6, // Durée de disponibilité de l'article (mois)
+    garantie_duree: '',
+    garantie_unite: 'mois',
     reference: '',
     prix_total: '',
     prix_cash: '',
@@ -109,25 +112,47 @@ export default function AdminProductsView({ onShowToast }) {
   const [newSubCatImageName, setNewSubCatImageName] = useState('');
   const [targetCatId, setTargetCatId] = useState('');
   const [catSubmitting, setCatSubmitting] = useState(false);
+  const [editingCategory, setEditingCategory] = useState(null);
+  const [editingCategoryName, setEditingCategoryName] = useState('');
+  const [editingCategoryImage, setEditingCategoryImage] = useState('');
+  const [editingCategoryImageName, setEditingCategoryImageName] = useState('');
+  const [editingSubCategory, setEditingSubCategory] = useState(null);
+  const [editingSubCategoryName, setEditingSubCategoryName] = useState('');
+  const [editingSubCategoryImage, setEditingSubCategoryImage] = useState('');
+  const [editingSubCategoryImageName, setEditingSubCategoryImageName] = useState('');
+  const [editingSubCategoryParentId, setEditingSubCategoryParentId] = useState('');
 
   useEffect(() => {
     let isMounted = true;
+    const refreshProducts = () => {
+      if (document.visibilityState !== 'visible') return;
+      adminService.getAdminProduits().then((list) => {
+        if (isMounted && Array.isArray(list)) setProduits(list);
+      }).catch((error) => {
+        if (isMounted) {
+          onShowToast(error.message || 'Impossible de rafraîchir les produits.');
+        }
+      });
+    };
+
     Promise.all([
-      adminService.getProduits(),
-      adminService.getSousCategories(),
+      adminService.getAdminProduits(),
+      adminService.getAdminSousCategories(),
       adminService.getPromotions(),
-      adminService.getCategories(),
+      adminService.getAdminCategories(),
     ]).then(([prds, subCats, promos, cats]) => {
       if (isMounted) {
         setProduits(prds);
         setSousCategories(subCats);
         setPromotions(promos);
         setCategories(cats);
-        if (cats.length > 0) {
-          const firstCatId = cats[0].id;
+        const availableCategories = cats.filter((category) => category.actif !== false);
+        if (availableCategories.length > 0) {
+          const firstCatId = availableCategories[0].id;
           setTargetCatId(firstCatId);
           const matchingSubs = subCats.filter(
-            (s) => String(s.categorie_id) === String(firstCatId) || String(s.categorie?.id) === String(firstCatId)
+            (s) => s.actif !== false &&
+              (String(s.categorie_id) === String(firstCatId) || String(s.categorie?.id) === String(firstCatId))
           );
           setForm((f) => ({
             ...f,
@@ -137,19 +162,37 @@ export default function AdminProductsView({ onShowToast }) {
         }
         setLoading(false);
       }
+    }).catch((error) => {
+      if (isMounted) {
+        setLoading(false);
+        onShowToast(error.message || 'Impossible de charger le catalogue administrateur.');
+      }
     });
+
+    const refreshInterval = window.setInterval(refreshProducts, 60000);
+    window.addEventListener('focus', refreshProducts);
+    window.addEventListener('takapay_products_updated', refreshProducts);
+    window.addEventListener('takapay_cagnotte_updated', refreshProducts);
+    window.addEventListener('storage', refreshProducts);
 
     return () => {
       isMounted = false;
+      window.clearInterval(refreshInterval);
+      window.removeEventListener('focus', refreshProducts);
+      window.removeEventListener('takapay_products_updated', refreshProducts);
+      window.removeEventListener('takapay_cagnotte_updated', refreshProducts);
     };
-  }, []);
+  }, [onShowToast]);
+
+  const activeCategories = categories.filter((category) => category.actif !== false);
 
   // Sous-catégories filtrées dynamiquement selon la catégorie choisie
   const availableSubCategories = form.categorie_id
     ? sousCategories.filter(
         (s) =>
-          String(s.categorie_id) === String(form.categorie_id) ||
-          String(s.categorie?.id) === String(form.categorie_id)
+          (s.actif !== false || (editingProductId && String(s.id) === String(form.sous_categorie_id))) &&
+          (String(s.categorie_id) === String(form.categorie_id) ||
+            String(s.categorie?.id) === String(form.categorie_id))
       )
     : [];
 
@@ -158,8 +201,9 @@ export default function AdminProductsView({ onShowToast }) {
     const selectedCatId = e.target.value;
     const matchingSubs = sousCategories.filter(
       (s) =>
-        String(s.categorie_id) === String(selectedCatId) ||
-        String(s.categorie?.id) === String(selectedCatId)
+        s.actif !== false &&
+        (String(s.categorie_id) === String(selectedCatId) ||
+          String(s.categorie?.id) === String(selectedCatId))
     );
     setForm((prev) => ({
       ...prev,
@@ -188,7 +232,7 @@ export default function AdminProductsView({ onShowToast }) {
           chemin: event.target.result,
           nom_fichier: file.name,
           position: images.length + fileIdx + 1,
-          is_principal: images.length === 0 && fileIdx === 0,
+          is_principal: editingProductId ? fileIdx === 0 : images.length === 0 && fileIdx === 0,
         });
         loadedCount++;
         if (loadedCount === files.length) {
@@ -207,6 +251,22 @@ export default function AdminProductsView({ onShowToast }) {
     e.target.value = '';
   };
 
+  const handleReplaceImageSelect = (e, imageIndex) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      setImages((prev) => prev.map((img, idx) => (
+        idx === imageIndex
+          ? { ...img, chemin: event.target.result, nom_fichier: file.name }
+          : img
+      )));
+      onShowToast('Photo remplacée. Enregistrez le produit pour confirmer.');
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
   const handleSetPrincipalImage = (index) => {
     setImages((prev) =>
       prev.map((img, idx) => ({
@@ -320,6 +380,8 @@ export default function AdminProductsView({ onShowToast }) {
       description: '',
       stock: 10,
       duree: 6,
+      garantie_duree: '',
+      garantie_unite: 'mois',
       reference: '',
       prix_total: '',
       prix_cash: '',
@@ -408,6 +470,8 @@ export default function AdminProductsView({ onShowToast }) {
       description: item.description || '',
       stock: item.stock !== undefined ? item.stock : 10,
       duree: item.duree !== undefined ? item.duree : 6,
+      garantie_duree: item.garantie_duree ?? '',
+      garantie_unite: item.garantie_unite || 'mois',
       reference: param.reference || '',
       prix_total: param.prix_total !== undefined ? param.prix_total : '',
       prix_cash: param.prix_cash !== undefined ? param.prix_cash : '',
@@ -428,14 +492,17 @@ export default function AdminProductsView({ onShowToast }) {
       ? [{ chemin: item.im, is_principal: true, position: 1 }]
       : [];
 
-    setImages(
-      rawImgs.map((img, idx) => ({
-        chemin: typeof img === 'string' ? resolveImageUrl(img) : (img.url || resolveImageUrl(img.chemin)),
-        nom_fichier: typeof img === 'string' ? img : (img.nom_fichier || img.chemin || `image-${idx + 1}.jpg`),
-        position: idx + 1,
-        is_principal: img.is_principal === true || img.is_principal === 1 || idx === 0,
-      }))
-    );
+    const loadedImages = rawImgs.map((img, idx) => ({
+      id: typeof img === 'string' ? null : (img.id || null),
+      chemin: typeof img === 'string' ? resolveImageUrl(img) : (img.url || resolveImageUrl(img.chemin)),
+      nom_fichier: typeof img === 'string' ? img : (img.nom_fichier || img.chemin || `image-${idx + 1}.jpg`),
+      position: typeof img === 'string' ? idx + 1 : (img.position || idx + 1),
+      is_principal: typeof img !== 'string' && (img.is_principal === true || img.is_principal === 1 || img.is_principal === '1'),
+    }));
+    if (loadedImages.length > 0 && !loadedImages.some((img) => img.is_principal)) {
+      loadedImages[0].is_principal = true;
+    }
+    setImages(loadedImages);
 
     // Vidéo
     if (item.video) {
@@ -468,6 +535,9 @@ export default function AdminProductsView({ onShowToast }) {
     }
     if (form.duree === '' || form.duree === null || Number(form.duree) < 1) {
       errs.duree = "La durée de disponibilité de l'article doit être d'au moins 1 mois.";
+    }
+    if (form.garantie_duree !== '' && (!Number.isInteger(Number(form.garantie_duree)) || Number(form.garantie_duree) < 1 || Number(form.garantie_duree) > 1200)) {
+      errs.garantie_duree = 'La durée de garantie doit être comprise entre 1 et 1200.';
     }
     return errs;
   };
@@ -558,6 +628,8 @@ export default function AdminProductsView({ onShowToast }) {
         prix_cash: cleanNum(form.prix_cash),
         stock: cleanNum(form.stock) ?? 0,
         duree: cleanNum(form.duree) ?? 6,
+        garantie_duree: form.garantie_duree === '' ? null : cleanNum(form.garantie_duree),
+        garantie_unite: form.garantie_duree === '' ? null : form.garantie_unite,
         seuil_livraison: form.mode_paiement === 'libre' ? null : cleanNum(form.seuil_livraison),
         promotion_id: form.promotion_id ? Number(form.promotion_id) : null,
         couleur: finalColorsStr,
@@ -624,6 +696,109 @@ export default function AdminProductsView({ onShowToast }) {
     };
     reader.readAsDataURL(file);
     e.target.value = '';
+  };
+
+  const handleEditCategoryImageFile = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setEditingCategoryImageName(file.name);
+    const reader = new FileReader();
+    reader.onload = (event) => setEditingCategoryImage(event.target.result);
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
+
+  const handleEditSubCategoryImageFile = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setEditingSubCategoryImageName(file.name);
+    const reader = new FileReader();
+    reader.onload = (event) => setEditingSubCategoryImage(event.target.result);
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
+
+  const startEditingCategory = (category) => {
+    setEditingCategory(category);
+    setEditingCategoryName(category.nom);
+    setEditingCategoryImage('');
+    setEditingCategoryImageName('');
+    setEditingSubCategory(null);
+  };
+
+  const startEditingSubCategory = (subCategory) => {
+    setEditingSubCategory(subCategory);
+    setEditingSubCategoryName(subCategory.nom);
+    setEditingSubCategoryImage('');
+    setEditingSubCategoryImageName('');
+    setEditingSubCategoryParentId(String(subCategory.categorie_id || subCategory.categorie?.id || ''));
+    setEditingCategory(null);
+  };
+
+  const handleUpdateCategory = async (e) => {
+    e.preventDefault();
+    if (!editingCategory || !editingCategoryName.trim()) {
+      setCatErrors({ nom: 'Le nom de la catégorie est obligatoire.' });
+      return;
+    }
+
+    setCatErrors({});
+    setCatSubmitting(true);
+    try {
+      const payload = { nom: editingCategoryName.trim() };
+      if (editingCategoryImage) {
+        payload.image = editingCategoryImage;
+        payload.nom_fichier = editingCategoryImageName;
+      }
+      const result = await adminService.updateCategorie(editingCategory.id, payload);
+      setCategories((previous) =>
+        previous.map((category) =>
+          String(category.id) === String(result.data.id) ? result.data : category
+        )
+      );
+      setEditingCategory(null);
+      onShowToast(`Catégorie "${result.data.nom}" modifiée avec succès.`);
+    } catch (error) {
+      onShowToast(error.message || 'Erreur lors de la modification de la catégorie.');
+    } finally {
+      setCatSubmitting(false);
+    }
+  };
+
+  const handleUpdateSousCategory = async (e) => {
+    e.preventDefault();
+    if (!editingSubCategory || !editingSubCategoryName.trim() || !editingSubCategoryParentId) {
+      setSubCatErrors({
+        nom: !editingSubCategoryName.trim() ? 'Le nom de la sous-catégorie est obligatoire.' : null,
+        targetCatId: !editingSubCategoryParentId ? 'Veuillez sélectionner la catégorie parente.' : null,
+      });
+      return;
+    }
+
+    setSubCatErrors({});
+    setCatSubmitting(true);
+    try {
+      const payload = {
+        nom: editingSubCategoryName.trim(),
+        categorie_id: editingSubCategoryParentId,
+      };
+      if (editingSubCategoryImage) {
+        payload.image = editingSubCategoryImage;
+        payload.nom_fichier = editingSubCategoryImageName;
+      }
+      const result = await adminService.updateSousCategorie(editingSubCategory.id, payload);
+      setSousCategories((previous) =>
+        previous.map((subCategory) =>
+          String(subCategory.id) === String(result.data.id) ? result.data : subCategory
+        )
+      );
+      setEditingSubCategory(null);
+      onShowToast(`Sous-catégorie "${result.data.nom}" modifiée avec succès.`);
+    } catch (error) {
+      onShowToast(error.message || 'Erreur lors de la modification de la sous-catégorie.');
+    } finally {
+      setCatSubmitting(false);
+    }
   };
 
   const handleCreateCategory = async (e) => {
@@ -831,7 +1006,7 @@ export default function AdminProductsView({ onShowToast }) {
   });
 
   // Calcul auto des suggestions financières
-  const autoMinStart = form.prix_total ? Math.round(Number(form.prix_total) * 0.1) : 0;
+  const autoMinStart = form.prix_total ? Math.floor(Number(form.prix_total) * 0.1) : 0;
   const dureeDispo = Math.max(1, Number(form.duree || 6));
   const autoEch =
     form.prix_total
@@ -967,7 +1142,7 @@ export default function AdminProductsView({ onShowToast }) {
                   }}
                 >
                   <option value="">Sélectionnez la catégorie parente...</option>
-                  {categories.map((c) => (
+                  {activeCategories.map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.nom}
                     </option>
@@ -1036,138 +1211,199 @@ export default function AdminProductsView({ onShowToast }) {
           </div>
         </div>
 
-        {/* Liste aérée des catégories existantes */}
-        <div className="admin-panel" style={{ padding: '28px' }}>
-          <h2 style={{ fontSize: '18px', fontWeight: 800, margin: '0 0 20px' }}>
-            Arborescence Actuelle des Catégories ({categories.length})
-          </h2>
+        <section className="admin-panel catalog-tree-panel">
+          <div className="catalog-tree-heading">
+            <div>
+              <span className="catalog-tree-eyebrow">STRUCTURE DU CATALOGUE</span>
+              <h2>Catégories et sous-catégories</h2>
+              <p>Consultez et mettez à jour les éléments visibles dans le catalogue.</p>
+            </div>
+            <div className="catalog-tree-summary">
+              <span><b>{activeCategories.length}</b> actives</span>
+              <span><b>{categories.length - activeCategories.length}</b> archivées</span>
+            </div>
+          </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '18px' }}>
-            {categories.map((cat) => {
-              const subs = sousCategories.filter(
-                (s) => String(s.categorie_id) === String(cat.id) || String(s.categorie?.id) === String(cat.id)
+          <div className="catalog-category-grid">
+            {categories.map((category) => {
+              const subCategories = sousCategories.filter(
+                (subCategory) =>
+                  String(subCategory.categorie_id) === String(category.id) ||
+                  String(subCategory.categorie?.id) === String(category.id)
               );
+              const activeSubCategories = subCategories.filter((subCategory) => subCategory.actif !== false).length;
+
               return (
-                <div
-                  key={cat.id}
-                  style={{
-                    background: 'var(--bg)',
-                    border: '1.5px solid var(--line)',
-                    borderRadius: '14px',
-                    padding: '18px',
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', marginBottom: '12px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
-                      {cat.image ? (
-                        <img src={cat.image} alt={cat.nom} style={{ width: '42px', height: '42px', borderRadius: '10px', objectFit: 'cover', flexShrink: 0 }} />
-                      ) : (
-                        <div style={{ width: '42px', height: '42px', borderRadius: '10px', background: 'var(--soft)', display: 'grid', placeItems: 'center', fontSize: '20px', flexShrink: 0 }}>
-                          📦
-                        </div>
-                      )}
-                      <div style={{ minWidth: 0 }}>
-                        <strong style={{ fontSize: '16px', display: 'block', color: 'var(--ink)' }}>{cat.nom}</strong>
-                        <span style={{ fontSize: '12px', color: 'var(--mut)' }}>{subs.length} sous-catégorie(s)</span>
-                      </div>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteCategory(cat)}
-                      title={`Supprimer la catégorie "${cat.nom}"`}
-                      aria-label={`Supprimer ${cat.nom}`}
-                      style={{
-                        background: '#fee2e2',
-                        color: '#dc2626',
-                        border: 'none',
-                        width: '32px',
-                        height: '32px',
-                        borderRadius: '8px',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        flexShrink: 0,
-                        transition: 'all 0.15s ease',
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.background = '#fecaca';
-                        e.currentTarget.style.transform = 'scale(1.08)';
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.background = '#fee2e2';
-                        e.currentTarget.style.transform = 'scale(1)';
-                      }}
-                    >
-                      <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '18px' }}>
-                        delete
-                      </span>
-                    </button>
-                  </div>
-
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                    {subs.map((s) => (
-                      <span
-                        key={s.id}
-                        style={{
-                          background: 'var(--card)',
-                          border: '1px solid var(--line)',
-                          padding: '4px 8px 4px 10px',
-                          borderRadius: '8px',
-                          fontSize: '13px',
-                          color: 'var(--ink)',
-                          fontWeight: 500,
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '6px',
-                        }}
-                      >
-                        {s.image && (
-                          <img
-                            src={s.image}
-                            alt={s.nom}
-                            style={{ width: '18px', height: '18px', borderRadius: '4px', objectFit: 'cover' }}
-                          />
-                        )}
-                        <span>{s.nom}</span>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteSousCategory(s)}
-                          title={`Supprimer la sous-catégorie "${s.nom}"`}
-                          aria-label={`Supprimer ${s.nom}`}
-                          style={{
-                            background: 'transparent',
-                            border: 'none',
-                            color: '#9ca3af',
-                            cursor: 'pointer',
-                            padding: '2px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            borderRadius: '50%',
-                            transition: 'color 0.15s',
-                          }}
-                          onMouseEnter={(e) => (e.currentTarget.style.color = '#dc2626')}
-                          onMouseLeave={(e) => (e.currentTarget.style.color = '#9ca3af')}
-                        >
-                          <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '14px' }}>
-                            close
-                          </span>
-                        </button>
-                      </span>
-                    ))}
-                    {subs.length === 0 && (
-                      <span style={{ fontSize: '12px', color: 'var(--mut)', fontStyle: 'italic' }}>
-                        Aucune sous-catégorie
+                <article className={`catalog-category-card${category.actif === false ? ' is-archived' : ''}`} key={category.id}>
+                  <header className="catalog-category-header">
+                    {category.image ? (
+                      <img className="catalog-category-image" src={resolveImageUrl(category.image)} alt="" />
+                    ) : (
+                      <span className="catalog-category-image-placeholder" aria-hidden="true">
+                        <FolderTree size={21} />
                       </span>
                     )}
+                    <div className="catalog-category-title">
+                      <h3>{category.nom}</h3>
+                      <span>{activeSubCategories} sous-catégorie{activeSubCategories === 1 ? '' : 's'} active{activeSubCategories === 1 ? '' : 's'}</span>
+                    </div>
+                    <span className={`catalog-status${category.actif === false ? ' archived' : ''}`}>
+                      {category.actif === false && <Archive size={12} />}
+                      {category.actif === false ? 'Archivée' : 'Active'}
+                    </span>
+                  </header>
+
+                  <div className="catalog-subcategory-list">
+                    {subCategories.map((subCategory) => (
+                      <div className={`catalog-subcategory-row${subCategory.actif === false ? ' is-archived' : ''}`} key={subCategory.id}>
+                        {subCategory.image ? (
+                          <img src={resolveImageUrl(subCategory.image)} alt="" />
+                        ) : (
+                          <span className="catalog-subcategory-placeholder" aria-hidden="true">
+                            <FolderTree size={15} />
+                          </span>
+                        )}
+                        <span className="catalog-subcategory-name">{subCategory.nom}</span>
+                        {subCategory.actif === false && (
+                          <span className="catalog-subcategory-archived">Archivée</span>
+                        )}
+                        <div className="catalog-row-actions">
+                          <button
+                            type="button"
+                            className="catalog-icon-button"
+                            onClick={() => startEditingSubCategory(subCategory)}
+                            aria-label={`Modifier la sous-catégorie ${subCategory.nom}`}
+                            title="Modifier"
+                          >
+                            <Pencil size={15} />
+                          </button>
+                          {subCategory.actif !== false && (
+                            <button
+                              type="button"
+                              className="catalog-icon-button danger"
+                              onClick={() => handleDeleteSousCategory(subCategory)}
+                              aria-label={`Supprimer la sous-catégorie ${subCategory.nom}`}
+                              title="Supprimer"
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                    {subCategories.length === 0 && (
+                      <p className="catalog-empty-subs">Aucune sous-catégorie pour le moment.</p>
+                    )}
                   </div>
-                </div>
+
+                  <footer className="catalog-category-actions">
+                    <button type="button" className="catalog-text-button" onClick={() => startEditingCategory(category)}>
+                      <Pencil size={14} /> Modifier la catégorie
+                    </button>
+                    {category.actif !== false && (
+                      <button type="button" className="catalog-text-button danger" onClick={() => handleDeleteCategory(category)}>
+                        <Trash2 size={14} /> Supprimer
+                      </button>
+                    )}
+                  </footer>
+                </article>
               );
             })}
           </div>
-        </div>
+        </section>
+
+        {(editingCategory || editingSubCategory) && (
+          <div className="catalog-edit-overlay" role="presentation" onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !catSubmitting) {
+              setEditingCategory(null);
+              setEditingSubCategory(null);
+            }
+          }}>
+            <section className="catalog-edit-dialog" role="dialog" aria-modal="true" aria-labelledby="catalog-edit-title">
+              <header className="catalog-edit-header">
+                <div className="catalog-edit-icon"><Pencil size={19} /></div>
+                <div>
+                  <h2 id="catalog-edit-title">{editingCategory ? 'Modifier la catégorie' : 'Modifier la sous-catégorie'}</h2>
+                  <p>Actualisez son nom, son image et son classement.</p>
+                </div>
+                <button type="button" className="catalog-icon-button" onClick={() => {
+                  setEditingCategory(null);
+                  setEditingSubCategory(null);
+                }} aria-label="Fermer" disabled={catSubmitting}>
+                  <X size={18} />
+                </button>
+              </header>
+
+              <form onSubmit={editingCategory ? handleUpdateCategory : handleUpdateSousCategory} className="catalog-edit-form">
+                <label className="catalog-edit-field">
+                  <span>Nom <b>*</b></span>
+                  <input
+                    type="text"
+                    value={editingCategory ? editingCategoryName : editingSubCategoryName}
+                    onChange={(event) => editingCategory
+                      ? setEditingCategoryName(event.target.value)
+                      : setEditingSubCategoryName(event.target.value)}
+                    required
+                    autoFocus
+                  />
+                </label>
+
+                {editingSubCategory && (
+                  <label className="catalog-edit-field">
+                    <span>Catégorie parente <b>*</b></span>
+                    <select
+                      value={editingSubCategoryParentId}
+                      onChange={(event) => setEditingSubCategoryParentId(event.target.value)}
+                      required
+                    >
+                      {categories.map((category) => (
+                        <option key={category.id} value={category.id}>
+                          {category.nom}{category.actif === false ? ' — Archivée' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+
+                <div className="catalog-edit-field">
+                  <span>Image de couverture</span>
+                  <div className="catalog-image-picker">
+                    {(editingCategoryImage || editingSubCategoryImage || (editingCategory?.image || editingSubCategory?.image)) ? (
+                      <img
+                        src={editingCategoryImage || editingSubCategoryImage || resolveImageUrl(editingCategory?.image || editingSubCategory?.image)}
+                        alt="Aperçu de l’image"
+                      />
+                    ) : (
+                      <span className="catalog-image-picker-placeholder"><ImagePlus size={24} /></span>
+                    )}
+                    <div>
+                      <strong>{editingCategoryImageName || editingSubCategoryImageName || 'Choisir une image'}</strong>
+                      <small>JPG, PNG ou WEBP · 10 Mo maximum</small>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={editingCategory ? handleEditCategoryImageFile : handleEditSubCategoryImageFile}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <footer className="catalog-edit-actions">
+                  <button type="button" className="catalog-cancel-button" onClick={() => {
+                    setEditingCategory(null);
+                    setEditingSubCategory(null);
+                  }} disabled={catSubmitting}>
+                    Annuler
+                  </button>
+                  <button type="submit" className="catalog-save-button" disabled={catSubmitting}>
+                    <Check size={16} />
+                    {catSubmitting ? 'Enregistrement...' : 'Enregistrer'}
+                  </button>
+                </footer>
+              </form>
+            </section>
+          </div>
+        )}
 
         {/* Modal : Signalement que la catégorie ou sous-catégorie ne peut pas être supprimée */}
         {blockedCategoryOrSub && (
@@ -1590,11 +1826,16 @@ export default function AdminProductsView({ onShowToast }) {
                   }}
                 >
                   <option value="">Sélectionnez une catégorie...</option>
-                  {categories.map((c) => (
+                  {categories
+                    .filter((category) =>
+                      category.actif !== false ||
+                      (editingProductId && String(category.id) === String(form.categorie_id))
+                    )
+                    .map((c) => (
                     <option key={c.id} value={c.id}>
-                      {c.nom}
+                      {c.nom}{c.actif === false ? ' (archivée)' : ''}
                     </option>
-                  ))}
+                    ))}
                 </select>
                 {errors.categorie_id && (
                   <span style={{ color: '#dc2626', fontSize: '13px', fontWeight: 600, marginTop: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -1634,7 +1875,7 @@ export default function AdminProductsView({ onShowToast }) {
                       <option value="">Sélectionnez une sous-catégorie...</option>
                       {availableSubCategories.map((sc) => (
                         <option key={sc.id} value={sc.id}>
-                          {sc.nom}
+                          {sc.nom}{sc.actif === false ? ' (archivée)' : ''}
                         </option>
                       ))}
                     </>
@@ -1716,6 +1957,51 @@ export default function AdminProductsView({ onShowToast }) {
                 {errors.duree && (
                   <span style={{ color: '#dc2626', fontSize: '13px', fontWeight: 600, marginTop: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}>
                     ⚠ {errors.duree}
+                  </span>
+                )}
+              </div>
+
+              <div className="admin-field" style={{ margin: 0 }}>
+                <label style={{ fontSize: '14px', fontWeight: 700, marginBottom: '6px', display: 'block' }}>
+                  Garantie de l'article (facultative)
+                </label>
+                <div style={{ display: 'grid', gridTemplateColumns: 'minmax(90px, 1fr) minmax(110px, 1fr)', gap: '8px' }}>
+                  <input
+                    type="number"
+                    min="1"
+                    max="1200"
+                    placeholder="Durée"
+                    value={form.garantie_duree}
+                    onChange={(e) => {
+                      setForm({ ...form, garantie_duree: e.target.value });
+                      if (errors.garantie_duree) setErrors((prev) => ({ ...prev, garantie_duree: null }));
+                    }}
+                    aria-label="Durée de garantie"
+                    style={{
+                      width: '100%',
+                      padding: '13px 16px',
+                      borderRadius: '12px',
+                      border: errors.garantie_duree ? '2px solid #dc2626' : '1.5px solid var(--line)',
+                      fontSize: '15px',
+                    }}
+                  />
+                  <select
+                    value={form.garantie_unite}
+                    onChange={(e) => setForm({ ...form, garantie_unite: e.target.value })}
+                    aria-label="Unité de la garantie"
+                    style={{ width: '100%', padding: '13px 12px', borderRadius: '12px', border: '1.5px solid var(--line)', fontSize: '15px' }}
+                  >
+                    <option value="jours">Jour(s)</option>
+                    <option value="mois">Mois</option>
+                    <option value="ans">An(s)</option>
+                  </select>
+                </div>
+                <span style={{ fontSize: '12px', color: 'var(--mut)', marginTop: '4px', display: 'block' }}>
+                  Indiquez une durée pour afficher la garantie sur la fiche client. Laissez vide si aucune garantie spécifique n'est proposée.
+                </span>
+                {errors.garantie_duree && (
+                  <span style={{ color: '#dc2626', fontSize: '13px', fontWeight: 600, marginTop: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    ⚠ {errors.garantie_duree}
                   </span>
                 )}
               </div>
@@ -2056,7 +2342,13 @@ export default function AdminProductsView({ onShowToast }) {
                       aspectRatio: '1',
                     }}
                   >
-                    <img
+                    <input
+                      id={`product-image-replace-${idx}`}
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => handleReplaceImageSelect(e, idx)}
+                      style={{ display: 'none' }}
+                    />                    <img
                       src={img.chemin}
                       alt={`Photo ${idx + 1}`}
                       style={{ width: '100%', height: '100%', objectFit: 'cover' }}
@@ -2084,6 +2376,28 @@ export default function AdminProductsView({ onShowToast }) {
                       {img.is_principal ? '★ Principale' : '☆ Définir'}
                     </button>
 
+                    {/* Remplacer uniquement cette photo */}
+                    <button
+                      type="button"
+                      onClick={() => document.getElementById(`product-image-replace-${idx}`)?.click()}
+                      title="Choisir une nouvelle image pour remplacer celle-ci"
+                      aria-label={`Remplacer la photo ${idx + 1}`}
+                      style={{
+                        position: 'absolute',
+                        left: '6px',
+                        bottom: '6px',
+                        background: 'rgba(0,0,0,0.72)',
+                        color: '#fff',
+                        border: 'none',
+                        borderRadius: '6px',
+                        padding: '4px 7px',
+                        fontSize: '11px',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      ↻ Remplacer
+                    </button>
                     {/* Bouton Supprimer */}
                     <button
                       type="button"

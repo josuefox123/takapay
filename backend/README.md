@@ -7,6 +7,26 @@
 <a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
 </p>
 
+## Production performance
+
+Do not serve production traffic with `php artisan serve`. Point the web server at
+the `public/` directory and use PHP-FPM or the hosting provider's persistent PHP
+worker. In the production PHP runtime, enable OPcache (`opcache.enable=1`).
+
+Set `APP_ENV=production` and `APP_DEBUG=false` in the server environment, then
+run these commands from `backend/` for each deployment:
+
+```bash
+composer install --no-dev --optimize-autoloader --no-interaction
+php artisan migrate --force
+php artisan optimize
+```
+
+The catalogue/dashboard index migration reduces scans as transaction, payment,
+and catalogue tables grow. For a large live database, schedule that migration
+with the deployment because adding indexes can temporarily affect database
+performance.
+
 ## About Laravel
 
 Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:

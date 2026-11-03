@@ -2,13 +2,104 @@ import { useState, useEffect } from 'react';
 import { adminService } from '../../services/adminService';
 import AdminIcon from './AdminIcon';
 
-export default function AdminUsersView({ onShowToast }) {
+export default function AdminUsersView({ onShowToast, currentUser }) {
   const [users, setUsers] = useState([]);
   const [meta, setMeta] = useState({ current_page: 1, last_page: 1, total: 0, per_page: 15 });
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [roleFilter, setRoleFilter] = useState('tous');
   const [search, setSearch] = useState('');
+
+  const isSuperAdmin = currentUser?.role === 'super_admin' || adminService.getUser()?.role === 'super_admin';
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [createForm, setCreateForm] = useState({
+    nom: '',
+    prenom: '',
+    email: '',
+    telephone: '',
+    role: 'admin',
+    password: '',
+  });
+  const [createLoading, setCreateLoading] = useState(false);
+  const [createError, setCreateError] = useState('');
+  const [createdAdmin, setCreatedAdmin] = useState(null);
+  const [copied, setCopied] = useState(false);
+
+  const generateRandomPassword = () => {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%&*';
+    let pwd = 'Tk@';
+    for (let i = 0; i < 9; i++) {
+      pwd += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return pwd;
+  };
+
+  const handleOpenCreateModal = () => {
+    setCreateForm({
+      nom: '',
+      prenom: '',
+      email: '',
+      telephone: '',
+      role: 'admin',
+      password: generateRandomPassword(),
+    });
+    setCreateError('');
+    setCreatedAdmin(null);
+    setCopied(false);
+    setShowCreateModal(true);
+  };
+
+  const handleCreateAdminSubmit = async (e) => {
+    e.preventDefault();
+    setCreateError('');
+    if (!createForm.nom.trim()) {
+      setCreateError('Le nom est requis.');
+      return;
+    }
+    if (!createForm.email.trim()) {
+      setCreateError("L'adresse e-mail est requise.");
+      return;
+    }
+    if (!createForm.password || createForm.password.length < 8) {
+      setCreateError('Le mot de passe temporaire doit comporter au moins 8 caractères.');
+      return;
+    }
+
+    setCreateLoading(true);
+    try {
+      const res = await adminService.createUser({
+        ...createForm,
+        statut_compte: 'actif',
+      });
+      const newUser = res.data || res;
+      setCreatedAdmin({
+        user: newUser,
+        password: createForm.password,
+      });
+      if (onShowToast) {
+        onShowToast(`Administrateur ${newUser.prenom || ''} ${newUser.nom} créé avec succès !`);
+      }
+      adminService.getUsers(page).then((response) => {
+        if (response.data) setUsers(response.data);
+        if (response.meta) setMeta(response.meta);
+      });
+    } catch (err) {
+      const msg = err.errors
+        ? Object.values(err.errors).flat().join(' ')
+        : (err.message || "Erreur lors de la création de l'administrateur.");
+      setCreateError(msg);
+    } finally {
+      setCreateLoading(false);
+    }
+  };
+
+  const handleCopyCredentials = () => {
+    if (!createdAdmin) return;
+    const text = `Identifiants TakaPay Admin :\nURL : ${window.location.origin}/admin/connexion\nEmail : ${createdAdmin.user.email}\nMot de passe temporaire : ${createdAdmin.password}`;
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   useEffect(() => {
     let isMounted = true;
@@ -57,11 +148,37 @@ export default function AdminUsersView({ onShowToast }) {
 
   return (
     <div>
-      <div style={{ marginBottom: '24px' }}>
-        <h1 className="admin-header-title">Gestion des Utilisateurs</h1>
-        <p className="admin-header-sub">
-          Supervisez les clients, livreurs partenaires et administrateurs de la plateforme
-        </p>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '16px', marginBottom: '24px' }}>
+        <div>
+          <h1 className="admin-header-title">Gestion des Utilisateurs</h1>
+          <p className="admin-header-sub">
+            Supervisez les clients, livreurs partenaires et administrateurs de la plateforme
+          </p>
+        </div>
+        {isSuperAdmin && (
+          <button
+            type="button"
+            onClick={handleOpenCreateModal}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '10px 18px',
+              borderRadius: '12px',
+              background: 'var(--r)',
+              color: '#ffffff',
+              border: 'none',
+              fontWeight: 700,
+              fontSize: '13px',
+              cursor: 'pointer',
+              boxShadow: '0 4px 14px rgba(225, 29, 72, 0.3)',
+              transition: 'transform 0.15s ease',
+            }}
+          >
+            <AdminIcon name="plus" size={16} />
+            <span>Créer un administrateur</span>
+          </button>
+        )}
       </div>
 
       {/* Cartes récapitulatives KPI harmonisées avec les autres vues admin */}
@@ -310,6 +427,380 @@ export default function AdminUsersView({ onShowToast }) {
           </div>
         </div>
       </div>
+
+      {/* Modal de création d'administrateur */}
+      {showCreateModal && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0, 0, 0, 0.65)',
+            zIndex: 1000,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '24px 16px',
+            backdropFilter: 'blur(5px)',
+            boxSizing: 'border-box',
+            overflowY: 'auto',
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !createLoading) {
+              setShowCreateModal(false);
+              setCreatedAdmin(null);
+            }
+          }}
+        >
+          <div
+            style={{
+              background: 'var(--card)',
+              border: '1.5px solid var(--line)',
+              borderRadius: '20px',
+              maxWidth: '560px',
+              width: '100%',
+              padding: '32px',
+              boxShadow: '0 25px 60px rgba(0,0,0,0.3)',
+              boxSizing: 'border-box',
+              position: 'relative',
+            }}
+          >
+            {createdAdmin ? (
+              <div>
+                <div style={{ textAlign: 'center', marginBottom: '20px' }}>
+                  <div
+                    style={{
+                      width: '56px',
+                      height: '56px',
+                      borderRadius: '50%',
+                      background: 'rgba(16, 185, 129, 0.12)',
+                      color: '#10b981',
+                      display: 'grid',
+                      placeItems: 'center',
+                      margin: '0 auto 14px',
+                      fontSize: '28px',
+                    }}
+                  >
+                    ✓
+                  </div>
+                  <h2 style={{ fontSize: '20px', fontWeight: 800, color: 'var(--ink)', margin: 0 }}>
+                    Administrateur créé avec succès !
+                  </h2>
+                  <p style={{ margin: '8px 0 0', fontSize: '13px', color: 'var(--mut)', lineHeight: 1.5 }}>
+                    Un e-mail de bienvenue contenant ses accès de connexion a été envoyé à <strong>{createdAdmin.user.email}</strong>.
+                    Lors de sa première connexion, le système lui demandera obligatoirement de définir son mot de passe personnel.
+                  </p>
+                </div>
+
+                <div
+                  style={{
+                    background: 'var(--bg)',
+                    borderRadius: '12px',
+                    border: '1px solid var(--line)',
+                    padding: '16px 20px',
+                    marginBottom: '24px',
+                    fontSize: '13px',
+                  }}
+                >
+                  <div style={{ marginBottom: '10px' }}>
+                    <span style={{ color: 'var(--mut)', display: 'block', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                      Identifiant (Email)
+                    </span>
+                    <strong style={{ color: 'var(--ink)', fontSize: '14px' }}>{createdAdmin.user.email}</strong>
+                  </div>
+                  <div>
+                    <span style={{ color: 'var(--mut)', display: 'block', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                      Mot de passe temporaire
+                    </span>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginTop: '2px' }}>
+                      <code style={{ fontSize: '15px', fontWeight: 700, color: 'var(--r)', background: 'var(--soft)', padding: '4px 8px', borderRadius: '6px' }}>
+                        {createdAdmin.password}
+                      </code>
+                      <button
+                        type="button"
+                        onClick={handleCopyCredentials}
+                        style={{
+                          padding: '6px 12px',
+                          borderRadius: '8px',
+                          border: '1px solid var(--line)',
+                          background: 'var(--card)',
+                          color: copied ? '#10b981' : 'var(--ink)',
+                          fontSize: '12px',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {copied ? '✓ Copié !' : 'Copier'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowCreateModal(false);
+                    setCreatedAdmin(null);
+                  }}
+                  style={{
+                    width: '100%',
+                    padding: '12px',
+                    borderRadius: '10px',
+                    background: 'var(--ink)',
+                    color: 'var(--bg)',
+                    border: 'none',
+                    fontWeight: 700,
+                    fontSize: '14px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Fermer
+                </button>
+              </div>
+            ) : (
+              <form onSubmit={handleCreateAdminSubmit}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px' }}>
+                  <div>
+                    <h2 style={{ fontSize: '20px', fontWeight: 800, color: 'var(--ink)', margin: 0 }}>
+                      Créer un administrateur
+                    </h2>
+                    <p style={{ margin: '4px 0 0', fontSize: '13px', color: 'var(--mut)' }}>
+                      Renseignez les informations du nouvel administrateur
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowCreateModal(false)}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      fontSize: '20px',
+                      cursor: 'pointer',
+                      color: 'var(--mut)',
+                      padding: '4px',
+                    }}
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                {createError && (
+                  <div
+                    style={{
+                      background: 'rgba(239, 68, 68, 0.1)',
+                      color: '#ef4444',
+                      padding: '10px 14px',
+                      borderRadius: '8px',
+                      marginBottom: '16px',
+                      fontSize: '13px',
+                      fontWeight: 500,
+                    }}
+                  >
+                    {createError}
+                  </div>
+                )}
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '14px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--ink)', marginBottom: '6px' }}>
+                      Nom *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={createForm.nom}
+                      onChange={(e) => setCreateForm({ ...createForm, nom: e.target.value })}
+                      placeholder="Ex: Doe"
+                      style={{
+                        width: '100%',
+                        padding: '10px 12px',
+                        borderRadius: '8px',
+                        border: '1.5px solid var(--line)',
+                        background: 'var(--bg)',
+                        color: 'var(--ink)',
+                        fontSize: '13px',
+                        boxSizing: 'border-box',
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--ink)', marginBottom: '6px' }}>
+                      Prénom
+                    </label>
+                    <input
+                      type="text"
+                      value={createForm.prenom}
+                      onChange={(e) => setCreateForm({ ...createForm, prenom: e.target.value })}
+                      placeholder="Ex: John"
+                      style={{
+                        width: '100%',
+                        padding: '10px 12px',
+                        borderRadius: '8px',
+                        border: '1.5px solid var(--line)',
+                        background: 'var(--bg)',
+                        color: 'var(--ink)',
+                        fontSize: '13px',
+                        boxSizing: 'border-box',
+                      }}
+                    />
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '14px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--ink)', marginBottom: '6px' }}>
+                      Email professionnel *
+                    </label>
+                    <input
+                      type="email"
+                      required
+                      value={createForm.email}
+                      onChange={(e) => setCreateForm({ ...createForm, email: e.target.value })}
+                      placeholder="admin@takapay.bj"
+                      style={{
+                        width: '100%',
+                        padding: '10px 12px',
+                        borderRadius: '8px',
+                        border: '1.5px solid var(--line)',
+                        background: 'var(--bg)',
+                        color: 'var(--ink)',
+                        fontSize: '13px',
+                        boxSizing: 'border-box',
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--ink)', marginBottom: '6px' }}>
+                      Téléphone
+                    </label>
+                    <input
+                      type="tel"
+                      value={createForm.telephone}
+                      onChange={(e) => setCreateForm({ ...createForm, telephone: e.target.value })}
+                      placeholder="+229 90000000"
+                      style={{
+                        width: '100%',
+                        padding: '10px 12px',
+                        borderRadius: '8px',
+                        border: '1.5px solid var(--line)',
+                        background: 'var(--bg)',
+                        color: 'var(--ink)',
+                        fontSize: '13px',
+                        boxSizing: 'border-box',
+                      }}
+                    />
+                  </div>
+                </div>
+
+                <div style={{ marginBottom: '14px' }}>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--ink)', marginBottom: '6px' }}>
+                    Rôle d'administration
+                  </label>
+                  <select
+                    value={createForm.role}
+                    onChange={(e) => setCreateForm({ ...createForm, role: e.target.value })}
+                    style={{
+                      width: '100%',
+                      padding: '10px 12px',
+                      borderRadius: '8px',
+                      border: '1.5px solid var(--line)',
+                      background: 'var(--bg)',
+                      color: 'var(--ink)',
+                      fontSize: '13px',
+                      boxSizing: 'border-box',
+                    }}
+                  >
+                    <option value="admin">Administrateur (Gestion standard)</option>
+                    <option value="super_admin">Super Administrateur (Droits complets)</option>
+                  </select>
+                </div>
+
+                <div style={{ marginBottom: '20px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                    <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--ink)' }}>
+                      Mot de passe temporaire *
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setCreateForm({ ...createForm, password: generateRandomPassword() })}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: 'var(--r)',
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        padding: 0,
+                      }}
+                    >
+                      ↻ Régénérer
+                    </button>
+                  </div>
+                  <input
+                    type="text"
+                    required
+                    value={createForm.password}
+                    onChange={(e) => setCreateForm({ ...createForm, password: e.target.value })}
+                    placeholder="Minimum 8 caractères"
+                    style={{
+                      width: '100%',
+                      padding: '10px 12px',
+                      borderRadius: '8px',
+                      border: '1.5px solid var(--line)',
+                      background: 'var(--bg)',
+                      color: 'var(--ink)',
+                      fontSize: '13px',
+                      fontWeight: 600,
+                      boxSizing: 'border-box',
+                    }}
+                  />
+                  <p style={{ margin: '6px 0 0', fontSize: '12px', color: 'var(--mut)', lineHeight: 1.4 }}>
+                    ℹ️ Ce mot de passe temporaire sera transmis par e-mail. Le nouvel administrateur devra obligatoirement le modifier dès sa première connexion.
+                  </p>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                  <button
+                    type="button"
+                    onClick={() => setShowCreateModal(false)}
+                    disabled={createLoading}
+                    style={{
+                      padding: '10px 18px',
+                      borderRadius: '8px',
+                      border: '1px solid var(--line)',
+                      background: 'transparent',
+                      color: 'var(--ink)',
+                      fontSize: '13px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Annuler
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={createLoading}
+                    style={{
+                      padding: '10px 20px',
+                      borderRadius: '8px',
+                      border: 'none',
+                      background: 'var(--r)',
+                      color: '#ffffff',
+                      fontSize: '13px',
+                      fontWeight: 700,
+                      cursor: createLoading ? 'not-allowed' : 'pointer',
+                      opacity: createLoading ? 0.7 : 1,
+                    }}
+                  >
+                    {createLoading ? 'Création en cours...' : "Créer l'administrateur"}
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

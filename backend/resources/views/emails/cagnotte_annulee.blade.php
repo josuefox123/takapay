@@ -150,25 +150,39 @@
 <body>
     <div class="container">
         <!-- En-tête -->
-        <div class="header">
-            <div class="brand-badge">TakaPay · Annulation & Remboursement</div>
-            <h1>Demande d'annulation prise en compte</h1>
-            <p>Votre demande a bien été enregistrée par nos services</p>
+        <div class="header" @if(!empty($isAdmin)) style="background: #211d1b; border-bottom: 4px solid #dc2626;" @endif>
+            <div class="brand-badge">
+                {{ !empty($isAdmin) ? 'TakaPay Admin · Notification Annulation' : 'TakaPay · Annulation & Remboursement' }}
+            </div>
+            <h1>{{ !empty($isAdmin) ? 'Demande d\'annulation reçue' : 'Demande d\'annulation prise en compte' }}</h1>
+            <p>{{ !empty($isAdmin) ? 'Un client a demandé l\'annulation de sa cagnotte' : 'Votre demande a bien été enregistrée par nos services' }}</p>
         </div>
 
         <!-- Contenu -->
         <div class="content">
             <div class="greeting">
-                Bonjour {{ $user?->prenom ? $user->prenom . ' ' . $user->nom : ($user?->nom ?? 'Cher(e) Client(e)') }},
+                @if(!empty($isAdmin))
+                    Bonjour l'équipe TakaPay,
+                @else
+                    Bonjour {{ $user?->prenom ? $user->prenom . ' ' . $user->nom : ($user?->nom ?? 'Cher(e) Client(e)') }},
+                @endif
             </div>
 
             <p class="intro-text">
-                Nous accusons bonne réception de votre demande d'annulation pour votre cagnotte concernant l'article <strong>{{ $cagnotte->produit?->nom ?? 'votre produit' }}</strong>.
+                @if(!empty($isAdmin))
+                    Le client <strong>{{ $user?->prenom ? $user->prenom . ' ' . $user->nom : ($user?->nom ?? 'Client') }}</strong> ({{ $user?->telephone ?? $telephone }}) a initié une demande d'annulation pour sa cagnotte concernant l'article <strong>{{ $cagnotte->produit?->nom ?? 'votre produit' }}</strong>.
+                @else
+                    Nous accusons bonne réception de votre demande d'annulation pour votre cagnotte concernant l'article <strong>{{ $cagnotte->produit?->nom ?? 'votre produit' }}</strong>.
+                @endif
             </p>
 
             <div class="alert-box">
                 <p class="alert-box-text">
-                    ⏳ <strong>Délai de traitement :</strong> Conformément à nos conditions d'utilisation, votre virement de remboursement vous sera retourné sous un délai maximal de <strong>24 heures</strong> sur votre compte Mobile Money.
+                    @if(!empty($isAdmin))
+                        ⏳ <strong>Remboursement à traiter sous 24H :</strong> Un montant net de <strong>{{ number_format($montantRemboursement, 0, ',', ' ') }} FCFA</strong> (après déduction des 5% de frais de gestion) doit être versé au client sur son compte Mobile Money au numéro : <strong>{{ $telephone }}</strong>.
+                    @else
+                        ⏳ <strong>Délai de traitement :</strong> Conformément à nos conditions d'utilisation, votre virement de remboursement vous sera retourné sous un délai maximal de <strong>24 heures</strong> sur votre compte Mobile Money.
+                    @endif
                 </p>
             </div>
 

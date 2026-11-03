@@ -257,6 +257,50 @@ class AuthController extends Controller
     }
 
     /**
+     * Mettre à jour le mot de passe de l'utilisateur / administrateur.
+     */
+    public function updatePassword(Request $request): JsonResponse
+    {
+        $user = $request->user('sanctum') ?? $request->user();
+
+        if (! $user && $request->filled('user_id')) {
+            $user = User::find($request->user_id);
+        }
+
+        if (! $user) {
+            return response()->json(['message' => 'Non authentifié. Veuillez vous connecter.'], 401);
+        }
+
+        $request->validate([
+            'current_password' => ['nullable', 'string'],
+            'new_password' => ['required', 'string', 'min:8'],
+            'confirm_password' => ['required', 'string', 'same:new_password'],
+        ]);
+
+        if (! $user->must_change_password) {
+            if (! $request->filled('current_password')) {
+                throw ValidationException::withMessages([
+                    'current_password' => ['Veuillez renseigner votre mot de passe actuel.'],
+                ]);
+            }
+            if (! Hash::check($request->current_password, $user->password)) {
+                throw ValidationException::withMessages([
+                    'current_password' => ['Le mot de passe actuel est incorrect.'],
+                ]);
+            }
+        }
+
+        $user->password = Hash::make($request->new_password);
+        $user->must_change_password = false;
+        $user->save();
+
+        return response()->json([
+            'message' => 'Votre mot de passe a été défini avec succès.',
+            'user' => new UserResource($user->fresh()),
+        ]);
+    }
+
+    /**
      * Envoie un SMS OTP au numéro de l'utilisateur (Termii, passerelle générique ou journal local)
      */
     private function sendOtpSms(string $telephone, string $code): bool

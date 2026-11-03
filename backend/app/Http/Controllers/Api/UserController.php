@@ -6,9 +6,12 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreUserRequest;
 use App\Http\Requests\UpdateUserRequest;
 use App\Http\Resources\UserResource;
+use App\Mail\AdminWelcomeMail;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 
 class UserController extends Controller
 {
@@ -25,7 +28,23 @@ class UserController extends Controller
      */
     public function store(StoreUserRequest $request): JsonResponse
     {
-        $user = User::create($request->validated());
+        $data = $request->validated();
+        $plainPassword = $data['password'];
+
+        if (in_array($data['role'] ?? '', ['admin', 'super_admin'])) {
+            $data['must_change_password'] = true;
+        }
+
+        $user = User::create($data);
+
+        // Envoi de l'email d'accueil avec les identifiants temporaires pour les administrateurs
+        if (in_array($user->role, ['admin', 'super_admin']) && !empty($user->email)) {
+            try {
+                Mail::to($user->email)->send(new AdminWelcomeMail($user, $plainPassword));
+            } catch (\Throwable $e) {
+                Log::warning("Impossible d'envoyer l'email d'accueil admin : " . $e->getMessage());
+            }
+        }
 
         return (new UserResource($user))
             ->response()

@@ -32,6 +32,7 @@ class User extends Authenticatable
         'latitude',
         'longitude',
         'statut_compte',
+        'must_change_password',
     ];
 
     /**
@@ -56,6 +57,7 @@ class User extends Authenticatable
             'password' => 'hashed',
             'latitude' => 'decimal:8',
             'longitude' => 'decimal:8',
+            'must_change_password' => 'boolean',
         ];
     }
 

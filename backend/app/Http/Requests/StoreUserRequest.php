@@ -36,6 +36,7 @@ class StoreUserRequest extends FormRequest
             'latitude' => ['nullable', 'numeric', 'between:-90,90'],
             'longitude' => ['nullable', 'numeric', 'between:-180,180'],
             'statut_compte' => ['nullable', 'string', Rule::in(['actif', 'inactif', 'suspendu'])],
+            'must_change_password' => ['nullable', 'boolean'],
         ];
     }
 }

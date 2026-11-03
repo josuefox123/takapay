@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import ClientProductCard from './ClientProductCard';
-import { CATEGORIES, SUBCATEGORIES_MAP, PRODUCTS, rebuildCategories, mapAdminProductToClient, resolveImageUrl } from '../../data/clientStore';
-import { adminService } from '../../services/adminService';
+import { CATEGORIES, SUBCATEGORIES_MAP, PRODUCTS, rebuildCategories, resolveImageUrl } from '../../data/clientStore';
 
 export default function ClientCatalogView({
   products = PRODUCTS,
@@ -21,39 +20,8 @@ export default function ClientCatalogView({
   const [liveProducts, setLiveProducts] = useState(() => {
     return Array.isArray(products) && products.length > 0 ? products : [...PRODUCTS];
   });
-  const [loading, setLoading] = useState(false);
-
-  // Synchronisation directe avec l'API / Base de données Laravel
-  const loadLiveData = async () => {
-    try {
-      setLoading(true);
-      const [cats, prds] = await Promise.all([
-        adminService.getCategories(),
-        adminService.getProduits(),
-      ]);
-
-      if (Array.isArray(cats) && cats.length > 0) {
-        rebuildCategories(cats);
-        setCategoriesList([...CATEGORIES]);
-        setSubcategoriesMap({ ...SUBCATEGORIES_MAP });
-      }
-
-      if (Array.isArray(prds) && prds.length > 0) {
-        const clientPrds = prds.map(mapAdminProductToClient).filter(Boolean);
-        PRODUCTS.length = 0;
-        PRODUCTS.push(...clientPrds);
-        setLiveProducts(clientPrds);
-      }
-    } catch {
-      // Ignorer les erreurs réseau
-    } finally {
-      setLoading(false);
-    }
-  };
 
   useEffect(() => {
-    loadLiveData();
-
     const handleCatUpdate = (e) => {
       const cats = e.detail;
       if (Array.isArray(cats)) {
@@ -209,6 +177,9 @@ export default function ClientCatalogView({
     }
     return true;
   });
+  const archivedCagnotteProducts = selectedCategory === 'Tous' && !isPromoOnly
+    ? liveProducts.filter((product) => product.categoryArchived && product.has_cagnotte)
+    : [];
 
   return (
     <div>
@@ -323,6 +294,28 @@ export default function ClientCatalogView({
             ))}
           </div>
         </>
+      )}
+
+      {!searchQuery && archivedCagnotteProducts.length > 0 && (
+        <section style={{ marginTop: '28px' }}>
+          <div style={{ marginBottom: '14px' }}>
+            <h3 style={{ fontSize: '18px', fontWeight: 800, color: 'var(--tx)', margin: '0 0 4px' }}>
+              Articles avec une cagnotte existante
+            </h3>
+            <small style={{ color: 'var(--mu)' }}>
+              Ces articles restent accessibles pour retrouver et poursuivre les cagnottes déjà créées.
+            </small>
+          </div>
+          <div className="client-grid">
+            {archivedCagnotteProducts.map((product) => (
+              <ClientProductCard
+                key={`cagnotte-${product.id}`}
+                product={product}
+                onSelect={onSelectProduct}
+              />
+            ))}
+          </div>
+        </section>
       )}
 
       {/* Si recherche textuelle active, afficher les résultats correspondants */}

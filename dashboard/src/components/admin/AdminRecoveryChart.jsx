@@ -3,46 +3,17 @@ import { useState } from 'react';
 export default function AdminRecoveryChart({ recouvrement, kpis }) {
   const [viewMode, setViewMode] = useState('semaine'); // 'semaine' | 'mois'
 
-  const cetteSemaine =
-    recouvrement?.cette_semaine && recouvrement.cette_semaine.length > 0
-      ? recouvrement.cette_semaine
-      : [
-          { jour: 'Lun', label: 'Lun 26/10', cash: 0, cagnotte: 0, total: 0 },
-          { jour: 'Mar', label: 'Mar 27/10', cash: 2555, cagnotte: 0, total: 2555 },
-          { jour: 'Mer', label: 'Mer 28/10', cash: 6805, cagnotte: 0, total: 6805 },
-          { jour: 'Jeu', label: 'Jeu 29/10', cash: 0, cagnotte: 0, total: 0 },
-          { jour: 'Ven', label: 'Ven 30/10', cash: 0, cagnotte: 0, total: 0 },
-          { jour: 'Sam', label: 'Sam 31/10', cash: 0, cagnotte: 0, total: 0 },
-          { jour: 'Dim', label: 'Dim 01/11', cash: 0, cagnotte: 0, total: 0 },
-        ];
-
-  const semaines =
-    recouvrement?.semaines && recouvrement.semaines.length > 0
-      ? recouvrement.semaines
-      : [
-          { semaine: 'S1', label: 'Semaine 1', periode: '28/09 au 04/10', cash: 0, cagnotte: 0, total: 0 },
-          { semaine: 'S2', label: 'Semaine 2', periode: '05/10 au 11/10', cash: 0, cagnotte: 0, total: 0 },
-          { semaine: 'S3', label: 'Semaine 3', periode: '12/10 au 18/10', cash: 0, cagnotte: 0, total: 0 },
-          { semaine: 'S4', label: 'Semaine 4', periode: '19/10 au 25/10', cash: 0, cagnotte: 500, total: 500 },
-          { semaine: 'Cette sem.', label: 'Cette semaine', periode: '26/10 au 01/11', is_current: true, cash: 9360, cagnotte: 0, total: 9360 },
-        ];
+  const cetteSemaine = recouvrement?.cette_semaine || [];
+  const semaines = recouvrement?.semaines || [];
 
   const computedSemaineTotal = cetteSemaine.reduce((sum, j) => sum + (Number(j.total || j.cash || j.cagnotte) || 0), 0);
   const computedMoisTotal = semaines.reduce((sum, s) => sum + (Number(s.total || s.cash || s.cagnotte) || 0), 0);
 
-  const totalSemaine =
-    recouvrement?.total_semaine !== undefined && Number(recouvrement.total_semaine) > 0
-      ? Number(recouvrement.total_semaine)
-      : computedSemaineTotal > 0 ? computedSemaineTotal : 9360;
-
-  const totalMois =
-    recouvrement?.total_mois !== undefined && Number(recouvrement.total_mois) > 0
-      ? Number(recouvrement.total_mois)
-      : computedMoisTotal > 0
-      ? computedMoisTotal
-      : Number(kpis?.encaisse_ce_mois) > 0
-      ? Number(kpis.encaisse_ce_mois)
-      : 9860;
+  const totalSemaine = Number(recouvrement?.total_semaine ?? computedSemaineTotal) || 0;
+  const fallbackMoisTotal = semaines.length > 0
+    ? computedMoisTotal
+    : Number(kpis?.encaisse_ce_mois) || 0;
+  const totalMois = Number(recouvrement?.total_mois ?? fallbackMoisTotal) || 0;
 
   const activeItems = viewMode === 'semaine' ? cetteSemaine : semaines;
 
@@ -148,6 +119,11 @@ export default function AdminRecoveryChart({ recouvrement, kpis }) {
       </div>
 
       <div className="admin-bars-chart">
+        {activeItems.length === 0 && (
+          <p style={{ gridColumn: '1 / -1', textAlign: 'center', color: 'var(--mut)' }}>
+            Aucune donnée d’encaissement disponible.
+          </p>
+        )}
         {activeItems.map((item, index) => {
           const cashVal = Number(item.cash !== undefined ? item.cash : item.attendu) || 0;
           const cagnotteVal = Number(item.cagnotte !== undefined ? item.cagnotte : item.encaisse) || 0;
