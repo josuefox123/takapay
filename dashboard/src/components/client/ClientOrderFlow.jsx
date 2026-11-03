@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { FeexPayProvider, FeexPayButton } from '@feexpay/react-sdk';
 import '@feexpay/react-sdk/style.css';
 import { formatFCFA } from '../../data/clientStore';
-import { adminService } from '../../services/adminService';
+import { adminService, registerFeexpayWatchdog, cancelFeexpayPayment } from '../../services/adminService';
 import ClientForgotPinModal from './ClientForgotPinModal';
 
 export default function ClientOrderFlow({
@@ -491,6 +491,21 @@ export default function ClientOrderFlow({
     return () => obs.disconnect();
   }, []);
 
+  // Watchdog FeexPay : arrêt immédiat de la rotation après 30s ou annulation
+  useEffect(() => {
+    const unregister = registerFeexpayWatchdog((event) => {
+      setPaymentData(null);
+      setIsProcessingPayment(false);
+      setPaymentCountdown(0);
+      if (event?.hadStarted) {
+        setPaymentFailed(true);
+      }
+    });
+    return () => {
+      unregister();
+    };
+  }, []);
+
   const handleFeexpayCallback = async (response) => {
     console.log('FeexPay callback reçu :', response);
     const isSuccess = response && (
@@ -500,6 +515,7 @@ export default function ClientOrderFlow({
     );
 
     if (!isSuccess) {
+      cancelFeexpayPayment('CANCELLED', true);
       setPaymentData(null);
       setIsProcessingPayment(false);
       setPaymentCountdown(0);
@@ -1259,7 +1275,7 @@ export default function ClientOrderFlow({
                   Paiement non finalisé
                 </h3>
                 <p style={{ fontSize: '13.5px', color: '#4b5563', lineHeight: 1.5, maxWidth: '380px', margin: '0 auto 20px' }}>
-                  La transaction a été annulée ou n'a pas pu être validée. Aucun montant n'a été débité. Vous pouvez relancer le paiement dès maintenant.
+                  La transaction a été annulée ou n'a pas pu être validée dans les 30 secondes. Aucun montant n'a été débité. Vous pouvez relancer le paiement dès maintenant.
                 </p>
                 <button
                   type="button"
@@ -1269,6 +1285,7 @@ export default function ClientOrderFlow({
                     setIsProcessingPayment(false);
                     setPaymentCountdown(0);
                     setPaymentData(null);
+                    handleInitiateFeexpay(true);
                   }}
                   style={{ padding: '14px', fontSize: '15px' }}
                 >

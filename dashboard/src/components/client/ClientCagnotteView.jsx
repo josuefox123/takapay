@@ -16,7 +16,7 @@ import {
 import { FeexPayProvider, FeexPayButton } from '@feexpay/react-sdk';
 import '@feexpay/react-sdk/style.css';
 import { formatFCFA, getStoredCagnottes, mapBackendCagnotteToClient } from '../../data/clientStore';
-import { adminService } from '../../services/adminService';
+import { adminService, registerFeexpayWatchdog, cancelFeexpayPayment } from '../../services/adminService';
 
 // ---------- Styles partagés ----------
 const overlayStyle = {
@@ -189,6 +189,21 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
     swapLogo();
 
     return () => obs.disconnect();
+  }, []);
+
+  // Watchdog FeexPay : arrêt immédiat de la rotation après 30s ou annulation
+  useEffect(() => {
+    const unregister = registerFeexpayWatchdog((event) => {
+      setPaymentData(null);
+      setIsProcessingPayment(false);
+      setPaymentCountdown(0);
+      if (event?.hadStarted) {
+        setPaymentFailed(true);
+      }
+    });
+    return () => {
+      unregister();
+    };
   }, []);
 
   const handleDeleteUnpaidCagnotte = async (item) => {
@@ -611,6 +626,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
     );
 
     if (!isSuccess) {
+      cancelFeexpayPayment('CANCELLED', true);
       setPaymentData(null);
       setIsProcessingPayment(false);
       setPaymentCountdown(0);
@@ -2629,7 +2645,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                   Versement non finalisé
                 </h3>
                 <p style={{ fontSize: '13.5px', color: '#4b5563', lineHeight: 1.5, maxWidth: '380px', margin: '0 auto 20px' }}>
-                  La transaction a été annulée ou n'a pas pu être validée. Aucun montant n'a été débité. Vous pouvez relancer le versement dès maintenant.
+                  La transaction a été annulée ou n'a pas pu être validée dans les 30 secondes. Aucun montant n'a été débité. Vous pouvez relancer le versement dès maintenant.
                 </p>
                 <button
                   type="button"

@@ -1534,4 +1534,187 @@ export const adminService = {
   },
 };
 
-  export default adminService;
+// --- FeexPay Watchdog : Arrêt de la rotation après 30s ou annulation ---
+let isWatchdogInitialized = false;
+let currentWatchdogCallback = null;
+let watchdogPaymentTimer = null;
+let watchdogFastPoll = null;
+let isPaymentCancelled = false;
+let paymentStartTime = 0;
+let activeTransactionRef = null;
+
+export const cancelFeexpayPayment = (reason = 'CANCELLED', wasSubmitted = null) => {
+  const hadStarted = wasSubmitted !== null ? wasSubmitted : (paymentStartTime > 0);
+  isPaymentCancelled = true;
+  if (watchdogPaymentTimer) {
+    clearTimeout(watchdogPaymentTimer);
+    watchdogPaymentTimer = null;
+  }
+  if (watchdogFastPoll) {
+    clearInterval(watchdogFastPoll);
+    watchdogFastPoll = null;
+  }
+  paymentStartTime = 0;
+  activeTransactionRef = null;
+
+  if (typeof currentWatchdogCallback === 'function') {
+    try {
+      currentWatchdogCallback({
+        status: 'FAILED',
+        reason,
+        hadStarted,
+        message: reason === 'TIMEOUT'
+          ? 'Le paiement a expiré après 30 secondes d’attente. Aucun montant n’a été débité.'
+          : 'La transaction a été annulée.'
+      });
+    } catch (e) {
+      console.warn('Watchdog callback error:', e);
+    }
+  }
+
+  // Fermeture forcée des modales FeexPay résiduelles pour stopper immédiatement tout spinner
+  if (typeof document !== 'undefined') {
+    setTimeout(() => {
+      document.querySelectorAll('div.fixed.inset-0.z-50').forEach((el) => {
+        if (
+          el.textContent.includes('FeexPay') ||
+          el.querySelector('img[src*="logo"]') ||
+          el.textContent.includes('Remplissez les champs') ||
+          el.textContent.includes('Traitement en cours')
+        ) {
+          el.remove();
+        }
+      });
+    }, 40);
+  }
+};
+
+export const registerFeexpayWatchdog = (callback) => {
+  currentWatchdogCallback = callback;
+  if (isWatchdogInitialized) {
+    return () => {
+      if (currentWatchdogCallback === callback) {
+        currentWatchdogCallback = null;
+      }
+    };
+  }
+  isWatchdogInitialized = true;
+
+  if (typeof window === 'undefined') return () => {};
+
+  const originalFetch = window.fetch;
+
+  window.fetch = async function (...args) {
+    const url = typeof args[0] === 'string' ? args[0] : (args[0]?.url || '');
+
+    // 1. Déclenchement de la demande de paiement FeexPay
+    if (url.includes('api.feexpay.me/api/transactions/requesttopay/integration')) {
+      isPaymentCancelled = false;
+      paymentStartTime = Date.now();
+      if (watchdogPaymentTimer) clearTimeout(watchdogPaymentTimer);
+      if (watchdogFastPoll) clearInterval(watchdogFastPoll);
+
+      // Limite stricte de 30 secondes demandée : si non validé, arrêt immédiat du spinner
+      watchdogPaymentTimer = setTimeout(() => {
+        console.warn('[Takapay] ⏱️ 30s écoulées sans validation : arrêt immédiat de la rotation.');
+        cancelFeexpayPayment('TIMEOUT', true);
+      }, 30000);
+
+      try {
+        const res = await originalFetch.apply(this, args);
+        const clone = res.clone();
+        clone.json().then((data) => {
+          if (data?.reference) {
+            activeTransactionRef = data.reference;
+            // Polling rapide toutes les 2.5s pour détecter l'annulation téléphone immédiatement
+            watchdogFastPoll = setInterval(async () => {
+              if (isPaymentCancelled || !activeTransactionRef) {
+                clearInterval(watchdogFastPoll);
+                return;
+              }
+              try {
+                const pollRes = await originalFetch(`https://api.feexpay.me/api/transactions/getrequesttopay/integration/${activeTransactionRef}`);
+                if (!pollRes.ok) return;
+                const pollData = await pollRes.json();
+                const st = pollData?.status?.toUpperCase();
+                if (st === 'FAILED' || st === 'CANCELLED' || pollData?.reason?.includes('CANCEL') || pollData?.reason?.includes('LOW_BALANCE')) {
+                  clearInterval(watchdogFastPoll);
+                  cancelFeexpayPayment('CANCELLED', true);
+                } else if (st === 'SUCCESSFUL' || st === 'SUCCESS') {
+                  clearInterval(watchdogFastPoll);
+                  if (watchdogPaymentTimer) clearTimeout(watchdogPaymentTimer);
+                }
+              } catch { /* ignore */ }
+            }, 2500);
+          } else if (data?.statusCode === '92' || data?.status === 'FAILED') {
+            cancelFeexpayPayment('CANCELLED', true);
+          }
+        }).catch(() => {});
+        return res;
+      } catch (err) {
+        cancelFeexpayPayment('CANCELLED', true);
+        throw err;
+      }
+    }
+
+    // 2. Interception du polling FeexPay pour stopper son spinner
+    if (url.includes('api.feexpay.me/api/transactions/getrequesttopay/integration/')) {
+      const elapsed = Date.now() - paymentStartTime;
+      if (isPaymentCancelled || (paymentStartTime > 0 && elapsed >= 30000)) {
+        return new Response(JSON.stringify({
+          status: 'FAILED',
+          reason: isPaymentCancelled ? 'TRANSACTION_CANCELLED' : 'TIMEOUT',
+          message: isPaymentCancelled ? 'La transaction a été annulée.' : 'Délai de paiement de 30 secondes dépassé.'
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+
+      const res = await originalFetch.apply(this, args);
+      try {
+        const clone = res.clone();
+        clone.json().then((pollData) => {
+          const st = pollData?.status?.toUpperCase();
+          if (st === 'FAILED' || st === 'CANCELLED' || pollData?.reason?.includes('CANCEL')) {
+            cancelFeexpayPayment('CANCELLED', true);
+          } else if (st === 'SUCCESSFUL' || st === 'SUCCESS') {
+            if (watchdogPaymentTimer) clearTimeout(watchdogPaymentTimer);
+            if (watchdogFastPoll) clearInterval(watchdogFastPoll);
+          }
+        }).catch(() => {});
+      } catch { /* ignore */ }
+      return res;
+    }
+
+    return originalFetch.apply(this, args);
+  };
+
+  // 3. Écoute des clics sur "Retour" ou "Fermer (X)" dans la fenêtre FeexPay
+  document.addEventListener('click', (e) => {
+    const target = e.target;
+    if (!target) return;
+    const btn = target.closest('button');
+    if (!btn) return;
+
+    const isRetour = btn.textContent?.trim() === 'Retour' && btn.closest('.fixed.inset-0.z-50');
+    const isClose = (btn.getAttribute('aria-label') === 'Fermer la passerelle de paiement') ||
+                    (btn.closest('.fixed.inset-0.z-50') && btn.querySelector('path[d*="M6 18L18 6"]'));
+    if (isRetour || isClose) {
+      console.log('[Takapay] Annulation détectée (clic Retour/Fermer FeexPay).');
+      cancelFeexpayPayment('CANCELLED');
+    }
+  }, true);
+
+  return () => {
+    if (currentWatchdogCallback === callback) {
+      currentWatchdogCallback = null;
+    }
+  };
+};
+
+adminService.registerFeexpayWatchdog = registerFeexpayWatchdog;
+adminService.cancelFeexpayPayment = cancelFeexpayPayment;
+
+export default adminService;
+
