@@ -71,22 +71,31 @@ export default function ClientProductCard({ product, onSelect }) {
             top: '8px',
             right: '8px',
             zIndex: 4,
-            width: '32px',
-            height: '32px',
+            width: '36px',
+            height: '36px',
             borderRadius: '50%',
-            background: 'rgba(255, 255, 255, 0.92)',
-            backdropFilter: 'blur(4px)',
-            border: '1px solid rgba(0,0,0,0.08)',
+            background: 'rgba(255, 255, 255, 0.95)',
+            backdropFilter: 'blur(6px)',
+            border: '1px solid rgba(220, 38, 38, 0.2)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            color: isFavorite ? 'var(--r, #dc2626)' : 'var(--mu, #6e6663)',
+            color: 'var(--r, #dc2626)',
             cursor: 'pointer',
-            transition: 'transform 0.15s ease',
-            boxShadow: '0 2px 6px rgba(0,0,0,0.08)',
+            transition: 'transform 0.18s ease, box-shadow 0.18s ease',
+            boxShadow: '0 3px 8px rgba(0,0,0,0.1)',
           }}
         >
-          <svg viewBox="0 0 24 24" width="16" height="16" fill={isFavorite ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2">
+          <svg
+            viewBox="0 0 24 24"
+            width="21"
+            height="21"
+            fill={isFavorite ? 'currentColor' : 'none'}
+            stroke="currentColor"
+            strokeWidth="2.2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
             <path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z" />
           </svg>
         </button>
