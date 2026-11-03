@@ -392,8 +392,10 @@ export default function ClientOrderFlow({
     }
   };
 
+  const [autoOpenFeexpay, setAutoOpenFeexpay] = useState(false);
+
   // Étape 4 : Initialisation FeexPay (MTN, Moov, Celtis, Carte Bancaire)
-  const handleInitiateFeexpay = async () => {
+  const handleInitiateFeexpay = async (shouldAutoOpen = false) => {
     if (isOutOfStock) {
       setError('Désolé, cet article est actuellement en rupture de stock.');
       return;
@@ -417,7 +419,12 @@ export default function ClientOrderFlow({
         note_livraison: deliveryNote,
         coordonnees_gps: deliveryCoords,
       });
-      if (initRes) setPaymentData(initRes);
+      if (initRes) {
+        setPaymentData(initRes);
+        if (shouldAutoOpen) {
+          setAutoOpenFeexpay(true);
+        }
+      }
     } catch (err) {
       console.warn('initiatePayment notice:', err);
       setError(err?.message || 'Erreur lors de la préparation du paiement FeexPay.');
@@ -427,10 +434,62 @@ export default function ClientOrderFlow({
   };
 
   useEffect(() => {
-    if (step === 4 && (orderType === 'cagnotte' || cashPaymentMode === 'online') && !paymentData && !submitting && !isOutOfStock) {
-      handleInitiateFeexpay();
+    if ((step === 'payment' || step === 4) && (orderType === 'cagnotte' || cashPaymentMode === 'online') && !paymentData && !submitting && !isOutOfStock) {
+      handleInitiateFeexpay(false);
     }
   }, [step, orderType, cashPaymentMode, paymentAmount]);
+
+  // Déclenchement automatique fluide dès que FeexPay est prêt
+  useEffect(() => {
+    if (paymentData && autoOpenFeexpay) {
+      const tryClick = () => {
+        const btn = document.querySelector('#feexpay-button-container button');
+        if (btn) {
+          btn.click();
+          setAutoOpenFeexpay(false);
+          return true;
+        }
+        return false;
+      };
+
+      if (!tryClick()) {
+        const interval = setInterval(() => {
+          if (tryClick()) clearInterval(interval);
+        }, 80);
+        const timeout = setTimeout(() => {
+          clearInterval(interval);
+          setAutoOpenFeexpay(false);
+        }, 3000);
+        return () => {
+          clearInterval(interval);
+          clearTimeout(timeout);
+        };
+      }
+    }
+  }, [paymentData, autoOpenFeexpay]);
+
+  // Observer pour remplacer le logo FeexPay par le logo Takapay dans la modale
+  useEffect(() => {
+    const swapLogo = () => {
+      const logos = document.querySelectorAll('img[src*="feexpay_logo"], img[alt="Logo"]');
+      logos.forEach((img) => {
+        if (!img.dataset.takapayLogo) {
+          img.src = '/logo.png';
+          img.alt = 'Takapay';
+          img.style.maxHeight = '38px';
+          img.style.width = 'auto';
+          img.style.objectFit = 'contain';
+          img.dataset.takapayLogo = 'true';
+        }
+      });
+    };
+
+    const obs = new MutationObserver(swapLogo);
+    obs.observe(document.body, { childList: true, subtree: true });
+    swapLogo();
+
+    return () => obs.disconnect();
+  }, []);
 
   const handleFeexpayCallback = async (response) => {
     console.log('FeexPay callback reçu :', response);
@@ -889,8 +948,9 @@ export default function ClientOrderFlow({
                   }}
                 >
                   <div>
-                    <div style={{ fontSize: '13px', fontWeight: 800, color: 'var(--r)' }}>
-                      🎯 Mode Cagnotte Takapay
+                    <div style={{ fontSize: '13px', fontWeight: 800, color: 'var(--r)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '18px' }}>savings</span>
+                      <span>Mode Cagnotte Takapay</span>
                     </div>
                     <div style={{ fontSize: '11px', color: 'var(--mu)', marginTop: '3px' }}>
                       {product?.payment?.mode === 'libre'
@@ -1235,20 +1295,50 @@ export default function ClientOrderFlow({
                     Moyens de paiement acceptés par FeexPay :
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '8px' }}>
-                    <div style={{ padding: '10px 12px', background: '#fef9c3', border: '1px solid #fde047', borderRadius: '10px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12.5px', fontWeight: 700, color: '#854d0e' }}>
-                      <span>🟡</span>
+                    {/* MTN MoMo */}
+                    <div style={{ padding: '8px 10px', background: '#ffffff', border: '1.5px solid #e2e8f0', borderRadius: '10px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', fontWeight: 700, color: '#1e293b', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
+                      <svg width="36" height="24" viewBox="0 0 60 40" fill="none" style={{ borderRadius: '4px', flexShrink: 0 }}>
+                        <rect width="60" height="40" rx="6" fill="#FFCC00"/>
+                        <rect x="3" y="5" width="26" height="30" rx="4" fill="#000000"/>
+                        <ellipse cx="16" cy="20" rx="11" ry="8" stroke="#FFCC00" strokeWidth="2" fill="none"/>
+                        <text x="16" y="23" textAnchor="middle" fill="#FFCC00" fontFamily="Arial, sans-serif" fontWeight="900" fontSize="7" letterSpacing="0.5">MTN</text>
+                        <rect x="31" y="5" width="26" height="30" rx="4" fill="#004F71"/>
+                        <text x="44" y="22" textAnchor="middle" fill="#FFFFFF" fontFamily="Arial, sans-serif" fontWeight="900" fontSize="9">MoMo</text>
+                      </svg>
                       <span>MTN MoMo</span>
                     </div>
-                    <div style={{ padding: '10px 12px', background: '#ffedd5', border: '1px solid #fed7aa', borderRadius: '10px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12.5px', fontWeight: 700, color: '#9a3412' }}>
-                      <span>🔵</span>
+
+                    {/* Moov Money */}
+                    <div style={{ padding: '8px 10px', background: '#ffffff', border: '1.5px solid #e2e8f0', borderRadius: '10px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', fontWeight: 700, color: '#1e293b', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
+                      <svg width="36" height="24" viewBox="0 0 60 40" fill="none" style={{ borderRadius: '4px', flexShrink: 0 }}>
+                        <rect width="60" height="40" rx="6" fill="#005CA9"/>
+                        <path d="M6 34C18 34 22 18 32 18C42 18 46 34 54 34" stroke="#F37023" strokeWidth="3" strokeLinecap="round" fill="none"/>
+                        <text x="30" y="17" textAnchor="middle" fill="#FFFFFF" fontFamily="Arial, sans-serif" fontWeight="900" fontSize="10" letterSpacing="-0.3">moov</text>
+                        <text x="30" y="29" textAnchor="middle" fill="#F37023" fontFamily="Arial, sans-serif" fontWeight="800" fontSize="7.5" letterSpacing="0.8">MONEY</text>
+                      </svg>
                       <span>Moov Money</span>
                     </div>
-                    <div style={{ padding: '10px 12px', background: '#dcfce7', border: '1px solid #bbf7d0', borderRadius: '10px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12.5px', fontWeight: 700, color: '#166534' }}>
-                      <span>🟢</span>
+
+                    {/* Celtiis Cash */}
+                    <div style={{ padding: '8px 10px', background: '#ffffff', border: '1.5px solid #e2e8f0', borderRadius: '10px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', fontWeight: 700, color: '#1e293b', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
+                      <svg width="36" height="24" viewBox="0 0 60 40" fill="none" style={{ borderRadius: '4px', flexShrink: 0 }}>
+                        <rect width="60" height="40" rx="6" fill="#082A4D"/>
+                        <circle cx="16" cy="18" r="7" fill="#00A859"/>
+                        <path d="M16 13L21 21H11L16 13Z" fill="#FFFFFF"/>
+                        <text x="38" y="17" textAnchor="middle" fill="#00A859" fontFamily="Arial, sans-serif" fontWeight="900" fontSize="9" letterSpacing="-0.2">celtiis</text>
+                        <text x="38" y="27" textAnchor="middle" fill="#FFFFFF" fontFamily="Arial, sans-serif" fontWeight="800" fontSize="7.5" letterSpacing="0.5">cash</text>
+                      </svg>
                       <span>Celtis Cash</span>
                     </div>
-                    <div style={{ padding: '10px 12px', background: '#e0f2fe', border: '1px solid #bae6fd', borderRadius: '10px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12.5px', fontWeight: 700, color: '#0369a1' }}>
-                      <span>💳</span>
+
+                    {/* Carte Bancaire */}
+                    <div style={{ padding: '8px 10px', background: '#ffffff', border: '1.5px solid #e2e8f0', borderRadius: '10px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', fontWeight: 700, color: '#1e293b', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
+                      <svg width="42" height="24" viewBox="0 0 70 40" fill="none" style={{ borderRadius: '4px', flexShrink: 0, border: '1px solid #e2e8f0' }}>
+                        <rect width="70" height="40" rx="6" fill="#F8FAFC"/>
+                        <text x="18" y="24" textAnchor="middle" fill="#1A1F71" fontFamily="Arial, sans-serif" fontWeight="900" fontSize="12" fontStyle="italic" letterSpacing="-0.5">VISA</text>
+                        <circle cx="46" cy="20" r="9" fill="#EB001B"/>
+                        <circle cx="56" cy="20" r="9" fill="#F79E1B" fillOpacity="0.88"/>
+                      </svg>
                       <span>Carte Bancaire</span>
                     </div>
                   </div>
@@ -1259,33 +1349,35 @@ export default function ClientOrderFlow({
                 </div>
 
                 {paymentData ? (
-                  <FeexPayProvider>
-                    <FeexPayButton
-                      id={paymentData.shop_id}
-                      token={paymentData.api_key}
-                      amount={paymentData.amount}
-                      description={`Takapay - ${product?.n || 'Commande'}`}
-                      mode={paymentData.mode || 'SANDBOX'}
-                      currency="XOF"
-                      customId={paymentData.reference}
-                      callback_info={{
-                        fullname: paymentName.trim() || `${activeUser?.prenom || user?.prenom || prenom || ''} ${activeUser?.nom || user?.nom || nom || ''}`.trim() || 'Client',
-                        first_name: (paymentName.trim().split(' ')[0]) || activeUser?.prenom || user?.prenom || prenom || 'Client',
-                        last_name: (paymentName.trim().split(' ').slice(1).join(' ')) || activeUser?.nom || user?.nom || nom || '',
-                        email: (email && email.trim()) || (activeUser?.email && !activeUser.email.endsWith('@client.takapay.bj') ? activeUser.email : '') || '',
-                        phone: paymentPhone.trim() || activeUser?.telephone || activeUser?.phone || user?.telephone || user?.phone || phone || '',
-                        phoneNumber: paymentPhone.trim() || activeUser?.telephone || activeUser?.phone || user?.telephone || user?.phone || phone || '',
-                      }}
-                      callback={handleFeexpayCallback}
-                      buttonText={`Payer ${formatFCFA(paymentAmount)} avec FeexPay`}
-                      buttonClass="client-btn w100"
-                    />
-                  </FeexPayProvider>
+                  <div id="feexpay-button-container">
+                    <FeexPayProvider>
+                      <FeexPayButton
+                        id={paymentData.shop_id}
+                        token={paymentData.api_key}
+                        amount={paymentData.amount}
+                        description={`Takapay - ${product?.n || 'Commande'}`}
+                        mode={paymentData.mode || 'SANDBOX'}
+                        currency="XOF"
+                        customId={paymentData.reference}
+                        callback_info={{
+                          fullname: paymentName.trim() || `${activeUser?.prenom || user?.prenom || prenom || ''} ${activeUser?.nom || user?.nom || nom || ''}`.trim() || 'Client',
+                          first_name: (paymentName.trim().split(' ')[0]) || activeUser?.prenom || user?.prenom || prenom || 'Client',
+                          last_name: (paymentName.trim().split(' ').slice(1).join(' ')) || activeUser?.nom || user?.nom || nom || '',
+                          email: (email && email.trim()) || (activeUser?.email && !activeUser.email.endsWith('@client.takapay.bj') ? activeUser.email : '') || '',
+                          phone: paymentPhone.trim() || activeUser?.telephone || activeUser?.phone || user?.telephone || user?.phone || phone || '',
+                          phoneNumber: paymentPhone.trim() || activeUser?.telephone || activeUser?.phone || user?.telephone || user?.phone || phone || '',
+                        }}
+                        callback={handleFeexpayCallback}
+                        buttonText={`Payer ${formatFCFA(paymentAmount)} avec FeexPay`}
+                        buttonClass="client-btn w100"
+                      />
+                    </FeexPayProvider>
+                  </div>
                 ) : (
                   <button
                     type="button"
                     className="client-btn w100"
-                    onClick={handleInitiateFeexpay}
+                    onClick={() => handleInitiateFeexpay(true)}
                     disabled={submitting || isOutOfStock}
                     style={{
                       padding: '16px',
@@ -1298,7 +1390,7 @@ export default function ClientOrderFlow({
                     {isOutOfStock
                       ? 'Article en rupture de stock'
                       : submitting
-                      ? 'Préparation FeexPay...'
+                      ? 'Préparation du paiement...'
                       : `Payer ${formatFCFA(paymentAmount)} avec FeexPay`}
                   </button>
                 )}

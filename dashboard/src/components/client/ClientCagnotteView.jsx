@@ -168,6 +168,29 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
     return () => window.removeEventListener('takapay_cagnotte_updated', sync);
   }, [user]);
 
+  // Observer pour remplacer le logo FeexPay par le logo Takapay dans la modale
+  useEffect(() => {
+    const swapLogo = () => {
+      const logos = document.querySelectorAll('img[src*="feexpay_logo"], img[alt="Logo"]');
+      logos.forEach((img) => {
+        if (!img.dataset.takapayLogo) {
+          img.src = '/logo.png';
+          img.alt = 'Takapay';
+          img.style.maxHeight = '38px';
+          img.style.width = 'auto';
+          img.style.objectFit = 'contain';
+          img.dataset.takapayLogo = 'true';
+        }
+      });
+    };
+
+    const obs = new MutationObserver(swapLogo);
+    obs.observe(document.body, { childList: true, subtree: true });
+    swapLogo();
+
+    return () => obs.disconnect();
+  }, []);
+
   const handleDeleteUnpaidCagnotte = async (item) => {
     if (!item?.backendId || !item.canDelete) return;
     const productName = item.product?.n || 'cette cagnotte';
@@ -2202,7 +2225,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                     marginTop: '12px',
                   }}
                 >
-                  <span style={{ fontSize: '24px' }}>🎯</span>
+                  <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '24px', color: '#dc2626' }}>savings</span>
                   <div style={{ fontSize: '12.5px', color: '#991b1b', lineHeight: 1.4 }}>
                     <b>Cotisation à votre rythme :</b> Vous cotisez librement et à votre propre rythme. Votre article est débloqué et expédié dès que votre jauge atteint <b>100%</b> ({formatFCFA(cagnotte.montantTotal || cagnotte.product?.p)}).
                   </div>
@@ -2692,20 +2715,50 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                     Moyens de paiement acceptés par FeexPay :
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '8px' }}>
-                    <div style={{ padding: '8px 10px', background: '#fef9c3', border: '1px solid #fde047', borderRadius: '10px', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: 700, color: '#854d0e' }}>
-                      <span>🟡</span>
+                    {/* MTN MoMo */}
+                    <div style={{ padding: '8px 10px', background: '#ffffff', border: '1.5px solid #e2e8f0', borderRadius: '10px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', fontWeight: 700, color: '#1e293b', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
+                      <svg width="36" height="24" viewBox="0 0 60 40" fill="none" style={{ borderRadius: '4px', flexShrink: 0 }}>
+                        <rect width="60" height="40" rx="6" fill="#FFCC00"/>
+                        <rect x="3" y="5" width="26" height="30" rx="4" fill="#000000"/>
+                        <ellipse cx="16" cy="20" rx="11" ry="8" stroke="#FFCC00" strokeWidth="2" fill="none"/>
+                        <text x="16" y="23" textAnchor="middle" fill="#FFCC00" fontFamily="Arial, sans-serif" fontWeight="900" fontSize="7" letterSpacing="0.5">MTN</text>
+                        <rect x="31" y="5" width="26" height="30" rx="4" fill="#004F71"/>
+                        <text x="44" y="22" textAnchor="middle" fill="#FFFFFF" fontFamily="Arial, sans-serif" fontWeight="900" fontSize="9">MoMo</text>
+                      </svg>
                       <span>MTN MoMo</span>
                     </div>
-                    <div style={{ padding: '8px 10px', background: '#ffedd5', border: '1px solid #fed7aa', borderRadius: '10px', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: 700, color: '#9a3412' }}>
-                      <span>🔵</span>
+
+                    {/* Moov Money */}
+                    <div style={{ padding: '8px 10px', background: '#ffffff', border: '1.5px solid #e2e8f0', borderRadius: '10px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', fontWeight: 700, color: '#1e293b', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
+                      <svg width="36" height="24" viewBox="0 0 60 40" fill="none" style={{ borderRadius: '4px', flexShrink: 0 }}>
+                        <rect width="60" height="40" rx="6" fill="#005CA9"/>
+                        <path d="M6 34C18 34 22 18 32 18C42 18 46 34 54 34" stroke="#F37023" strokeWidth="3" strokeLinecap="round" fill="none"/>
+                        <text x="30" y="17" textAnchor="middle" fill="#FFFFFF" fontFamily="Arial, sans-serif" fontWeight="900" fontSize="10" letterSpacing="-0.3">moov</text>
+                        <text x="30" y="29" textAnchor="middle" fill="#F37023" fontFamily="Arial, sans-serif" fontWeight="800" fontSize="7.5" letterSpacing="0.8">MONEY</text>
+                      </svg>
                       <span>Moov Money</span>
                     </div>
-                    <div style={{ padding: '8px 10px', background: '#dcfce7', border: '1px solid #bbf7d0', borderRadius: '10px', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: 700, color: '#166534' }}>
-                      <span>🟢</span>
+
+                    {/* Celtiis Cash */}
+                    <div style={{ padding: '8px 10px', background: '#ffffff', border: '1.5px solid #e2e8f0', borderRadius: '10px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', fontWeight: 700, color: '#1e293b', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
+                      <svg width="36" height="24" viewBox="0 0 60 40" fill="none" style={{ borderRadius: '4px', flexShrink: 0 }}>
+                        <rect width="60" height="40" rx="6" fill="#082A4D"/>
+                        <circle cx="16" cy="18" r="7" fill="#00A859"/>
+                        <path d="M16 13L21 21H11L16 13Z" fill="#FFFFFF"/>
+                        <text x="38" y="17" textAnchor="middle" fill="#00A859" fontFamily="Arial, sans-serif" fontWeight="900" fontSize="9" letterSpacing="-0.2">celtiis</text>
+                        <text x="38" y="27" textAnchor="middle" fill="#FFFFFF" fontFamily="Arial, sans-serif" fontWeight="800" fontSize="7.5" letterSpacing="0.5">cash</text>
+                      </svg>
                       <span>Celtis Cash</span>
                     </div>
-                    <div style={{ padding: '8px 10px', background: '#e0f2fe', border: '1px solid #bae6fd', borderRadius: '10px', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: 700, color: '#0369a1' }}>
-                      <span>💳</span>
+
+                    {/* Carte Bancaire */}
+                    <div style={{ padding: '8px 10px', background: '#ffffff', border: '1.5px solid #e2e8f0', borderRadius: '10px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', fontWeight: 700, color: '#1e293b', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
+                      <svg width="42" height="24" viewBox="0 0 70 40" fill="none" style={{ borderRadius: '4px', flexShrink: 0, border: '1px solid #e2e8f0' }}>
+                        <rect width="70" height="40" rx="6" fill="#F8FAFC"/>
+                        <text x="18" y="24" textAnchor="middle" fill="#1A1F71" fontFamily="Arial, sans-serif" fontWeight="900" fontSize="12" fontStyle="italic" letterSpacing="-0.5">VISA</text>
+                        <circle cx="46" cy="20" r="9" fill="#EB001B"/>
+                        <circle cx="56" cy="20" r="9" fill="#F79E1B" fillOpacity="0.88"/>
+                      </svg>
                       <span>Carte Bancaire</span>
                     </div>
                   </div>

@@ -1644,3 +1644,13 @@ html.motion-ready .way-card.reveal-on-scroll.is-visible:nth-child(2) {
     transition-duration: .01ms !important;
   }
 }
+
+/* Remplacement du logo FeexPay par le logo Takapay dans la modale de paiement */
+div.fixed.inset-0.z-50 img[src*="feexpay_logo"],
+div.fixed.inset-0.z-50 img[alt="Logo"],
+.feexpay-modal img[src*="feexpay_logo"] {
+  content: url('/logo.png') !important;
+  max-height: 38px !important;
+  width: auto !important;
+  object-fit: contain !important;
+}
