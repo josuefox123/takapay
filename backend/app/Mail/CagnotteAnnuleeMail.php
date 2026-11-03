@@ -19,15 +19,20 @@ class CagnotteAnnuleeMail extends Mailable
         public ?User $user,
         public float $montantRemboursement,
         public float $fraisAnnulation,
-        public string $telephone
+        public string $telephone,
+        public bool $isAdmin = false
     ) {
     }
 
     public function envelope(): Envelope
     {
         $nomProduit = $this->cagnotte->produit?->nom ?? 'votre article';
+        $subject = $this->isAdmin
+            ? '⚠️ [Admin TakaPay] Demande d\'annulation de cagnotte - ' . $nomProduit . ' (#' . $this->cagnotte->id . ')'
+            : 'Confirmation d\'annulation de votre cagnotte pour ' . $nomProduit . ' - TakaPay';
+
         return new Envelope(
-            subject: 'Confirmation d\'annulation de votre cagnotte pour ' . $nomProduit . ' - TakaPay',
+            subject: $subject,
         );
     }
 

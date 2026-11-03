@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Mail\CagnotteAnnuleeMail;
 use App\Mail\CagnottePreteMail;
+use App\Mail\CagnotteRetablieMail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -200,13 +201,67 @@ class Cagnotte extends Model
             }
 
             if ($targetEmail) {
-                Mail::to($targetEmail)->send(new CagnotteAnnuleeMail($this, $user, $montantRemboursement, $fraisAnnulation, $telephone));
-                Log::info('Email "Cagnotte annulée" envoyé à ' . $targetEmail . ' (cagnotte #' . $this->id . ')');
+                Mail::to($targetEmail)->send(new CagnotteAnnuleeMail($this, $user, $montantRemboursement, $fraisAnnulation, $telephone, false));
+                Log::info('Email "Cagnotte annulée (Client)" envoyé à ' . $targetEmail . ' (cagnotte #' . $this->id . ')');
             } else {
                 Log::warning('Demande d\'annulation enregistrée mais aucun email valide pour utilisateur #' . ($user?->id ?? 'anonyme'));
             }
+
+            // 3. Email à l'administrateur TakaPay
+            $adminEmail = config('mail.admin_email') ?? env('ADMIN_NOTIFICATION_EMAIL');
+            if (!empty($adminEmail)) {
+                Mail::to($adminEmail)->send(new CagnotteAnnuleeMail($this, $user, $montantRemboursement, $fraisAnnulation, $telephone, true));
+                Log::info('Email "Cagnotte annulée (Admin TakaPay)" envoyé à ' . $adminEmail . ' (cagnotte #' . $this->id . ')');
+            }
         } catch (\Throwable $e) {
             Log::error('Erreur lors de l\'envoi de la notification "Cagnotte annulée" : ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Envoie la notification et l'email au client et à l'administrateur TakaPay lorsqu'une cagnotte est rétablie.
+     */
+    public function sendCagnotteRetablieNotification(?string $overrideEmail = null): void
+    {
+        try {
+            $user = $this->utilisateur;
+
+            // 1. Notification dans l'espace client
+            if ($user) {
+                Notification::create([
+                    'utilisateur_id' => $user->id,
+                    'cagnotte_id' => $this->id,
+                    'titre' => '🎉 Cagnotte rétablie avec succès !',
+                    'message' => "Bonne nouvelle ! Votre cagnotte pour l'article " . ($this->produit?->nom ?? '') . " a bien été rétablie. Vos cotisations (" . number_format($this->montant_verse, 0, ',', ' ') . " FCFA) sont conservées et aucun frais n'a été déduit. Vous pouvez reprendre vos versements dès maintenant.",
+                    'type' => 'succes',
+                    'statut' => 'non_lu',
+                ]);
+            }
+
+            // 2. Recherche d'un email client valide
+            $targetEmail = null;
+            if (!empty($overrideEmail) && filter_var($overrideEmail, FILTER_VALIDATE_EMAIL) && !str_ends_with($overrideEmail, '@client.takapay.bj')) {
+                $targetEmail = $overrideEmail;
+            } elseif ($user && !empty($user->email) && !str_ends_with($user->email, '@client.takapay.bj') && filter_var($user->email, FILTER_VALIDATE_EMAIL)) {
+                $targetEmail = $user->email;
+            }
+
+            // Envoi au client
+            if ($targetEmail) {
+                Mail::to($targetEmail)->send(new CagnotteRetablieMail($this, $user, false));
+                Log::info('Email "Cagnotte rétablie (Client)" envoyé à ' . $targetEmail . ' (cagnotte #' . $this->id . ')');
+            } else {
+                Log::warning('Cagnotte rétablie mais aucun email valide pour utilisateur #' . ($user?->id ?? 'anonyme'));
+            }
+
+            // 3. Envoi à l'administrateur TakaPay
+            $adminEmail = config('mail.admin_email') ?? env('ADMIN_NOTIFICATION_EMAIL');
+            if (!empty($adminEmail)) {
+                Mail::to($adminEmail)->send(new CagnotteRetablieMail($this, $user, true));
+                Log::info('Email "Cagnotte rétablie (Admin TakaPay)" envoyé à ' . $adminEmail . ' (cagnotte #' . $this->id . ')');
+            }
+        } catch (\Throwable $e) {
+            Log::error('Erreur lors de l\'envoi de la notification "Cagnotte rétablie" : ' . $e->getMessage());
         }
     }
 }

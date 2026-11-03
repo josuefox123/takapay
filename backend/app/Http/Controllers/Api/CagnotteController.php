@@ -309,6 +309,12 @@ class CagnotteController extends Controller
             $produit->decrement('stock', 1);
         }
 
+        $clientEmail = $request->input('email')
+            ?? $cagnotte->utilisateur?->email
+            ?? $request->user('sanctum')?->email;
+
+        $cagnotte->sendCagnotteRetablieNotification($clientEmail);
+
         return response()->json([
             'success' => true,
             'message' => 'Votre cagnotte a été rétablie avec succès.',
