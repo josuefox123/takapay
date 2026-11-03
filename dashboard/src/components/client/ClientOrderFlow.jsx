@@ -1295,15 +1295,12 @@ export default function ClientOrderFlow({
                     Moyens de paiement acceptés par FeexPay :
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '8px' }}>
-                    {/* MTN MoMo */}
+                    {/* MTN */}
                     <div style={{ padding: '8px 10px', background: '#ffffff', border: '1.5px solid #e2e8f0', borderRadius: '10px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', fontWeight: 700, color: '#1e293b', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
                       <svg width="36" height="24" viewBox="0 0 60 40" fill="none" style={{ borderRadius: '4px', flexShrink: 0 }}>
                         <rect width="60" height="40" rx="6" fill="#FFCC00"/>
-                        <rect x="3" y="5" width="26" height="30" rx="4" fill="#000000"/>
-                        <ellipse cx="16" cy="20" rx="11" ry="8" stroke="#FFCC00" strokeWidth="2" fill="none"/>
-                        <text x="16" y="23" textAnchor="middle" fill="#FFCC00" fontFamily="Arial, sans-serif" fontWeight="900" fontSize="7" letterSpacing="0.5">MTN</text>
-                        <rect x="31" y="5" width="26" height="30" rx="4" fill="#004F71"/>
-                        <text x="44" y="22" textAnchor="middle" fill="#FFFFFF" fontFamily="Arial, sans-serif" fontWeight="900" fontSize="9">MoMo</text>
+                        <ellipse cx="30" cy="20" rx="22" ry="13" stroke="#000000" strokeWidth="2.5" fill="none"/>
+                        <text x="30" y="24.5" textAnchor="middle" fill="#000000" fontFamily="Arial, sans-serif" fontWeight="900" fontSize="13" letterSpacing="0.5">MTN</text>
                       </svg>
                       <span>MTN MoMo</span>
                     </div>
