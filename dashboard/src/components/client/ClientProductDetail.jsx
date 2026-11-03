@@ -456,18 +456,31 @@ export default function ClientProductDetail({
   }, [product?.id, product?.n, absoluteImageUrl, productPublicUrl]);
 
   // Message personnalisé pour WhatsApp envoyé directement au 0198741111 (+2290198741111)
-  // Formaté exactement comme CoinAfrique : texte d'intérêt + détails, terminé par le lien de l'article pour générer l'aperçu photo cliquable
-  const whatsappMessage = [
-    `Bonjour Takapay ! 👋`,
-    `Votre article *"${product?.n || product?.nom || 'Article'}"* m'intéresse sur Takapay.`,
-    ``,
-    `📋 *DÉTAILS :*`,
-    `• *Formule :* ${modeText}`,
-    colorText ? `• *Option :* ${colorText}` : null,
-    (clientNom || clientTel) ? `• *Client :* ${[clientNom, clientTel].filter(Boolean).join(' - ')}` : null,
-    ``,
+  // Formaté de façon propre, sans caractères spéciaux pouvant se transformer en '?' (émojis, puces, espaces insécables)
+  const cleanModeText = String(modeText || '')
+    .replace(/[\u202F\u00A0]/g, ' ')
+    .replace(/[·•]/g, '-');
+
+  const rawWhatsappLines = [
+    'Bonjour Takapay,',
+    `Votre article "${product?.n || product?.nom || 'Article'}" m'intéresse sur Takapay.`,
+    'Est-il toujours disponible ?',
+    '',
+    'Détails :',
+    `- Formule : ${cleanModeText}`,
+    colorText ? `- Option : ${colorText}` : null,
+    (clientNom || clientTel) ? `- Client : ${[clientNom, clientTel].filter(Boolean).join(' - ')}` : null,
+    '',
     productPublicUrl,
-  ].filter((line) => line !== null).join('\n');
+  ];
+
+  const whatsappMessage = rawWhatsappLines
+    .filter((line) => line !== null)
+    .join('\n')
+    .replace(/[\u202F\u00A0]/g, ' ')
+    .replace(/[’‘]/g, "'")
+    .replace(/[“”]/g, '"')
+    .replace(/[•·]/g, '-');
 
   const whatsappUrl = `https://wa.me/2290198741111?text=${encodeURIComponent(whatsappMessage)}`;
 
