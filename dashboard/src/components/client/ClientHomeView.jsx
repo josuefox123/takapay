@@ -72,7 +72,7 @@ export default function ClientHomeView({
   }, [categories, displayProducts]);
 
   return (
-    <div>
+    <div className="client-home-page">
       {/* 1. Carrousel d'accueil & articles dynamiques */}
       <ClientHeroCarousel
         products={displayProducts}
@@ -86,10 +86,9 @@ export default function ClientHomeView({
         <div className="home-reassurance-grid">
           <div className="home-reassurance-item">
             <div className="home-reassurance-icon">
-              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="2" y="5" width="20" height="14" rx="2" />
-                <line x1="2" y1="10" x2="22" y2="10" />
-              </svg>
+              <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '28px' }}>
+                credit_card
+              </span>
             </div>
             <div className="home-reassurance-text">
               <strong>Paiement sécurisé</strong>
@@ -99,9 +98,9 @@ export default function ClientHomeView({
 
           <div className="home-reassurance-item">
             <div className="home-reassurance-icon">
-              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z" />
-              </svg>
+              <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '28px' }}>
+                savings
+              </span>
             </div>
             <div className="home-reassurance-text">
               <strong>Cagnotte 100% libre</strong>
@@ -111,12 +110,9 @@ export default function ClientHomeView({
 
           <div className="home-reassurance-item">
             <div className="home-reassurance-icon">
-              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="1" y="3" width="15" height="13" />
-                <polygon points="16 8 20 8 23 11 23 16 16 16 16 8" />
-                <circle cx="5.5" cy="18.5" r="2.5" />
-                <circle cx="18.5" cy="18.5" r="2.5" />
-              </svg>
+              <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '28px' }}>
+                local_shipping
+              </span>
             </div>
             <div className="home-reassurance-text">
               <strong>Livraison garantie</strong>
@@ -126,9 +122,9 @@ export default function ClientHomeView({
 
           <div className="home-reassurance-item">
             <div className="home-reassurance-icon">
-              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
-              </svg>
+              <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '28px' }}>
+                support_agent
+              </span>
             </div>
             <div className="home-reassurance-text">
               <strong>Assistance directe</strong>
@@ -138,9 +134,11 @@ export default function ClientHomeView({
         </div>
       </section>
 
-      {/* 3. Nos Catégories (Nom en dessous, agrandissement au hover) */}
+      {/* Conteneur centré pour les sections de contenu */}
+      <div className="home-content-container">
+        {/* 3. Nos Catégories (Nom en dessous, agrandissement au hover) */}
       {categories.length > 0 && (
-        <section className="home-categories-cards-section" aria-label="Catégories d'articles">
+        <section id="nos-categories" className="home-categories-cards-section" aria-label="Catégories d'articles">
           <div className="client-sh" style={{ marginBottom: '18px' }}>
             <div>
               <h2>Nos Catégories</h2>
@@ -176,7 +174,13 @@ export default function ClientHomeView({
                     className="home-category-card-fallback"
                     style={{ display: cat.image ? 'none' : 'flex' }}
                   >
-                    <span style={{ fontSize: '40px' }}>{cat.icon || '🛍️'}</span>
+                    <span
+                      className="material-symbols-outlined notranslate"
+                      translate="no"
+                      style={{ fontSize: '38px', color: 'var(--r, #c62828)' }}
+                    >
+                      category
+                    </span>
                   </div>
                 </div>
                 <span className="home-category-name">{cat.name}</span>
@@ -186,12 +190,19 @@ export default function ClientHomeView({
         </section>
       )}
 
-      {/* 4. Rayon Promotions (en premier) */}
-      <section className="home-promos-section" style={{ marginBottom: '36px' }} aria-label="Rayon Promotions">
+      {/* 4. Promotions actives (en premier) */}
+      <section className="home-promos-section" style={{ marginBottom: '36px' }} aria-label="Promotions actives">
         <div className="client-sh">
           <div>
             <h2 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ color: 'var(--r, #c62828)' }}>🔥</span> Rayon Promotions
+              <span
+                className="material-symbols-outlined notranslate"
+                translate="no"
+                style={{ color: 'var(--r, #c62828)', fontSize: '24px' }}
+              >
+                local_fire_department
+              </span>
+              Promotions actives
             </h2>
             <small>Profitez de nos offres exclusives et réductions immédiates</small>
           </div>
@@ -226,7 +237,13 @@ export default function ClientHomeView({
               margin: '12px 0',
             }}
           >
-            <div style={{ fontSize: '32px', marginBottom: '8px' }}>🏷️</div>
+            <span
+              className="material-symbols-outlined notranslate"
+              translate="no"
+              style={{ fontSize: '38px', color: 'var(--mu, #706966)', display: 'block', margin: '0 auto 8px' }}
+            >
+              sell
+            </span>
             <strong style={{ fontSize: '15px', display: 'block', color: 'var(--tx)' }}>
               Aucune promotion disponible pour le moment
             </strong>
@@ -274,7 +291,13 @@ export default function ClientHomeView({
             margin: '16px 0',
           }}
         >
-          <div style={{ fontSize: '36px', marginBottom: '8px' }}>📦</div>
+          <span
+            className="material-symbols-outlined notranslate"
+            translate="no"
+            style={{ fontSize: '38px', color: 'var(--mu, #706966)', display: 'block', margin: '0 auto 8px' }}
+          >
+            inventory_2
+          </span>
           <strong style={{ fontSize: '16px', display: 'block', color: 'var(--tx)' }}>
             Aucun produit disponible pour le moment
           </strong>
@@ -328,54 +351,89 @@ export default function ClientHomeView({
           </div>
         </section>
       ))}
+      </div>
 
-      {/* 7. Footer officiel Takapay */}
+      {/* 7. Footer officiel Takapay épuré */}
       <footer className="client-footer">
         <div className="client-footer-grid">
+          {/* Colonne 1 : À propos & Paiement */}
           <div className="client-footer-brand">
             <h4>
               <span style={{ color: 'var(--r)' }}>TAKAPAY</span> BÉNIN
             </h4>
             <p>
-              La solution béninoise d'achat progressif et d'épargne libre pour tous vos équipements, appareils et produits du quotidien.
+              Plateforme d'achat progressif et d'épargne 100% libre. Achetez au comptant ou constituez votre cagnotte à votre rythme.
             </p>
             <div className="client-footer-badges">
-              <span className="client-footer-badge">🔒 Paiements sécurisés</span>
-              <span className="client-footer-badge">📱 MTN MoMo</span>
-              <span className="client-footer-badge">⚡ Moov Money</span>
-              <span className="client-footer-badge">🚀 FeexPay</span>
+              <span className="client-footer-badge">
+                <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '16px' }}>verified_user</span>
+                Paiement sécurisé via FeexPay
+              </span>
             </div>
           </div>
 
+          {/* Colonne 2 : Navigation */}
           <div className="client-footer-col">
-            <h5>Engagements & Garanties</h5>
+            <h5>Navigation</h5>
             <ul>
-              <li><span>✓ Cagnotte 100% libre sans intérêts</span></li>
-              <li><span>✓ 0 frais cachés sur les versements</span></li>
-              <li><span>✓ Livraison à domicile & points relais</span></li>
-              <li><span>✓ Remboursement garanti en cas d'annulation</span></li>
+              <li>
+                <button type="button" onClick={onGoCatalog}>
+                  <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '16px' }}>storefront</span>
+                  Boutique & Catalogue
+                </button>
+              </li>
+              <li>
+                <button type="button" onClick={onSelectPromo || onGoCatalog}>
+                  <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '16px' }}>local_fire_department</span>
+                  Promotions actives
+                </button>
+              </li>
+              <li>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const el = document.getElementById('nos-categories');
+                    if (el) {
+                      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }
+                  }}
+                >
+                  <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '16px' }}>category</span>
+                  Nos Catégories
+                </button>
+              </li>
             </ul>
           </div>
 
+          {/* Colonne 3 : Assistance & Contacts */}
           <div className="client-footer-col">
             <h5>Assistance & Contacts</h5>
             <ul>
               <li>
-                <a href="tel:+2290190000000">📞 Appel direct : +229 01 90 00 00</a>
+                <a href="tel:+2290190000000">
+                  <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '16px' }}>call</span>
+                  +229 01 90 00 00
+                </a>
               </li>
               <li>
-                <a href="https://wa.me/2290190000000" target="_blank" rel="noopener noreferrer">💬 Service WhatsApp</a>
+                <a href="https://wa.me/2290190000000" target="_blank" rel="noopener noreferrer">
+                  <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '16px' }}>chat</span>
+                  Assistance WhatsApp dédiée
+                </a>
               </li>
               <li>
-                <span>📍 Cotonou, République du Bénin</span>
+                <span>
+                  <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '16px' }}>location_on</span>
+                  Cotonou, République du Bénin
+                </span>
               </li>
             </ul>
           </div>
         </div>
 
+        {/* Droits réservés centrés */}
         <div className="client-footer-bottom">
-          <span>© {new Date().getFullYear()} Takapay. Tous droits réservés.</span>
-          <span>Achetez au comptant ou constituez votre cagnotte à votre rythme.</span>
+          <span>© {new Date().getFullYear()} Takapay Bénin. Tous droits réservés.</span>
         </div>
       </footer>
     </div>

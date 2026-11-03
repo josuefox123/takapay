@@ -17,6 +17,7 @@
   min-height: calc(100vh - 96px);
   padding-top: 16px;
   padding-bottom: 60px;
+  overflow-x: clip;
 }
 
 [data-theme="dark"] .client-scope {
@@ -39,14 +40,42 @@
   margin: 0 auto;
 }
 
+/* Pleine largeur naturelle sur l'accueil (sans bug de scrollbar 100vw ni marge sous le footer) */
+.client-scope-home {
+  padding-bottom: 0 !important;
+}
+
+.client-w-home {
+  width: 100% !important;
+  max-width: 100% !important;
+  margin: 0 !important;
+  padding-bottom: 0 !important;
+}
+
+.client-home-page {
+  margin-bottom: 0;
+  padding-bottom: 0;
+}
+
+.home-content-container {
+  width: min(1640px, calc(100% - 48px));
+  margin: 0 auto;
+}
+
 @media (max-width: 900px) {
   .client-w {
+    width: min(1640px, calc(100% - 32px));
+  }
+  .home-content-container {
     width: min(1640px, calc(100% - 32px));
   }
 }
 
 @media (max-width: 480px) {
   .client-w {
+    width: min(1640px, calc(100% - 20px));
+  }
+  .home-content-container {
     width: min(1640px, calc(100% - 20px));
   }
 }
@@ -248,14 +277,14 @@
 /* Carrousel Client Classique (Pleine Largeur 100%, calibré à la hauteur exacte de l'écran visible) */
 .client-carousel {
   position: relative;
-  width: 100vw;
-  margin-left: calc(-50vw + 50%);
-  margin-right: calc(-50vw + 50%);
+  width: 100%;
+  margin-left: 0;
+  margin-right: 0;
   margin-top: -16px;
   margin-bottom: 36px;
-  height: clamp(340px, 52vh, 460px);
-  min-height: 320px;
-  max-height: 480px;
+  height: clamp(380px, 58vh, 520px);
+  min-height: 360px;
+  max-height: 540px;
   padding: 0;
   box-sizing: border-box;
   border-radius: 0;
@@ -407,14 +436,14 @@
 
 @media (max-width: 860px) {
   .client-carousel {
-    width: 100vw;
-    margin-left: calc(-50vw + 50%);
-    margin-right: calc(-50vw + 50%);
+    width: 100%;
+    margin-left: 0;
+    margin-right: 0;
     margin-top: -16px;
     margin-bottom: 28px;
-    height: clamp(210px, 46vh, 320px);
-    min-height: 200px;
-    max-height: 330px;
+    height: clamp(240px, 50vh, 360px);
+    min-height: 230px;
+    max-height: 370px;
     padding: 0;
     box-sizing: border-box;
     background: #18181b;
@@ -4701,9 +4730,9 @@
    BANDE DE RÉASSURANCE CLIENT (PAGE D'ACCUEIL PLEINE LARGEUR)
    ======================================================== */
 .home-reassurance-bar {
-  width: 100vw;
-  margin-left: calc(-50vw + 50%);
-  margin-right: calc(-50vw + 50%);
+  width: 100%;
+  margin-left: 0;
+  margin-right: 0;
   margin-top: 0;
   margin-bottom: 36px;
   background: var(--cd, #ffffff);
@@ -4712,18 +4741,18 @@
   border-left: none;
   border-right: none;
   border-radius: 0;
-  padding: 24px clamp(20px, 4vw, 56px);
+  padding: 24px clamp(20px, 3.5vw, 56px);
   box-shadow: 0 4px 20px -4px rgba(0, 0, 0, 0.05);
   box-sizing: border-box;
 }
 
 .home-reassurance-grid {
   width: 100%;
-  max-width: 1440px;
-  margin: 0 auto;
+  max-width: none;
+  margin: 0;
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: clamp(28px, 4vw, 68px);
+  gap: clamp(20px, 3vw, 56px);
   align-items: center;
 }
 
@@ -4970,6 +4999,7 @@
    ======================================================== */
 .home-categories-cards-section {
   margin: 36px 0 44px;
+  scroll-margin-top: 90px;
 }
 
 .home-categories-grid {
@@ -5147,11 +5177,12 @@
    FOOTER INSTITUTIONNEL CLIENT (FOND NOIR DISTINCTIF)
    ======================================================== */
 .client-footer {
-  margin-top: 56px;
-  width: 100vw;
-  margin-left: calc(-50vw + 50%);
-  margin-right: calc(-50vw + 50%);
-  padding: 48px 24px 28px;
+  margin-top: 48px;
+  margin-bottom: 0;
+  width: 100%;
+  margin-left: 0;
+  margin-right: 0;
+  padding: 38px clamp(20px, 3.5vw, 48px) 24px;
   background: #241b18;
   color: #f5f0eb;
   border-top: 1px solid rgba(255, 255, 255, 0.12);
@@ -5160,12 +5191,13 @@
 
 .client-footer-grid {
   display: grid;
-  grid-template-columns: 2fr 1fr 1fr;
-  gap: 36px;
-  margin-bottom: 32px;
-  max-width: 1320px;
+  grid-template-columns: 1.5fr 1fr 1fr;
+  gap: clamp(24px, 4vw, 56px);
+  margin-bottom: 24px;
+  max-width: min(1640px, calc(100% - 48px));
   margin-left: auto;
   margin-right: auto;
+  width: 100%;
 }
 
 .client-footer-brand h4 {
@@ -5183,7 +5215,7 @@
   color: rgba(255, 255, 255, 0.72);
   line-height: 1.55;
   margin: 0 0 16px;
-  max-width: 380px;
+  max-width: 440px;
 }
 
 .client-footer-badges {
@@ -5201,6 +5233,9 @@
   font-size: 11.5px;
   font-weight: 700;
   color: #ffffff;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .client-footer-col h5 {
@@ -5216,7 +5251,7 @@
   margin: 0;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 11px;
 }
 
 .client-footer-col a,
@@ -5231,6 +5266,9 @@
   text-align: left;
   cursor: pointer;
   transition: color 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .client-footer-col a:hover,
@@ -5239,31 +5277,35 @@
 }
 
 .client-footer-bottom {
-  max-width: 1320px;
+  max-width: min(1640px, calc(100% - 48px));
   margin: 0 auto;
-  padding-top: 22px;
+  padding-top: 18px;
   border-top: 1px solid rgba(255, 255, 255, 0.12);
   display: flex;
-  justify-content: space-between;
+  flex-direction: column;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 12px;
-  font-size: 12px;
+  justify-content: center;
+  text-align: center;
+  gap: 4px;
+  font-size: 12.5px;
   color: rgba(255, 255, 255, 0.55);
+}
+
+@media (max-width: 1024px) {
+  .client-footer-grid {
+    grid-template-columns: 1.3fr 1fr 1fr;
+    gap: 28px;
+  }
 }
 
 @media (max-width: 768px) {
   .client-footer-grid {
     grid-template-columns: 1fr;
-    gap: 22px;
+    gap: 24px;
   }
   .client-footer {
-    padding: 32px 16px 22px;
-    margin-top: 40px;
-  }
-  .client-footer-bottom {
-    flex-direction: column;
-    align-items: flex-start;
+    padding: 30px 16px 20px;
+    margin-top: 36px;
   }
 }
 
