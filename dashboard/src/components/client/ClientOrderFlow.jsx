@@ -93,8 +93,8 @@ export default function ClientOrderFlow({
     return `${u?.prenom || ''} ${u?.nom || ''}`.trim() || u?.nom || u?.n || '';
   });
 
-  // Mode Cash : Choix entre Paiement à la livraison et Mobile Money
-  const [cashPaymentMode, setCashPaymentMode] = useState('delivery'); // 'delivery' ou 'online'
+  // Mode Cash : Paiement en ligne Mobile Money par défaut
+  const [cashPaymentMode, setCashPaymentMode] = useState('online'); // 'delivery' ou 'online'
   const [deliveryAddress, setDeliveryAddress] = useState(() => user?.adresse || activeUser?.adresse || '');
   const [deliveryPhone, setDeliveryPhone] = useState(() => user?.telephone || user?.phone || activeUser?.telephone || activeUser?.phone || '');
   const [deliveryNote, setDeliveryNote] = useState('');
@@ -409,7 +409,7 @@ export default function ClientOrderFlow({
         produit_id: product?.id,
         type_paiement: orderType,
         quantite: effectiveQuantity,
-        moyen_paiement: 'FEEXPAY',
+        moyen_paiement: provider || 'MTN',
         user_id: activeUser?.id || user?.id,
         telephone: paymentPhone.trim() || user?.telephone || '',
         client_nom: paymentName.trim() || `${user?.prenom || ''} ${user?.nom || ''}`.trim() || 'Client',
@@ -434,15 +434,21 @@ export default function ClientOrderFlow({
   };
 
   useEffect(() => {
-    if ((step === 'payment' || step === 4) && (orderType === 'cagnotte' || cashPaymentMode === 'online') && !paymentData && !submitting && !isOutOfStock) {
-      handleInitiateFeexpay(false);
+    if ((currentStep === 'payment' || step === 'payment' || step === 4) && (orderType === 'cagnotte' || cashPaymentMode === 'online') && !paymentData && !submitting && !paymentFailed && !successModalData && !isOutOfStock) {
+      handleInitiateFeexpay(true);
     }
-  }, [step, orderType, cashPaymentMode, paymentAmount]);
+  }, [currentStep, step, orderType, cashPaymentMode, paymentAmount, successModalData]);
 
   // Déclenchement automatique fluide dès que FeexPay est prêt
   useEffect(() => {
     if (paymentData && autoOpenFeexpay) {
-      const tryClick = () => {
+      const tryOpen = () => {
+        const wrapper = document.querySelector('#feexpay-button-container > div');
+        if (wrapper) {
+          wrapper.dispatchEvent(new Event('feexpay:trigger'));
+          setAutoOpenFeexpay(false);
+          return true;
+        }
         const btn = document.querySelector('#feexpay-button-container button');
         if (btn) {
           btn.click();
@@ -452,10 +458,10 @@ export default function ClientOrderFlow({
         return false;
       };
 
-      if (!tryClick()) {
+      if (!tryOpen()) {
         const interval = setInterval(() => {
-          if (tryClick()) clearInterval(interval);
-        }, 80);
+          if (tryOpen()) clearInterval(interval);
+        }, 50);
         const timeout = setTimeout(() => {
           clearInterval(interval);
           setAutoOpenFeexpay(false);
@@ -499,12 +505,14 @@ export default function ClientOrderFlow({
       setPaymentCountdown(0);
       if (event?.hadStarted) {
         setPaymentFailed(true);
+      } else if (onBack && !successModalData) {
+        onBack();
       }
     });
     return () => {
       unregister();
     };
-  }, []);
+  }, [onBack, successModalData]);
 
   const handleFeexpayCallback = async (response) => {
     console.log('FeexPay callback reçu :', response);
@@ -524,6 +532,7 @@ export default function ClientOrderFlow({
     }
 
     const orderRef = paymentData?.reference || response.reference;
+    const resolvedNetwork = response.reseau || window.__takapaySelectedNetwork || provider;
     const customerEmail = response.email || (email && email.trim()) || (user?.email && !user.email.endsWith('@client.takapay.bj') ? user.email : null);
     try {
       const confirmation = await adminService.confirmPayment({
@@ -531,7 +540,7 @@ export default function ClientOrderFlow({
         status: 'successful',
         transaction_id: response.transaction_id || response.id || response.reference || orderRef,
         amount: response.amount || paymentAmount,
-        reseau: response.reseau || provider,
+        reseau: resolvedNetwork,
         user_id: activeUser?.id || user?.id,
         client_email: customerEmail,
       });
@@ -554,7 +563,7 @@ export default function ClientOrderFlow({
       setSuccessModalData({
         product: { ...product, p: effectivePrice },
         selectedColor,
-        provider: response.reseau || provider,
+        provider: resolvedNetwork,
         initialAmount: Number(confirmation.amount) || paymentAmount,
         totalPrice: orderType === 'cash' ? (cashPrice * effectiveQuantity) : effectivePrice,
         reference: orderRef,
@@ -913,122 +922,9 @@ export default function ClientOrderFlow({
           </div>
         )}
 
-        {/* Étape 4 : Choix du Moyen de Paiement */}
+        {/* Étape de Paiement Mobile Money : Ouverture directe de la modale FeexPay */}
         {currentStep === 'payment' && (
           <div>
-            <span className="flow-label">ÉTAPE 4 · MOYEN DE PAIEMENT</span>
-            <h1>Finaliser votre commande</h1>
-            <p className="flow-lead">
-              Votre compte est prêt. Choisissez votre portefeuille Mobile Money pour lancer votre premier versement.
-            </p>
-
-            {/* Affichage exclusif de la modalité de règlement sélectionnée */}
-            <div style={{ marginBottom: '16px' }}>
-              <div style={{ fontSize: '13px', fontWeight: 700, marginBottom: '8px', color: 'var(--tx)' }}>
-                Modalité de règlement :
-              </div>
-              {orderType === 'cash' ? (
-                <div
-                  style={{
-                    padding: '12px 14px',
-                    borderRadius: '12px',
-                    border: '1.5px solid #1e293b',
-                    background: 'rgba(30, 41, 59, 0.06)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                  }}
-                >
-                  <div>
-                    <div style={{ fontSize: '13px', fontWeight: 800, color: '#1e293b' }}>
-                      💵 Paiement comptant
-                    </div>
-                    <div style={{ fontSize: '11px', color: 'var(--mu)', marginTop: '3px' }}>
-                      Règlement direct intégral
-                    </div>
-                  </div>
-                  <span style={{ fontSize: '12px', fontWeight: 700, color: '#1e293b', background: 'rgba(30, 41, 59, 0.1)', padding: '4px 10px', borderRadius: '6px' }}>
-                    {formatFCFA(cashPrice)} / article
-                  </span>
-                </div>
-              ) : (
-                <div
-                  style={{
-                    padding: '12px 14px',
-                    borderRadius: '12px',
-                    border: '1.5px solid var(--r)',
-                    background: 'rgba(220, 38, 38, 0.06)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                  }}
-                >
-                  <div>
-                    <div style={{ fontSize: '13px', fontWeight: 800, color: 'var(--r)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '18px' }}>savings</span>
-                      <span>Mode Cagnotte Takapay</span>
-                    </div>
-                    <div style={{ fontSize: '11px', color: 'var(--mu)', marginTop: '3px' }}>
-                      {product?.payment?.mode === 'libre'
-                        ? "Cotisations libres · Récupération dès 100% de la cagnotte atteinte"
-                        : "Cotisations échelonnées sécurisées"}
-                    </div>
-                  </div>
-                  <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--r)', background: 'rgba(220, 38, 38, 0.1)', padding: '4px 10px', borderRadius: '6px' }}>
-                    1er versement : {formatFCFA(minDeposit)}
-                  </span>
-                </div>
-              )}
-            </div>
-
-            {/* Récapitulatif de l'article */}
-            <div className="payment-summary">
-              <strong style={{ fontSize: '15px' }}>{product?.n}</strong>
-              {selectedColor && (
-                <div style={{ color: 'var(--mu)', fontSize: '12px', marginTop: '4px' }}>
-                  Couleur choisie : <b>{selectedColor.name || selectedColor}</b>
-                </div>
-              )}
-
-              {orderType === 'cash' ? (
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '10px' }}>
-                  <span style={{ color: 'var(--mu)', fontSize: '13px' }}>Quantité commandée :</span>
-                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
-                    <button
-                      type="button"
-                      disabled={quantity <= 1}
-                      onClick={() => { setQuantity((q) => Math.max(1, q - 1)); setPaymentData(null); }}
-                      style={{ width: '28px', height: '28px', borderRadius: '6px', border: '1px solid var(--bd)', cursor: quantity <= 1 ? 'not-allowed' : 'pointer', fontWeight: 800 }}
-                    >
-                      −
-                    </button>
-                    <b style={{ fontSize: '14px', minWidth: '24px', textAlign: 'center' }}>{quantity}</b>
-                    <button
-                      type="button"
-                      onClick={() => { setQuantity((q) => q + 1); setPaymentData(null); }}
-                      style={{ width: '28px', height: '28px', borderRadius: '6px', border: '1px solid var(--bd)', cursor: 'pointer', fontWeight: 800 }}
-                    >
-                      +
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div style={{ color: 'var(--mu)', fontSize: '12px', marginTop: '6px' }}>
-                  Quantité : <b>1 article</b>
-                </div>
-              )}
-
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '10px' }}>
-                <span style={{ color: 'var(--mu)', fontSize: '13px' }}>
-                  {orderType === 'cash' ? `Total comptant (${effectiveQuantity} × ${formatFCFA(cashPrice)}) :` : '1er versement à effectuer :'}
-                </span>
-                <strong style={{ fontSize: '16px', color: 'var(--r)' }}>
-                  {formatFCFA(paymentAmount)}
-                </strong>
-              </div>
-            </div>
-
-            {/* Affichage des erreurs au niveau global de l'étape de paiement */}
             {isOutOfStock && (
               <div style={{ color: '#dc2626', fontSize: '13px', margin: '12px 0', padding: '10px 12px', background: '#fee2e2', border: '1px solid #fca5a5', borderRadius: '8px', fontWeight: 700 }}>
                 ⚠️ Cet article est actuellement en rupture de stock. La commande ne peut pas aboutir.
@@ -1040,213 +936,7 @@ export default function ClientOrderFlow({
               </div>
             )}
 
-            {/* Sélecteur de méthode de règlement en mode CASH */}
-            {orderType === 'cash' && (
-              <div style={{ marginBottom: '18px' }}>
-                <div style={{ fontSize: '13px', fontWeight: 700, marginBottom: '8px', color: 'var(--tx)' }}>
-                  Choisissez votre méthode de règlement :
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                  <button
-                    type="button"
-                    onClick={() => { setCashPaymentMode('delivery'); setPaymentData(null); }}
-                    style={{
-                      padding: '12px',
-                      borderRadius: '12px',
-                      border: cashPaymentMode === 'delivery' ? '2px solid var(--p, #dc2626)' : '1.5px solid #ded6ce',
-                      background: cashPaymentMode === 'delivery' ? 'rgba(220,38,38,0.06)' : '#ffffff',
-                      color: cashPaymentMode === 'delivery' ? 'var(--p, #dc2626)' : '#1b1716',
-                      fontWeight: 700,
-                      fontSize: '13px',
-                      cursor: 'pointer',
-                      textAlign: 'center',
-                    }}
-                  >
-                    <span style={{ fontSize: '20px', display: 'block', marginBottom: '4px' }}>🚚</span>
-                    Paiement à la livraison
-                    <small style={{ display: 'block', fontSize: '11px', color: '#706966', marginTop: '2px' }}>
-                      Règlement au livreur
-                    </small>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setCashPaymentMode('online')}
-                    style={{
-                      padding: '12px',
-                      borderRadius: '12px',
-                      border: cashPaymentMode === 'online' ? '2px solid var(--p, #dc2626)' : '1.5px solid #ded6ce',
-                      background: cashPaymentMode === 'online' ? 'rgba(220,38,38,0.06)' : '#ffffff',
-                      color: cashPaymentMode === 'online' ? 'var(--p, #dc2626)' : '#1b1716',
-                      fontWeight: 700,
-                      fontSize: '13px',
-                      cursor: 'pointer',
-                      textAlign: 'center',
-                    }}
-                  >
-                    <span style={{ fontSize: '20px', display: 'block', marginBottom: '4px' }}>💳</span>
-                    Paiement en ligne
-                    <small style={{ display: 'block', fontSize: '11px', color: '#706966', marginTop: '2px' }}>
-                      MoMo & Carte bancaire
-                    </small>
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* CAS 1 : Paiement à la livraison */}
-            {orderType === 'cash' && cashPaymentMode === 'delivery' ? (
-              <form onSubmit={handleDeliveryOrderSubmit}>
-                {/* Information disponibilité */}
-                <div
-                  style={{
-                    background: '#f0fdf4',
-                    border: '1.5px solid #bbf7d0',
-                    borderRadius: '14px',
-                    padding: '14px 16px',
-                    marginBottom: '18px',
-                  }}
-                >
-                  <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
-                    <span style={{ fontSize: '20px' }}>ℹ️</span>
-                    <div style={{ fontSize: '13px', color: '#166534', lineHeight: 1.5 }}>
-                      <b>Information commande :</b><br />
-                      La disponibilité de l’article vous sera communiquée par l’équipe en charge dans quelques instants.
-                      Vous réglerez <b>{formatFCFA(paymentAmount)}</b> en espèces directement au livreur.
-                    </div>
-                  </div>
-                </div>
-
-                {/* Adresse de livraison */}
-                <div style={{ marginBottom: '14px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                    <label className="fl" htmlFor="delivery-address" style={{ margin: 0 }}>
-                      Adresse de livraison *
-                    </label>
-                    <div style={{ display: 'flex', gap: '8px' }}>
-                      {user?.adresse && (
-                        <button
-                          type="button"
-                          onClick={() => setDeliveryAddress(user.adresse)}
-                          style={{
-                            background: 'none',
-                            border: 'none',
-                            color: '#0369a1',
-                            fontSize: '11.5px',
-                            fontWeight: 700,
-                            cursor: 'pointer',
-                            textDecoration: 'underline',
-                          }}
-                        >
-                          Mon adresse de profil
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        onClick={handleGetLocation}
-                        disabled={isLocating}
-                        style={{
-                          background: 'none',
-                          border: 'none',
-                          color: 'var(--p, #dc2626)',
-                          fontSize: '11.5px',
-                          fontWeight: 700,
-                          cursor: isLocating ? 'wait' : 'pointer',
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '3px',
-                        }}
-                      >
-                        📍 {isLocating ? 'Localisation...' : 'Ma position'}
-                      </button>
-                    </div>
-                  </div>
-                  <input
-                    id="delivery-address"
-                    type="text"
-                    required
-                    className="fi"
-                    placeholder="Ex: Cotonou, Akpakpa, rue 124, maison jaune"
-                    value={deliveryAddress}
-                    onChange={(e) => setDeliveryAddress(e.target.value)}
-                  />
-                  {deliveryCoords && (
-                    <div style={{ marginTop: '8px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px', flexWrap: 'wrap', gap: '4px' }}>
-                        <small style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#16a34a', fontSize: '11px', fontWeight: 600 }}>
-                          <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '13px' }}>check_circle</span>
-                          <span>Position enregistrée avec succès pour la livraison</span>
-                        </small>
-                        <a
-                          href={`https://www.google.com/maps?q=${deliveryCoords.replace(/\s+/g, '')}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          style={{ fontSize: '11px', color: '#2563eb', textDecoration: 'none', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '3px' }}
-                        >
-                          <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '13px' }}>open_in_new</span>
-                          <span>Google Maps</span>
-                        </a>
-                      </div>
-                      <iframe
-                        title="Aperçu Google Maps de livraison"
-                        width="100%"
-                        height="130"
-                        style={{
-                          border: '1px solid var(--bd, #e2e8f0)',
-                          borderRadius: '8px',
-                          display: 'block',
-                        }}
-                        loading="lazy"
-                        src={`https://maps.google.com/maps?q=${deliveryCoords.replace(/\s+/g, '')}&hl=fr&z=15&output=embed`}
-                      />
-                    </div>
-                  )}
-                </div>
-
-                {/* Numéro pour le livreur */}
-                <div style={{ marginBottom: '14px' }}>
-                  <label className="fl" htmlFor="delivery-phone">
-                    Numéro de téléphone à contacter par le livreur *
-                  </label>
-                  <input
-                    id="delivery-phone"
-                    type="tel"
-                    required
-                    className="fi"
-                    placeholder="+229 97 00 00 00"
-                    value={deliveryPhone}
-                    onChange={(e) => setDeliveryPhone(e.target.value)}
-                  />
-                  <small style={{ color: '#706966', fontSize: '11.5px', display: 'block', marginTop: '4px' }}>
-                    Le livreur vous appellera sur ce numéro pour coordonner la remise en main propre.
-                  </small>
-                </div>
-
-                {/* Note facultative */}
-                <div style={{ marginBottom: '18px' }}>
-                  <label className="fl" htmlFor="delivery-note">
-                    Note d’information pour le livreur (facultatif)
-                  </label>
-                  <input
-                    id="delivery-note"
-                    type="text"
-                    className="fi"
-                    placeholder="Ex: Repère, sonnerie, instructions d'accès..."
-                    value={deliveryNote}
-                    onChange={(e) => setDeliveryNote(e.target.value)}
-                  />
-                </div>
-
-                <button
-                  type="submit"
-                  className="client-btn w100"
-                  disabled={submitting || isOutOfStock}
-                  style={{ padding: '16px', fontSize: '15px', background: isOutOfStock ? '#9ca3af' : undefined, cursor: isOutOfStock ? 'not-allowed' : undefined }}
-                >
-                  {isOutOfStock ? 'Article en rupture de stock' : submitting ? 'Enregistrement de la commande...' : 'Confirmer la commande (Paiement à la livraison)'}
-                </button>
-              </form>
-            ) : paymentFailed ? (
+            {paymentFailed ? (
               <div style={{
                 padding: '32px 20px',
                 textAlign: 'center',
@@ -1293,83 +983,19 @@ export default function ClientOrderFlow({
                 </button>
               </div>
             ) : (
-              <div style={{
-                background: '#ffffff',
-                borderRadius: '16px',
-                border: '1.5px solid #ded6ce',
-                padding: '22px 20px',
-                marginTop: '16px',
-                boxShadow: '0 4px 18px rgba(0, 0, 0, 0.04)',
-              }}>
-                {error && (
-                  <div style={{ color: '#dc2626', background: 'rgba(220,38,38,0.08)', padding: '10px 12px', borderRadius: '10px', fontSize: '13px', fontWeight: 600, marginBottom: '16px', textAlign: 'center' }}>
-                    {error}
-                  </div>
-                )}
-
-                <div style={{ marginBottom: '16px' }}>
-                  <div style={{ fontSize: '13px', fontWeight: 800, color: 'var(--tx, #1b1716)', marginBottom: '10px' }}>
-                    Moyens de paiement acceptés par FeexPay :
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '8px' }}>
-                    {/* MTN */}
-                    <div style={{ padding: '8px 10px', background: '#ffffff', border: '1.5px solid #e2e8f0', borderRadius: '10px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', fontWeight: 700, color: '#1e293b', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
-                      <svg width="36" height="24" viewBox="0 0 60 40" fill="none" style={{ borderRadius: '4px', flexShrink: 0 }}>
-                        <rect width="60" height="40" rx="6" fill="#FFCC00"/>
-                        <ellipse cx="30" cy="20" rx="22" ry="13" stroke="#000000" strokeWidth="2.5" fill="none"/>
-                        <text x="30" y="24.5" textAnchor="middle" fill="#000000" fontFamily="Arial, sans-serif" fontWeight="900" fontSize="13" letterSpacing="0.5">MTN</text>
-                      </svg>
-                      <span>MTN MoMo</span>
-                    </div>
-
-                    {/* Moov Money */}
-                    <div style={{ padding: '8px 10px', background: '#ffffff', border: '1.5px solid #e2e8f0', borderRadius: '10px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', fontWeight: 700, color: '#1e293b', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
-                      <svg width="36" height="24" viewBox="0 0 60 40" fill="none" style={{ borderRadius: '4px', flexShrink: 0 }}>
-                        <rect width="60" height="40" rx="6" fill="#005CA9"/>
-                        <path d="M6 34C18 34 22 18 32 18C42 18 46 34 54 34" stroke="#F37023" strokeWidth="3" strokeLinecap="round" fill="none"/>
-                        <text x="30" y="17" textAnchor="middle" fill="#FFFFFF" fontFamily="Arial, sans-serif" fontWeight="900" fontSize="10" letterSpacing="-0.3">moov</text>
-                        <text x="30" y="29" textAnchor="middle" fill="#F37023" fontFamily="Arial, sans-serif" fontWeight="800" fontSize="7.5" letterSpacing="0.8">MONEY</text>
-                      </svg>
-                      <span>Moov Money</span>
-                    </div>
-
-                    {/* Celtiis Cash */}
-                    <div style={{ padding: '8px 10px', background: '#ffffff', border: '1.5px solid #e2e8f0', borderRadius: '10px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', fontWeight: 700, color: '#1e293b', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
-                      <svg width="36" height="24" viewBox="0 0 60 40" fill="none" style={{ borderRadius: '4px', flexShrink: 0 }}>
-                        <rect width="60" height="40" rx="6" fill="#082A4D"/>
-                        <circle cx="16" cy="18" r="7" fill="#00A859"/>
-                        <path d="M16 13L21 21H11L16 13Z" fill="#FFFFFF"/>
-                        <text x="38" y="17" textAnchor="middle" fill="#00A859" fontFamily="Arial, sans-serif" fontWeight="900" fontSize="9" letterSpacing="-0.2">celtiis</text>
-                        <text x="38" y="27" textAnchor="middle" fill="#FFFFFF" fontFamily="Arial, sans-serif" fontWeight="800" fontSize="7.5" letterSpacing="0.5">cash</text>
-                      </svg>
-                      <span>Celtis Cash</span>
-                    </div>
-
-                    {/* Carte Bancaire */}
-                    <div style={{ padding: '8px 10px', background: '#ffffff', border: '1.5px solid #e2e8f0', borderRadius: '10px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', fontWeight: 700, color: '#1e293b', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
-                      <svg width="42" height="24" viewBox="0 0 70 40" fill="none" style={{ borderRadius: '4px', flexShrink: 0, border: '1px solid #e2e8f0' }}>
-                        <rect width="70" height="40" rx="6" fill="#F8FAFC"/>
-                        <text x="18" y="24" textAnchor="middle" fill="#1A1F71" fontFamily="Arial, sans-serif" fontWeight="900" fontSize="12" fontStyle="italic" letterSpacing="-0.5">VISA</text>
-                        <circle cx="46" cy="20" r="9" fill="#EB001B"/>
-                        <circle cx="56" cy="20" r="9" fill="#F79E1B" fillOpacity="0.88"/>
-                      </svg>
-                      <span>Carte Bancaire</span>
-                    </div>
-                  </div>
+              <div style={{ textAlign: 'center', padding: '32px 16px' }}>
+                <div style={{ fontSize: '14px', fontWeight: 600, color: '#475569' }}>
+                  Ouverture du module de paiement...
                 </div>
-
-                <div style={{ marginBottom: '20px', padding: '12px 14px', background: '#f8fafc', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '12.5px', color: '#475569', lineHeight: 1.5 }}>
-                  🔒 Le paiement s'effectue en toute sécurité sur le module officiel FeexPay. Vous pourrez y choisir librement votre méthode : <b>MTN MoMo</b>, <b>Moov Money</b>, <b>Celtis Cash</b> ou <b>Carte Bancaire (Visa / Mastercard)</b>.
-                </div>
-
-                {paymentData ? (
+                {paymentData && (
                   <div id="feexpay-button-container">
+                    <style>{`#feexpay-button-container > div > button { display: none !important; }`}</style>
                     <FeexPayProvider>
                       <FeexPayButton
                         id={paymentData.shop_id}
                         token={paymentData.api_key}
                         amount={paymentData.amount}
-                        description={`Takapay - ${product?.n || 'Commande'}`}
+                        description={`Takapay ${product?.n || 'Commande'}`.replace(/[^a-zA-Z0-9 ]/g, '')}
                         mode={paymentData.mode || 'SANDBOX'}
                         currency="XOF"
                         customId={paymentData.reference}
@@ -1380,33 +1006,15 @@ export default function ClientOrderFlow({
                           email: (email && email.trim()) || (activeUser?.email && !activeUser.email.endsWith('@client.takapay.bj') ? activeUser.email : '') || '',
                           phone: paymentPhone.trim() || activeUser?.telephone || activeUser?.phone || user?.telephone || user?.phone || phone || '',
                           phoneNumber: paymentPhone.trim() || activeUser?.telephone || activeUser?.phone || user?.telephone || user?.phone || phone || '',
+                          reseau: provider,
+                          network: provider,
                         }}
                         callback={handleFeexpayCallback}
-                        buttonText={`Payer ${formatFCFA(paymentAmount)} avec FeexPay`}
+                        buttonText={`Payer ${formatFCFA(paymentAmount)}`}
                         buttonClass="client-btn w100"
                       />
                     </FeexPayProvider>
                   </div>
-                ) : (
-                  <button
-                    type="button"
-                    className="client-btn w100"
-                    onClick={() => handleInitiateFeexpay(true)}
-                    disabled={submitting || isOutOfStock}
-                    style={{
-                      padding: '16px',
-                      fontSize: '15px',
-                      fontWeight: 800,
-                      background: isOutOfStock ? '#9ca3af' : 'var(--p, #dc2626)',
-                      cursor: isOutOfStock ? 'not-allowed' : submitting ? 'wait' : 'pointer',
-                    }}
-                  >
-                    {isOutOfStock
-                      ? 'Article en rupture de stock'
-                      : submitting
-                      ? 'Préparation du paiement...'
-                      : `Payer ${formatFCFA(paymentAmount)} avec FeexPay`}
-                  </button>
                 )}
               </div>
             )}

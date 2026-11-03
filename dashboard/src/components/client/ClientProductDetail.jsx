@@ -1281,10 +1281,10 @@ export default function ClientProductDetail({
               <span>Livraison estimée</span>
             </div>
             <p className="aside-info-card-text">
-              <strong>Cotonou & Calavi :</strong> 24–48 h (1 000 – 2 000 FCFA)
+              <strong>Cotonou & Calavi :</strong> (1 000 – 2 000 FCFA)
             </p>
             <p className="aside-info-card-text">
-              <strong>Porto-Novo & Parakou :</strong> 48–72 h
+              <strong>Porto-Novo & Parakou</strong>
             </p>
             <p className="aside-info-card-text" style={{ fontSize: '11.5px', color: '#16a34a', marginTop: '6px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px' }}>
               <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '15px' }}>check_circle</span>

@@ -288,7 +288,7 @@ class PaymentController extends Controller
             }
 
             $moyen = strtoupper((string) $request->input('moyen_paiement', 'MTN'));
-            $network = str_contains($moyen, 'MOOV') ? 'MOOV' : 'MTN';
+            $network = str_contains($moyen, 'MOOV') ? 'MOOV' : (str_contains($moyen, 'CELTIIS') ? 'CELTIIS' : 'MTN');
 
             $shopId = config('services.feexpay.shop_id');
             $apiKey = config('services.feexpay.api_key');
