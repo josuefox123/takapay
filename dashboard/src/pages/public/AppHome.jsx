@@ -11,7 +11,7 @@ import ClientProfileView from '../../components/client/ClientProfileView';
 import ClientNotificationsView from '../../components/client/ClientNotificationsView';
 import ClientWelcomeModal from '../../components/client/ClientWelcomeModal';
 import ClientCookieBanner from '../../components/client/ClientCookieBanner';
-import { PRODUCTS, DEFAULT_CLIENT_USER, mapAdminProductToClient, getMergedProducts, getCachedLiveProducts, refreshProductsFromStore, createCagnotteFromOrder, getStoredCagnottes, mapBackendCagnotteToClient } from '../../data/clientStore';
+import { PRODUCTS, mapAdminProductToClient, getMergedProducts, getCachedLiveProducts, refreshProductsFromStore, createCagnotteFromOrder, getStoredCagnottes, mapBackendCagnotteToClient, discountPercentage } from '../../data/clientStore';
 import { adminService } from '../../services/adminService';
 import FloatingActionButtons from '../../components/public/FloatingActionButtons';
 import './client.css';
@@ -109,13 +109,14 @@ export default function AppHome({ initialTab = 'home' }) {
     }, 3200);
   };
 
-  // Affichage du modal promo après 500ms si non vu cette session (ou paramètre ?welcome=1 / ?promo=1)
+  // N'afficher le modal que lorsqu'une vraie promotion est disponible.
   useEffect(() => {
     try {
       const searchParams = new URLSearchParams(location.search);
-      const forceWelcome = searchParams.get('welcome') === '1';
+      const forceWelcome = searchParams.get('welcome') === '1' || searchParams.get('promo') === '1';
       const seen = sessionStorage.getItem('takapay-welcome-seen');
-      if (!seen || forceWelcome) {
+      const hasPromotions = productsList.some((product) => discountPercentage(product) > 0);
+      if (hasPromotions && (!seen || forceWelcome)) {
         const timer = setTimeout(() => {
           setShowWelcome(true);
           sessionStorage.setItem('takapay-welcome-seen', 'true');
@@ -125,7 +126,7 @@ export default function AppHome({ initialTab = 'home' }) {
     } catch {
       // Ignorer
     }
-  }, [location.search]);
+  }, [location.search, productsList]);
 
   // Synchronisation bidirectionnelle avec les routes URL
   useEffect(() => {

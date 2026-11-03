@@ -15,6 +15,7 @@ export default function AdminSidebar({
     { id: 'produits', label: 'Produits', icon: 'box' },
     { id: 'promotions', label: 'Promotions', icon: 'tag' },
     { id: 'carousels', label: 'Bannières Carrousel', icon: 'image' },
+    { id: 'partenaires', label: 'Partenaires', icon: 'users' },
     { id: 'cagnottes', label: 'Cagnottes', icon: 'wallet' },
     { id: 'commandes', label: 'Commandes', icon: 'cart' },
     { id: 'documents', label: 'Documents', icon: 'file' },

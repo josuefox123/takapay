@@ -23,6 +23,7 @@ use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\SupportChatController;
 use App\Http\Controllers\Api\AdminStatsController;
 use App\Http\Controllers\Api\CarouselController;
+use App\Http\Controllers\Api\PartenaireController;
 use App\Http\Controllers\PaymentController;
 use Illuminate\Support\Facades\Route;
 
@@ -69,6 +70,7 @@ Route::get('videos/{filename}', function ($filename) {
 Route::get('cagnottes', [CagnotteController::class, 'index'])->name('cagnottes.index');
 Route::get('commandes', [CommandeController::class, 'index'])->name('commandes.index');
 Route::get('carousels', [CarouselController::class, 'index'])->name('carousels.index');
+Route::get('partenaires', [PartenaireController::class, 'index'])->name('partenaires.index');
 Route::put('profile', [AuthController::class, 'updateProfile'])->name('profile.update');
 Route::put('profile/pin', [AuthController::class, 'updatePin'])->name('profile.update-pin');
 Route::put('profile/password', [AuthController::class, 'updatePassword'])->name('profile.update-password');
@@ -147,6 +149,13 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
             Route::post('/carousels/{carousel}', [CarouselController::class, 'update']);
             Route::put('/carousels/{carousel}', [CarouselController::class, 'update']);
             Route::delete('/carousels/{carousel}', [CarouselController::class, 'destroy']);
+
+            // Partenaires de la vitrine
+            Route::get('/partenaires', [PartenaireController::class, 'adminIndex']);
+            Route::post('/partenaires', [PartenaireController::class, 'store']);
+            Route::post('/partenaires/{partenaire}', [PartenaireController::class, 'update']);
+            Route::put('/partenaires/{partenaire}', [PartenaireController::class, 'update']);
+            Route::delete('/partenaires/{partenaire}', [PartenaireController::class, 'destroy']);
 
             // Remboursements FeexPay
             Route::post('/cagnottes/{cagnotte}/rembourser-feexpay', [CagnotteController::class, 'validerRemboursementFeexpay']);

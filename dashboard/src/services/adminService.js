@@ -578,6 +578,82 @@ export const adminService = {
     return data;
   },
 
+  async getPartenaires(all = false) {
+    const token = this.getToken();
+    const res = await fetch(`${API_BASE}/${all ? 'admin/' : ''}partenaires`, {
+      headers: {
+        Accept: 'application/json',
+        ...(all && token ? { Authorization: 'Bearer ' + token } : {}),
+      },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data.message || 'Impossible de charger les partenaires.');
+    }
+    const list = data.data || data;
+    if (!Array.isArray(list)) {
+      throw new Error('La réponse des partenaires est invalide.');
+    }
+    return list;
+  },
+
+  async createPartenaire(formData) {
+    const token = this.getToken();
+    const res = await fetch(`${API_BASE}/admin/partenaires`, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        ...(token ? { Authorization: 'Bearer ' + token } : {}),
+      },
+      body: formData,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const msg = data.message || Object.values(data.errors || {})?.[0]?.[0] || 'Erreur lors de la création du partenaire.';
+      throw new Error(msg);
+    }
+    return data;
+  },
+
+  async updatePartenaire(id, formDataOrPayload) {
+    const token = this.getToken();
+    const isFormData = formDataOrPayload instanceof FormData;
+    const res = await fetch(
+      isFormData ? `${API_BASE}/admin/partenaires/${id}?_method=PUT` : `${API_BASE}/admin/partenaires/${id}`,
+      {
+        method: isFormData ? 'POST' : 'PUT',
+        headers: {
+          Accept: 'application/json',
+          ...(token ? { Authorization: 'Bearer ' + token } : {}),
+          ...(!isFormData ? { 'Content-Type': 'application/json' } : {}),
+        },
+        body: isFormData ? formDataOrPayload : JSON.stringify(formDataOrPayload),
+      },
+    );
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const msg = data.message || Object.values(data.errors || {})?.[0]?.[0] || 'Erreur lors de la modification du partenaire.';
+      throw new Error(msg);
+    }
+    return data;
+  },
+
+  async deletePartenaire(id) {
+    const token = this.getToken();
+    const res = await fetch(`${API_BASE}/admin/partenaires/${id}`, {
+      method: 'DELETE',
+      headers: {
+        Accept: 'application/json',
+        ...(token ? { Authorization: 'Bearer ' + token } : {}),
+      },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data.message || 'Erreur lors de la suppression du partenaire.');
+    }
+    return data;
+  },
+
   logout() {
     try {
       const token = this.getToken();

@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import ClientHeroCarousel from './ClientHeroCarousel';
+import ClientPartnersStrip from './ClientPartnersStrip';
 import ClientProductCard from './ClientProductCard';
 import { PRODUCTS, TAKAPAY_CATEGORIES, rebuildCategories } from '../../data/clientStore';
 
@@ -81,58 +82,7 @@ export default function ClientHomeView({
         onSelectPromo={onSelectPromo}
       />
 
-      {/* 2. Bande de réassurance (4 piliers Takapay - Pleine Largeur) */}
-      <section className="home-reassurance-bar" aria-label="Engagements et garanties Takapay">
-        <div className="home-reassurance-grid">
-          <div className="home-reassurance-item">
-            <div className="home-reassurance-icon">
-              <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '28px' }}>
-                credit_card
-              </span>
-            </div>
-            <div className="home-reassurance-text">
-              <strong>Paiement sécurisé</strong>
-              <span>MTN MoMo & Moov Money via FeexPay</span>
-            </div>
-          </div>
-
-          <div className="home-reassurance-item">
-            <div className="home-reassurance-icon">
-              <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '28px' }}>
-                savings
-              </span>
-            </div>
-            <div className="home-reassurance-text">
-              <strong>Cagnotte 100% libre</strong>
-              <span>Cotisez à votre rythme, 0 frais cachés</span>
-            </div>
-          </div>
-
-          <div className="home-reassurance-item">
-            <div className="home-reassurance-icon">
-              <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '28px' }}>
-                local_shipping
-              </span>
-            </div>
-            <div className="home-reassurance-text">
-              <strong>Livraison garantie</strong>
-              <span>Partout au Bénin dès 100% ou comptant</span>
-            </div>
-          </div>
-
-          <div className="home-reassurance-item">
-            <div className="home-reassurance-icon">
-              <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '28px' }}>
-                support_agent
-              </span>
-            </div>
-            <div className="home-reassurance-text">
-              <strong>Assistance directe</strong>
-              <span>Support WhatsApp & appel dédié</span>
-            </div>
-          </div>
-        </div>
-      </section>
+      <ClientPartnersStrip />
 
       {/* Conteneur centré pour les sections de contenu */}
       <div className="home-content-container">
@@ -307,6 +257,8 @@ export default function ClientHomeView({
         </div>
       )}
 
+      <ReassuranceBar />
+
       {/* 5. Bannière intermédiaire de réassurance cagnotte libre */}
       <section className="home-promo-strip" aria-label="Avantages de la cagnotte Takapay">
         <div className="home-promo-strip-content">
@@ -437,5 +389,61 @@ export default function ClientHomeView({
         </div>
       </footer>
     </div>
+  );
+}
+
+function ReassuranceBar() {
+  return (
+    <section className="home-reassurance-bar" aria-label="Engagements et garanties Takapay">
+      <div className="home-reassurance-grid">
+        <div className="home-reassurance-item">
+          <div className="home-reassurance-icon">
+            <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '28px' }}>
+              credit_card
+            </span>
+          </div>
+          <div className="home-reassurance-text">
+            <strong>Paiement sécurisé</strong>
+            <span>MTN MoMo & Moov Money via FeexPay</span>
+          </div>
+        </div>
+
+        <div className="home-reassurance-item">
+          <div className="home-reassurance-icon">
+            <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '28px' }}>
+              savings
+            </span>
+          </div>
+          <div className="home-reassurance-text">
+            <strong>Cagnotte 100% libre</strong>
+            <span>Cotisez à votre rythme, 0 frais cachés</span>
+          </div>
+        </div>
+
+        <div className="home-reassurance-item">
+          <div className="home-reassurance-icon">
+            <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '28px' }}>
+              local_shipping
+            </span>
+          </div>
+          <div className="home-reassurance-text">
+            <strong>Livraison garantie</strong>
+            <span>Partout au Bénin dès 100% ou comptant</span>
+          </div>
+        </div>
+
+        <div className="home-reassurance-item">
+          <div className="home-reassurance-icon">
+            <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '28px' }}>
+              support_agent
+            </span>
+          </div>
+          <div className="home-reassurance-text">
+            <strong>Assistance directe</strong>
+            <span>Support WhatsApp & appel dédié</span>
+          </div>
+        </div>
+      </div>
+    </section>
   );
 }

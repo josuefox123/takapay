@@ -11,6 +11,7 @@ import AdminToast from '../../components/admin/AdminToast';
 const AdminProductsView = lazy(() => import('../../components/admin/AdminProductsView'));
 const AdminPromotionsView = lazy(() => import('../../components/admin/AdminPromotionsView'));
 const AdminCarouselView = lazy(() => import('../../components/admin/AdminCarouselView'));
+const AdminPartenairesView = lazy(() => import('../../components/admin/AdminPartenairesView'));
 const AdminCagnottesView = lazy(() => import('../../components/admin/AdminCagnottesView'));
 const AdminCommandesView = lazy(() => import('../../components/admin/AdminCommandesView'));
 const AdminDocumentsView = lazy(() => import('../../components/admin/AdminDocumentsView'));
@@ -33,6 +34,7 @@ export default function AdminDashboard() {
     'produits',
     'promotions',
     'carousels',
+    'partenaires',
     'cagnottes',
     'commandes',
     'documents',
@@ -347,6 +349,10 @@ export default function AdminDashboard() {
 
           {activeTab === 'carousels' && (
             <AdminCarouselView onShowToast={showToast} />
+          )}
+
+          {activeTab === 'partenaires' && (
+            <AdminPartenairesView onShowToast={showToast} />
           )}
 
           {activeTab === 'cagnottes' && <AdminCagnottesView />}
