@@ -26,6 +26,8 @@ class CarouselResource extends JsonResource
                 return $this->produit ? [
                     'id' => $this->produit->id,
                     'nom' => $this->produit->nom,
+                    'prix_vente' => $this->produit->prix_vente,
+                    'paiement' => $this->produit->paiement,
                 ] : null;
             }),
             'ordre' => (int) $this->ordre,

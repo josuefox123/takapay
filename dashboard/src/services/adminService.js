@@ -590,6 +590,7 @@ export const adminService = {
       const msg = data.message || Object.values(data.errors || {})?.[0]?.[0] || 'Erreur lors de la création de la bannière.';
       throw new Error(msg);
     }
+    try { localStorage.removeItem('takapay_public_carousels'); } catch {}
     return data;
   },
 
@@ -614,6 +615,7 @@ export const adminService = {
       const msg = data.message || Object.values(data.errors || {})?.[0]?.[0] || 'Erreur lors de la modification de la bannière.';
       throw new Error(msg);
     }
+    try { localStorage.removeItem('takapay_public_carousels'); } catch {}
     return data;
   },
 
@@ -631,6 +633,7 @@ export const adminService = {
       const msg = data.message || 'Erreur lors de la suppression de la bannière.';
       throw new Error(msg);
     }
+    try { localStorage.removeItem('takapay_public_carousels'); } catch {}
     return data;
   },
 

@@ -219,9 +219,12 @@ export default function AdminSupportView({ onShowToast, onUnreadCountChange }) {
             <div style={{ position: 'relative', marginBottom: '10px' }}>
               <input
                 type="text"
-                placeholder="Rechercher une discussion..."
+                placeholder="Rechercher..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
+                autoComplete="off"
+                autoCorrect="off"
+                spellCheck={false}
                 style={{
                   width: '100%',
                   padding: '8px 12px',

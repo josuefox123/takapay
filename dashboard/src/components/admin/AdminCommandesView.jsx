@@ -154,9 +154,12 @@ export default function AdminCommandesView({ onShowToast }) {
       >
         <input
           type="text"
-          placeholder="Rechercher par référence ou client…"
+          placeholder="Rechercher..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
+          autoComplete="off"
+          autoCorrect="off"
+          spellCheck={false}
           style={{
             minWidth: '260px',
             padding: '11px 16px',

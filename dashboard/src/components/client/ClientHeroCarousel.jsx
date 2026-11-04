@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { formatFCFA, discountPercentage, PRODUCTS, resolveImageUrl } from '../../data/clientStore';
 import { adminService } from '../../services/adminService';
 import welcomeBannerImg from '../../assets/imagetakapay.webp';
@@ -11,6 +11,7 @@ export default function ClientHeroCarousel({
 }) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isTransitioning, setIsTransitioning] = useState(true);
+  const [isPaused, setIsPaused] = useState(false);
   const [dbCarousels, setDbCarousels] = useState(() => {
     try {
       const cached = localStorage.getItem('takapay_public_carousels');
@@ -42,35 +43,42 @@ export default function ClientHeroCarousel({
   const slides = useMemo(() => {
     // 1. Si l'administrateur a configuré des bannières carrousel dans la base, on les utilise en priorité
     if (dbCarousels.length > 0) {
-      return dbCarousels.slice(0, 4).map((item) => {
+      return dbCarousels.map((item) => {
         const hasProd = item.produit;
+        const hasText = Boolean(
+          (item.kicker && item.kicker.trim()) ||
+          (item.titre && item.titre.trim()) ||
+          (item.description && item.description.trim()) ||
+          (item.texte_bouton && item.texte_bouton.trim())
+        );
+
+        let action = null;
+        if (hasProd && typeof onSelectProduct === 'function') {
+          action = () => onSelectProduct(hasProd.id || hasProd);
+        } else if (item.lien && item.lien.trim()) {
+          const rawLink = item.lien.trim();
+          action = () => {
+            if (rawLink.startsWith('http://') || rawLink.startsWith('https://')) {
+              window.open(rawLink, '_blank');
+            } else if (typeof onGoCatalog === 'function') {
+              onGoCatalog();
+            }
+          };
+        }
 
         return {
           id: `carousel-db-${item.id}`,
           isDb: true,
+          hasTextOverlay: hasText,
           image: resolveImageUrl(item.image_url) || welcomeBannerImg,
           kicker: item.kicker ? item.kicker.trim() : null,
           title: item.titre ? item.titre.trim() : null,
           description: item.description ? item.description.trim() : null,
-          priceText: hasProd
+          priceText: hasText && hasProd
             ? `Disponible dès ${formatFCFA(hasProd.paiement?.demarrage_minimum || hasProd.prix_vente || 5000)} de 1er versement.`
             : null,
           btnText: item.texte_bouton ? item.texte_bouton.trim() : null,
-          action: () => {
-            if (hasProd && typeof onSelectProduct === 'function') {
-              onSelectProduct(hasProd);
-            } else if (item.lien) {
-              if (item.lien.startsWith('http://') || item.lien.startsWith('https://')) {
-                window.open(item.lien, '_blank');
-              } else if (typeof onGoCatalog === 'function') {
-                onGoCatalog();
-              }
-            } else if (typeof onGoCatalog === 'function') {
-              onGoCatalog();
-            } else if (typeof onSelectPromo === 'function') {
-              onSelectPromo();
-            }
-          },
+          action,
         };
       });
     }
@@ -150,19 +158,41 @@ export default function ClientHeroCarousel({
     ];
   }, [slides]);
 
-  // Défilement automatique continu toutes les 6 secondes (toujours vers l'avant, pas de rembobinage)
+  const touchStartX = useRef(0);
+
+  // Défilement automatique continu toutes les 6 secondes (mis en pause au survol et si l'onglet est masqué)
   useEffect(() => {
-    if (slides.length <= 1) return;
+    if (slides.length <= 1 || isPaused) return;
     const timer = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+
       setIsTransitioning(true);
-      setCurrentIndex((prev) => prev + 1);
+      setCurrentIndex((prev) => {
+        if (prev >= slides.length) return 0;
+        return prev + 1;
+      });
     }, 6000);
 
     return () => clearInterval(timer);
-  }, [slides.length]);
+  }, [slides.length, isPaused]);
+
+  // Si l'utilisateur revient sur l'onglet, réinitialiser proprement l'index s'il a dépassé
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.hidden) return;
+      if (currentIndex >= slides.length) {
+        setIsTransitioning(false);
+        setCurrentIndex(0);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
+  }, [currentIndex, slides.length]);
 
   // Réinitialisation instantanée et invisible à la première slide une fois la transition du clone terminée
-  const handleTransitionEnd = () => {
+  const handleTransitionEnd = (e) => {
+    if (e.target !== e.currentTarget || e.propertyName !== 'transform') return;
+
     if (currentIndex >= slides.length) {
       setIsTransitioning(false);
       setCurrentIndex(0);
@@ -179,12 +209,47 @@ export default function ClientHeroCarousel({
     setCurrentIndex(dotIdx);
   };
 
+  const handlePrev = () => {
+    setIsTransitioning(true);
+    setCurrentIndex((prev) => (prev <= 0 ? slides.length - 1 : prev - 1));
+  };
+
+  const handleNext = () => {
+    setIsTransitioning(true);
+    setCurrentIndex((prev) => (prev >= slides.length - 1 ? 0 : prev + 1));
+  };
+
+  const handleTouchStart = (e) => {
+    if (e.touches && e.touches[0]) {
+      touchStartX.current = e.touches[0].clientX;
+    }
+  };
+
+  const handleTouchEnd = (e) => {
+    if (e.changedTouches && e.changedTouches[0]) {
+      const endX = e.changedTouches[0].clientX;
+      const diff = touchStartX.current - endX;
+      if (diff > 45) {
+        handleNext();
+      } else if (diff < -45) {
+        handlePrev();
+      }
+    }
+  };
+
   if (slides.length === 0) return null;
 
   const activeDot = currentIndex % slides.length;
 
   return (
-    <div className="client-carousel" aria-label="Campagnes et bannières en vedette TakaPay">
+    <div
+      className="client-carousel"
+      aria-label="Campagnes et bannières en vedette TakaPay"
+      onMouseEnter={() => setIsPaused(true)}
+      onMouseLeave={() => setIsPaused(false)}
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+    >
       {/* Piste de défilement horizontal fluide en boucle infinie */}
       <div
         className="client-carousel-track"
@@ -197,15 +262,16 @@ export default function ClientHeroCarousel({
         onTransitionEnd={handleTransitionEnd}
       >
         {extendedSlides.map((s, idx) => {
-          const hasContent = Boolean(s.kicker || s.title || s.description || s.priceText || s.btnText);
+          const hasContent = Boolean(s.kicker || s.title || s.description || s.btnText);
           const isCurrentActive = (idx % slides.length) === activeDot;
+          const isClickable = Boolean(s.action);
 
           return (
             <article
               key={s.id}
               className={`client-slide client-slide-panoramic ${isCurrentActive ? 'active' : ''} ${!hasContent ? 'is-pure-image' : ''}`}
-              onClick={!hasContent && s.action ? s.action : undefined}
-              style={{ cursor: !hasContent && s.action ? 'pointer' : 'default' }}
+              onClick={isClickable && (!hasContent || !s.btnText) ? s.action : undefined}
+              style={{ cursor: isClickable && (!hasContent || !s.btnText) ? 'pointer' : 'default' }}
             >
               {/* Arrière-plan flouté en couleur (remplit harmonieusement l'espace à gauche et à droite) */}
               <img
@@ -258,7 +324,10 @@ export default function ClientHeroCarousel({
                       <button
                         type="button"
                         className="client-btn client-slide-btn"
-                        onClick={s.action}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (s.action) s.action();
+                        }}
                       >
                         {s.btnText}
                       </button>
@@ -270,6 +339,28 @@ export default function ClientHeroCarousel({
           );
         })}
       </div>
+
+      {/* Flèches de navigation gauche / droite */}
+      {slides.length > 1 && (
+        <>
+          <button
+            type="button"
+            className="client-carousel-nav-btn prev"
+            onClick={handlePrev}
+            aria-label="Diapositive précédente"
+          >
+            ‹
+          </button>
+          <button
+            type="button"
+            className="client-carousel-nav-btn next"
+            onClick={handleNext}
+            aria-label="Diapositive suivante"
+          >
+            ›
+          </button>
+        </>
+      )}
 
       {/* Puces de navigation */}
       {slides.length > 1 && (
