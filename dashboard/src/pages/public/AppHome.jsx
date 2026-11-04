@@ -97,8 +97,9 @@ export default function AppHome({ initialTab = 'home' }) {
   const [currentCagnotte, setCurrentCagnotte] = useState(null);
   const [unreadNotifCount, setUnreadNotifCount] = useState(0);
 
-  // Modal de bienvenue
+  // Modal de bienvenue (Popup promotionnel configuré depuis le back-office)
   const [showWelcome, setShowWelcome] = useState(false);
+  const [activePopupPromo, setActivePopupPromo] = useState(null);
   const [toastMessage, setToastMessage] = useState('');
 
   // Notification Toast
@@ -109,24 +110,51 @@ export default function AppHome({ initialTab = 'home' }) {
     }, 3200);
   };
 
-  // N'afficher le modal que lorsqu'une vraie promotion est disponible.
+  // Charger le popup promotionnel actif depuis le back-office (dans Promotions)
   useEffect(() => {
-    try {
-      const searchParams = new URLSearchParams(location.search);
-      const forceWelcome = searchParams.get('welcome') === '1' || searchParams.get('promo') === '1';
-      const seen = sessionStorage.getItem('takapay-welcome-seen');
-      const hasPromotions = productsList.some((product) => discountPercentage(product) > 0);
-      if (hasPromotions && (!seen || forceWelcome)) {
-        const timer = setTimeout(() => {
-          setShowWelcome(true);
-          sessionStorage.setItem('takapay-welcome-seen', 'true');
-        }, 500);
-        return () => clearTimeout(timer);
+    let isMounted = true;
+    adminService.getPromotions().then((promos) => {
+      if (!isMounted || !Array.isArray(promos)) return;
+      const now = new Date();
+      const activePopup = promos.find((p) => {
+        if (!p || p.statut === 'inactif' || !p.afficher_popup) return false;
+        if (!p.image_popup_url && !p.image_popup) return false;
+        const debut = p.date_debut ? new Date(p.date_debut) : null;
+        const fin = p.date_fin ? new Date(p.date_fin) : null;
+        if (debut && now < debut) return false;
+        if (fin && now > fin) return false;
+        return true;
+      });
+
+      if (!activePopup) {
+        setActivePopupPromo(null);
+        setShowWelcome(false);
+        return;
       }
-    } catch {
-      // Ignorer
-    }
-  }, [location.search, productsList]);
+
+      setActivePopupPromo(activePopup);
+      try {
+        const searchParams = new URLSearchParams(location.search);
+        const forceWelcome = searchParams.get('welcome') === '1' || searchParams.get('promo') === '1';
+        const seenKey = `takapay-welcome-seen-${activePopup.id}`;
+        const seen = sessionStorage.getItem(seenKey);
+        if (!seen || forceWelcome) {
+          setTimeout(() => {
+            if (isMounted) {
+              setShowWelcome(true);
+              sessionStorage.setItem(seenKey, 'true');
+            }
+          }, 500);
+        }
+      } catch {
+        // Ignorer
+      }
+    }).catch(() => {});
+
+    return () => {
+      isMounted = false;
+    };
+  }, [location.search]);
 
   // Synchronisation bidirectionnelle avec les routes URL
   useEffect(() => {
@@ -748,10 +776,10 @@ export default function AppHome({ initialTab = 'home' }) {
         </div>
       </main>
 
-      {/* Modal Popup des promotions du moment */}
+      {/* Modal Popup des promotions du moment (envoyé depuis le back-office) */}
       <ClientWelcomeModal
         isOpen={showWelcome}
-        products={productsList}
+        popupPromo={activePopupPromo}
         onClose={() => setShowWelcome(false)}
         onSelectProduct={handleOpenProduct}
         onShowAllPromos={handleSelectPromo}

@@ -1,26 +1,29 @@
-import { useMemo } from 'react';
-import { formatFCFA, discountPercentage, resolveImageUrl, PRODUCTS } from '../../data/clientStore';
+import { resolveImageUrl } from '../../data/clientStore';
 
-export default function ClientWelcomeModal({ isOpen, onClose, onSelectProduct, onShowAllPromos, products = [] }) {
-  // Produits en promotion réels venant de la base de données
-  const deals = useMemo(() => {
-    const list = Array.isArray(products) && products.length > 0 ? products : PRODUCTS;
-    return list.filter((p) => p && discountPercentage(p) > 0).slice(0, 3);
-  }, [products]);
+export default function ClientWelcomeModal({
+  isOpen,
+  onClose,
+  onSelectProduct,
+  onShowAllPromos,
+  popupPromo = null,
+}) {
+  if (!isOpen || !popupPromo) return null;
 
-  if (!isOpen || deals.length === 0) return null;
+  const rawImg = popupPromo.image_popup_url || popupPromo.image_popup || '';
+  const popupImage = rawImg.startsWith('http') || rawImg.startsWith('data:')
+    ? rawImg
+    : resolveImageUrl(rawImg);
 
-  const featuredDeal = deals[0];
-  const rawFeaturedImage = featuredDeal.im || featuredDeal.images?.[0];
-  const featuredImagePath = typeof rawFeaturedImage === 'string'
-    ? rawFeaturedImage
-    : rawFeaturedImage?.chemin || rawFeaturedImage?.url || '';
-  const featuredImage = resolveImageUrl(featuredImagePath);
+  if (!popupImage) return null;
+
+  const pct = Number(popupPromo.pourcentage_promo || 0);
+  const linkedProductId = popupPromo.produit_id || popupPromo.produit?.id || null;
+  const linkedProductName = popupPromo.produit?.nom || null;
 
   const handleAction = () => {
     onClose();
-    if (featuredDeal.id && typeof onSelectProduct === 'function') {
-      onSelectProduct(featuredDeal.id);
+    if (linkedProductId && typeof onSelectProduct === 'function') {
+      onSelectProduct(linkedProductId);
     } else if (typeof onShowAllPromos === 'function') {
       onShowAllPromos();
     }
@@ -52,6 +55,12 @@ export default function ClientWelcomeModal({ isOpen, onClose, onSelectProduct, o
         style={{
           background: '#ffffff',
           color: '#1b1716',
+          maxWidth: '520px',
+          width: '100%',
+          borderRadius: '22px',
+          overflow: 'hidden',
+          position: 'relative',
+          boxShadow: '0 25px 60px rgba(0, 0, 0, 0.35)',
         }}
       >
         <button
@@ -63,7 +72,7 @@ export default function ClientWelcomeModal({ isOpen, onClose, onSelectProduct, o
           ×
         </button>
 
-        {/* Visuel principal lié au premier article réellement en promotion */}
+        {/* Image personnalisée du Popup envoyée depuis le Back-Office */}
         <div
           className="welcome-photo"
           role="button"
@@ -75,44 +84,51 @@ export default function ClientWelcomeModal({ isOpen, onClose, onSelectProduct, o
               handleAction();
             }
           }}
-          title={`Découvrir ${featuredDeal.n}`}
           style={{
             cursor: 'pointer',
             position: 'relative',
             overflow: 'hidden',
+            background: '#0f172a',
+            maxHeight: '360px',
           }}
         >
-          {featuredImage && (
-            <img
-              src={featuredImage}
-              alt={featuredDeal.n}
-              onError={(event) => {
-                event.currentTarget.style.display = 'none';
-                event.currentTarget.nextSibling.style.display = 'flex';
-              }}
+          <img
+            src={popupImage}
+            alt={popupPromo.titre || 'Offre promotionnelle TakaPay'}
+            style={{
+              width: '100%',
+              maxHeight: '360px',
+              objectFit: 'cover',
+              display: 'block',
+            }}
+          />
+          {pct > 0 && (
+            <span
               style={{
-                width: '100%',
-                height: '100%',
-                objectFit: 'contain',
-                display: 'block',
+                position: 'absolute',
+                top: '14px',
+                left: '14px',
+                background: 'var(--r, #dc2626)',
+                color: '#ffffff',
+                fontWeight: 800,
+                fontSize: '13px',
+                padding: '5px 12px',
+                borderRadius: '99px',
+                boxShadow: '0 4px 12px rgba(220, 38, 38, 0.4)',
               }}
-            />
+            >
+              −{pct}% PROMO
+            </span>
           )}
-          <div
-            className="welcome-photo-fallback"
-            aria-label="Image du produit non disponible"
-            style={{ display: featuredImage ? 'none' : 'flex' }}
-          >
-            <span className="material-symbols-outlined notranslate" translate="no">sell</span>
-          </div>
         </div>
 
-        {/* Contenu et offres avec contraste garanti */}
+        {/* Texte & bouton d'action */}
         <div
           className="welcome-copy"
           style={{
             background: '#ffffff',
             color: '#1b1716',
+            padding: '22px 24px',
           }}
         >
           <span
@@ -126,82 +142,44 @@ export default function ClientWelcomeModal({ isOpen, onClose, onSelectProduct, o
               marginBottom: '6px',
             }}
           >
-            PROMOTION DU MOMENT
+            {pct > 0 ? `OFFRE SPÉCIALE −${pct}%` : 'OFFRE DU MOMENT'}
           </span>
 
-          <h2
-            id="welcome-title"
-            style={{
-              fontWeight: 800,
-              color: '#1b1716',
-              margin: '0 0 8px',
-              lineHeight: 1.25,
-            }}
-          >
-            {featuredDeal.n}
-          </h2>
+          {(popupPromo.titre || linkedProductName) && (
+            <h2
+              id="welcome-title"
+              style={{
+                fontWeight: 800,
+                color: '#1b1716',
+                margin: '0 0 8px',
+                lineHeight: 1.25,
+                fontSize: '20px',
+              }}
+            >
+              {popupPromo.titre || linkedProductName}
+            </h2>
+          )}
 
-          <p
-            style={{
-              margin: '0 0 16px',
-              color: '#4b443f',
-              lineHeight: 1.5,
-            }}
-          >
-            {featuredDeal.d || 'Profitez de cette réduction et commencez votre cagnotte à votre rythme.'}
-          </p>
-
-          {deals.length > 0 && (
-            <div className="welcome-deals">
-              {deals.map((p) => {
-                const disc = discountPercentage(p);
-                return (
-                  <button
-                    key={p.id}
-                    type="button"
-                    className="welcome-deal"
-                    onClick={() => {
-                      onClose();
-                      onSelectProduct(p.id);
-                    }}
-                  >
-                    <img
-                      src={p.im}
-                      alt={p.n}
-                    />
-                    <div className="welcome-deal-copy" style={{ flex: 1, minWidth: 0 }}>
-                      <b style={{ fontSize: '13.5px', color: '#1b1716', display: 'block' }}>{p.n}</b>
-                      <small style={{ color: '#6b6661', fontSize: '11.5px', marginTop: '2px', display: 'block' }}>
-                        <strong style={{ color: 'var(--r, #dc2626)', fontWeight: 800 }}>{formatFCFA(p.p)}</strong>
-                        <s style={{ marginLeft: '6px', color: '#9c938f' }}>{formatFCFA(p.o)}</s>
-                      </small>
-                    </div>
-                    <span
-                      style={{
-                        fontSize: '11px',
-                        fontWeight: 800,
-                        color: '#ffffff',
-                        background: 'var(--r, #dc2626)',
-                        padding: '3px 8px',
-                        borderRadius: '99px',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      −{disc}%
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
+          {popupPromo.description && (
+            <p
+              style={{
+                margin: '0 0 18px',
+                color: '#4b443f',
+                lineHeight: 1.5,
+                fontSize: '14px',
+              }}
+            >
+              {popupPromo.description}
+            </p>
           )}
 
           <button
             type="button"
             className="client-btn"
-            style={{ width: '100%', padding: '14px', fontSize: '15px', fontWeight: 800 }}
+            style={{ width: '100%', padding: '14px', fontSize: '15px', fontWeight: 800, marginTop: popupPromo.description ? 0 : '10px' }}
             onClick={handleAction}
           >
-            Découvrir {featuredDeal.n || 'cet article'} →
+            {linkedProductName ? `Découvrir ${linkedProductName} →` : 'Découvrir l’offre →'}
           </button>
         </div>
       </div>
