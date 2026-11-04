@@ -15,6 +15,19 @@ class UpdateProduitRequest extends FormRequest
         return $this->user()?->isAdmin() ?? false;
     }
 
+    protected function prepareForValidation(): void
+    {
+        $merge = [];
+        foreach (['nom', 'description', 'couleur', 'reference'] as $field) {
+            if ($this->has($field) && is_string($this->input($field))) {
+                $merge[$field] = trim(strip_tags($this->input($field)));
+            }
+        }
+        if (! empty($merge)) {
+            $this->merge($merge);
+        }
+    }
+
     /**
      * Get the validation rules that apply to the request.
      *

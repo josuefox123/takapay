@@ -236,7 +236,7 @@ class AdminController extends Controller
             throw $e;
         }
 
-        return DB::transaction(function () use ($validated) {
+        return DB::transaction(function () use ($validated, $request) {
             $videoPath = null;
             if (! empty($validated['video'])) {
                 $rawVideo = is_array($validated['video']) ? ($validated['video']['chemin'] ?? null) : $validated['video'];
@@ -262,18 +262,19 @@ class AdminController extends Controller
             }
 
             $produit = Produit::create([
-                'nom' => $validated['nom'],
+                'admin_id' => $request->user()?->id,
+                'nom' => trim(strip_tags($validated['nom'])),
                 'sous_categorie_id' => $validated['sous_categorie_id'],
-                'description' => $validated['description'] ?? null,
+                'description' => isset($validated['description']) ? trim(strip_tags($validated['description'])) : null,
                 'stock' => $validated['stock'],
                 'duree' => $validated['duree'],
                 'garantie_duree' => $validated['garantie_duree'] ?? null,
                 'garantie_unite' => $validated['garantie_unite'] ?? null,
-                'couleur' => $validated['couleur'] ?? null,
+                'couleur' => isset($validated['couleur']) ? trim(strip_tags($validated['couleur'])) : null,
                 'video' => $videoPath,
             ]);
 
-            $ref = ! empty($validated['reference']) ? $validated['reference'] : ('PRD-'.str_pad($produit->id, 4, '0', STR_PAD_LEFT));
+            $ref = ! empty($validated['reference']) ? trim(strip_tags($validated['reference'])) : ('PRD-'.str_pad($produit->id, 4, '0', STR_PAD_LEFT));
             $prixTotal = (float) $validated['prix_total'];
             $dureeMois = max(1, (int) $produit->duree);
             $prixMin = isset($validated['prix_minimum']) && $validated['prix_minimum'] > 0 ? (float) $validated['prix_minimum'] : floor($prixTotal * 0.1);
@@ -310,7 +311,7 @@ class AdminController extends Controller
                 }
             }
 
-            $produit->load(['sousCategorie.categorie', 'parametreProduit.promotion', 'imageProduits']);
+            $produit->load(['admin', 'sousCategorie.categorie', 'parametreProduit.promotion', 'imageProduits']);
 
             return (new ProduitResource($produit))
                 ->response()

@@ -8,6 +8,7 @@ use App\Http\Requests\UpdateLivraisonRequest;
 use App\Http\Resources\LivraisonResource;
 use App\Models\Livraison;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 
 class LivraisonController extends Controller
@@ -15,9 +16,16 @@ class LivraisonController extends Controller
     /**
      * Liste paginée des livraisons.
      */
-    public function index(): AnonymousResourceCollection
+    public function index(Request $request): AnonymousResourceCollection
     {
-        return LivraisonResource::collection(Livraison::latest()->paginate(15));
+        $user = $request->user();
+        $query = Livraison::latest();
+
+        if ($user && $user->role === 'admin') {
+            $query->whereHas('cagnotte.produit', fn ($p) => $p->where('admin_id', $user->id));
+        }
+
+        return LivraisonResource::collection($query->paginate(15));
     }
 
     /**

@@ -6,6 +6,7 @@ export default function AdminSidebar({
   onSelectTab,
   onLogout,
   unreadSupportCount = 0,
+  menuCounts = { cagnottes: 0, commandes: 0 },
   theme = 'light',
   onToggleTheme,
 }) {
@@ -16,8 +17,8 @@ export default function AdminSidebar({
     { id: 'promotions', label: 'Promotions', icon: 'tag' },
     { id: 'carousels', label: 'Bannières Carrousel', icon: 'image' },
     { id: 'partenaires', label: 'Partenaires', icon: 'users' },
-    { id: 'cagnottes', label: 'Cagnottes', icon: 'wallet' },
-    { id: 'commandes', label: 'Commandes', icon: 'cart' },
+    { id: 'cagnottes', label: 'Cagnottes', icon: 'wallet', badge: menuCounts?.cagnottes || 0 },
+    { id: 'commandes', label: 'Commandes', icon: 'cart', badge: menuCounts?.commandes || 0 },
     { id: 'documents', label: 'Documents', icon: 'file' },
     { id: 'utilisateurs', label: 'Utilisateurs', icon: 'users' },
     { id: 'transactions', label: 'Transactions', icon: 'swap' },

@@ -16,6 +16,7 @@ class SupportConversation extends Model
 
     protected $fillable = [
         'user_id',
+        'admin_id',
         'session_token',
         'status',
         'last_message_at',
@@ -28,6 +29,11 @@ class SupportConversation extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class, 'user_id');
+    }
+
+    public function admin(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'admin_id');
     }
 
     public function messages(): HasMany

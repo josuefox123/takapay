@@ -25,6 +25,12 @@ class CommandeController extends Controller
         $query = Commande::with(['utilisateur', 'commandeProduits.produit', 'transactions.cagnotte'])->latest();
 
         if ($user && $user->isAdmin()) {
+            if ($user->role === 'admin') {
+                $query->where(function ($q) use ($user) {
+                    $q->whereHas('commandeProduits.produit', fn ($p) => $p->where('admin_id', $user->id))
+                        ->orWhereHas('transactions.cagnotte.produit', fn ($p) => $p->where('admin_id', $user->id));
+                });
+            }
             if ($request->filled('user_id')) {
                 $query->where('utilisateur_id', $request->query('user_id'));
             }
@@ -50,6 +56,7 @@ class CommandeController extends Controller
      */
     public function adminIndex(Request $request): AnonymousResourceCollection
     {
+        $user = $request->user();
         $query = Commande::with([
             'utilisateur',
             'commandeProduits.produit',
@@ -61,6 +68,13 @@ class CommandeController extends Controller
                 ->orWhere('mode_paiement', 'livraison');
         })
         ->latest();
+
+        if ($user && $user->role === 'admin') {
+            $query->where(function ($q) use ($user) {
+                $q->whereHas('commandeProduits.produit', fn ($p) => $p->where('admin_id', $user->id))
+                    ->orWhereHas('transactions.cagnotte.produit', fn ($p) => $p->where('admin_id', $user->id));
+            });
+        }
 
         if ($request->filled('statut')) {
             $query->where('statut', $request->query('statut'));

@@ -263,6 +263,15 @@ class PaymentController extends Controller
                                 'statut' => 'non_lu',
                             ]);
                         }
+
+                        // Notification interne unique sur le menu Commandes de l'admin créateur du produit
+                        Notification::notifyProductAdmins(
+                            $produit,
+                            $cag->id,
+                            'admin_commande',
+                            'Nouvelle commande Cash à la livraison',
+                            'Nouvelle commande pour '.$produit->nom.' ('.number_format($amount, 0, ',', ' ').' FCFA).'
+                        );
                     }
 
                     return ['commande' => $cmd, 'cagnotte' => $cag];
@@ -850,20 +859,29 @@ class PaymentController extends Controller
                     Log::warning('Aucun email client valide pour la commande : '.$resolvedCommande->reference);
                 }
 
-                // 2. Email à l'administrateur / marchand
-                $adminEmail = config('mail.admin_email') ?? env('ADMIN_NOTIFICATION_EMAIL');
-                if (! empty($adminEmail)) {
-                    Mail::to($adminEmail)->send(
-                        new MerchantPaymentNotificationMail(
-                            $resolvedCommande,
-                            $resolvedUser,
-                            $finalAmount,
-                            $transactionId,
-                            $network,
-                            $resolvedCagnotte
-                        )
+                // 2. Notification interne non-répétitive pour l'admin créateur du produit (aucun email envoyé au .env)
+                $targetProduit = $resolvedCagnotte?->produit
+                    ?? $resolvedCommande->commandeProduits()->with('produit')->first()?->produit;
+
+                $isOrderReady = $isCash
+                    || ($resolvedCagnotte && ($resolvedCagnotte->statut === 'terminee' || $resolvedCagnotte->progression >= 100));
+
+                if ($isOrderReady) {
+                    Notification::notifyProductAdmins(
+                        $targetProduit,
+                        $resolvedCagnotte?->id,
+                        'admin_commande',
+                        $isCash ? 'Nouvelle commande Cash payée' : 'Cagnotte 100% atteinte - Commande à livrer',
+                        'Commande prête à livrer pour '.($targetProduit?->nom ?? 'un article').' ('.number_format($finalAmount, 0, ',', ' ').' FCFA).'
                     );
-                    Log::info('Email de notification marchand envoyé à : '.$adminEmail);
+                } else {
+                    Notification::notifyProductAdmins(
+                        $targetProduit,
+                        $resolvedCagnotte?->id,
+                        'admin_cagnotte',
+                        'Nouveau versement cagnotte',
+                        'Versement de '.number_format($finalAmount, 0, ',', ' ').' FCFA reçu pour '.($targetProduit?->nom ?? 'un article').'.'
+                    );
                 }
             } catch (\Throwable $e) {
                 Log::error("Erreur lors de l'envoi des emails de confirmation : ".$e->getMessage());

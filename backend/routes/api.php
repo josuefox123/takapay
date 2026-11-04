@@ -159,6 +159,10 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
 
             // Remboursements FeexPay
             Route::post('/cagnottes/{cagnotte}/rembourser-feexpay', [CagnotteController::class, 'validerRemboursementFeexpay']);
+
+            // Compteurs de notifications par menu (Cagnottes / Commandes)
+            Route::get('/notifications/menu-counts', [NotificationController::class, 'adminMenuCounts']);
+            Route::post('/notifications/mark-menu-read', [NotificationController::class, 'markAdminMenuRead']);
         });
 
         // Gestion des comptes, du KYC, des audits et des livreurs
