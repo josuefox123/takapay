@@ -4,6 +4,7 @@ import ClientPartnersStrip from './ClientPartnersStrip';
 import ClientProductCard from './ClientProductCard';
 import { PRODUCTS, TAKAPAY_CATEGORIES, rebuildCategories } from '../../data/clientStore';
 import { openCookiePreferences } from '../../services/cookieConsent';
+import { adminService } from '../../services/adminService';
 
 export default function ClientHomeView({
   products = [],
@@ -28,6 +29,8 @@ export default function ClientHomeView({
     } catch { /* ignore */ }
     return [];
   });
+  const [partenaires, setPartenaires] = useState([]);
+  const [partnerError, setPartnerError] = useState('');
 
   useEffect(() => {
     const handleCategoriesUpdated = (event) => {
@@ -36,6 +39,21 @@ export default function ClientHomeView({
     };
     window.addEventListener('takapay_categories_updated', handleCategoriesUpdated);
     return () => window.removeEventListener('takapay_categories_updated', handleCategoriesUpdated);
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    adminService.getPartenaires()
+      .then((items) => {
+        if (active) setPartenaires(items);
+      })
+      .catch(() => {
+        if (active) setPartnerError('Les partenaires ne sont pas disponibles pour le moment.');
+      });
+
+    return () => {
+      active = false;
+    };
   }, []);
 
   const displayProducts = Array.isArray(products) && products.length > 0 ? products : PRODUCTS;
@@ -83,10 +101,16 @@ export default function ClientHomeView({
         onSelectPromo={onSelectPromo}
       />
 
-      <ClientPartnersStrip />
+      <div className="home-partners-placement home-partners-placement--mobile">
+        <ClientPartnersStrip partenaires={partenaires} error={partnerError} />
+      </div>
 
       {/* Conteneur centré pour les sections de contenu */}
       <div className="home-content-container">
+        <div className="home-reassurance-placement--desktop">
+          <ReassuranceBar />
+        </div>
+
         {/* 3. Nos Catégories (Nom en dessous, agrandissement au hover) */}
       {categories.length > 0 && (
         <section id="nos-categories" className="home-categories-cards-section" aria-label="Catégories d'articles">
@@ -258,7 +282,17 @@ export default function ClientHomeView({
         </div>
       )}
 
-      <ReassuranceBar />
+      <div className="home-partners-placement home-partners-placement--desktop">
+        <ClientPartnersStrip
+          partenaires={partenaires}
+          error={partnerError}
+          className="home-partners-section--reassurance"
+        />
+      </div>
+
+      <div className="home-reassurance-placement--mobile">
+        <ReassuranceBar />
+      </div>
 
       {/* 5. Bannière intermédiaire de réassurance cagnotte libre */}
       <section className="home-promo-strip" aria-label="Avantages de la cagnotte Takapay">
@@ -433,7 +467,7 @@ function ReassuranceBar() {
           </div>
           <div className="home-reassurance-text">
             <strong>Cagnotte 100% libre</strong>
-            <span>Cotisez à votre rythme, 0 frais cachés</span>
+            <span>Cotisez à votre rythme, sans frais cachés</span>
           </div>
         </div>
 
@@ -445,7 +479,7 @@ function ReassuranceBar() {
           </div>
           <div className="home-reassurance-text">
             <strong>Livraison garantie</strong>
-            <span>Partout au Bénin dès 100% ou comptant</span>
+            <span>Partout au Bénin dès paiement complet</span>
           </div>
         </div>
 
@@ -457,7 +491,7 @@ function ReassuranceBar() {
           </div>
           <div className="home-reassurance-text">
             <strong>Assistance directe</strong>
-            <span>Support WhatsApp & appel dédié</span>
+            <span>Support WhatsApp et appel dédié</span>
           </div>
         </div>
       </div>

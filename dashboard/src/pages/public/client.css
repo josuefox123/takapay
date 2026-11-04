@@ -441,9 +441,10 @@
     margin-right: 0;
     margin-top: -16px;
     margin-bottom: 28px;
-    height: clamp(240px, 50vh, 360px);
-    min-height: 230px;
-    max-height: 370px;
+    height: auto;
+    min-height: 0;
+    max-height: none;
+    aspect-ratio: 1 / 1;
     padding: 0;
     box-sizing: border-box;
     background: #18181b;
@@ -5194,6 +5195,44 @@
   border-bottom: 1px solid var(--bd, #ece5e0);
 }
 
+.home-partners-placement--desktop {
+  display: none;
+}
+
+.home-partners-placement--mobile {
+  display: block;
+}
+
+.home-reassurance-placement--desktop {
+  display: block;
+}
+
+.home-reassurance-placement--mobile {
+  display: none;
+}
+
+.home-partners-section--reassurance {
+  display: flex;
+  align-items: center;
+  gap: clamp(20px, 3vw, 42px);
+  margin: clamp(32px, 4vw, 56px) 0 clamp(36px, 4.5vw, 64px);
+  padding: 18px 24px;
+  border: 1px solid var(--bd, #e5ded5);
+  border-radius: 20px;
+  box-shadow: 0 10px 30px -18px rgba(35, 24, 20, 0.3);
+}
+
+.home-partners-section--reassurance .home-partners-heading {
+  flex: 0 0 auto;
+  margin: 0;
+  text-align: left;
+}
+
+.home-partners-section--reassurance .home-partners-window {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 .home-partners-heading {
   text-align: center;
   margin-bottom: 16px;
@@ -5217,7 +5256,6 @@
 .home-partners-window {
   width: 100%;
   overflow: hidden;
-  mask-image: linear-gradient(to right, transparent, #000 4%, #000 96%, transparent);
 }
 
 .home-partners-track,
@@ -5236,7 +5274,7 @@
 }
 
 .home-partners-track.is-moving {
-  animation: home-partners-scroll 36s linear infinite;
+  animation: takapayMarquee 18s linear infinite;
 }
 
 .home-partners-window:hover .home-partners-track {
@@ -5288,12 +5326,6 @@
   text-align: center;
 }
 
-@keyframes home-partners-scroll {
-  to {
-    transform: translateX(-50%);
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
   .home-partners-track.is-moving {
     animation: none;
@@ -5316,7 +5348,7 @@
     gap: 0;
   }
   .home-partners-track.is-moving {
-    animation-duration: 28s;
+    animation-duration: 18s;
   }
   .home-partner-card {
     width: 144px;
@@ -5326,6 +5358,38 @@
   }
   .home-partner-card img {
     max-height: 36px;
+  }
+}
+
+@media (min-width: 861px) {
+  .home-partners-placement--desktop {
+    display: block;
+  }
+
+  .home-partners-placement--mobile {
+    display: none;
+  }
+
+  .home-reassurance-placement--desktop {
+    display: block;
+  }
+
+  .home-reassurance-placement--mobile {
+    display: none;
+  }
+}
+
+@media (max-width: 860px) {
+  .home-partners-section--reassurance {
+    display: block;
+  }
+
+  .home-reassurance-placement--desktop {
+    display: none;
+  }
+
+  .home-reassurance-placement--mobile {
+    display: block;
   }
 }
 

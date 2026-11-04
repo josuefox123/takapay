@@ -1,7 +1,7 @@
 export const COOKIE_CONSENT_KEY = 'takapay-cookie-consent';
 export const COOKIE_CONSENT_EVENT = 'takapay:open-cookie-preferences';
 
-const CONSENT_VERSION = 1;
+const CONSENT_VERSION = 2;
 const CONSENT_DURATION_MS = 180 * 24 * 60 * 60 * 1000;
 
 export function readCookieConsent() {
@@ -9,7 +9,8 @@ export function readCookieConsent() {
   if (!stored) return null;
 
   if (stored === 'all' || stored === 'essential') {
-    return saveCookieConsent(stored === 'all');
+    localStorage.removeItem(COOKIE_CONSENT_KEY);
+    return null;
   }
 
   try {

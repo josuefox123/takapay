@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import {
   COOKIE_CONSENT_EVENT,
   enableOptionalServices,
-  openCookiePreferences,
   readCookieConsent,
   removeTranslationCookie,
   saveCookieConsent,
@@ -35,7 +34,10 @@ const buttonStyle = {
 export default function ClientCookieBanner({ onShowToast }) {
   const [initialState] = useState(() => {
     try {
-      return { consent: readCookieConsent(), error: '' };
+      return {
+        consent: readCookieConsent(),
+        error: '',
+      };
     } catch (readError) {
       return {
         consent: null,
@@ -43,8 +45,8 @@ export default function ClientCookieBanner({ onShowToast }) {
       };
     }
   });
-  const [isOpen, setIsOpen] = useState(!initialState.consent || Boolean(initialState.error));
-  const [hasConsent, setHasConsent] = useState(Boolean(initialState.consent));
+  const [isOpen, setIsOpen] = useState(false);
+  const [showNotice, setShowNotice] = useState(!initialState.consent);
   const [preferences, setPreferences] = useState(Boolean(initialState.consent?.preferences));
   const [tab, setTab] = useState('cookies');
   const [error, setError] = useState(initialState.error);
@@ -75,8 +77,8 @@ export default function ClientCookieBanner({ onShowToast }) {
     }
 
     setPreferences(allowPreferences);
-    setHasConsent(true);
     setIsOpen(false);
+    setShowNotice(false);
 
     if (allowPreferences) {
       enableOptionalServices();
@@ -94,30 +96,61 @@ export default function ClientCookieBanner({ onShowToast }) {
 
   return (
     <>
-      {!isOpen && (
-        <button
-          type="button"
-          onClick={() => openCookiePreferences('cookies')}
-          aria-label="Ouvrir les préférences de confidentialité et de cookies"
+      {showNotice && !isOpen && (
+        <aside
+          aria-label="Information sur les cookies"
           style={{
             position: 'fixed',
-            left: '16px',
-            bottom: '16px',
+            inset: 'auto 0 0',
             zIndex: 10040,
-            minHeight: '42px',
-            padding: '9px 13px',
-            border: '1px solid #ded8d2',
-            borderRadius: '999px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: '16px',
+            padding: '18px clamp(16px, 4vw, 36px)',
             background: '#fff',
             color: '#28211e',
-            boxShadow: '0 4px 18px rgba(0,0,0,.14)',
-            font: 'inherit',
-            fontWeight: 700,
-            cursor: 'pointer',
+            borderTop: '1px solid #e8e1db',
+            boxShadow: '0 -6px 24px rgba(0,0,0,.12)',
           }}
         >
-          Confidentialité
-        </button>
+          <div style={{ flex: '1 1 300px' }}>
+            <strong>Nous utilisons des cookies et stockages nécessaires</strong>
+            <p style={{ margin: '5px 0 0', color: '#625b56', lineHeight: 1.5 }}>
+              Les stockages nécessaires au fonctionnement restent actifs. Google Traduction est
+              facultatif. Acceptez ou refusez les cookies facultatifs ; vous pourrez modifier
+              votre choix depuis le lien Cookies du pied de page.
+            </p>
+            {error && (
+              <p role="alert" style={{ margin: '6px 0 0', color: '#a51f1f', fontWeight: 700 }}>
+                {error}
+              </p>
+            )}
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '9px' }}>
+            <button type="button" onClick={() => save(false)} style={buttonStyle}>
+              Refuser
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setTab('cookies');
+                setIsOpen(true);
+              }}
+              style={buttonStyle}
+            >
+              En savoir plus
+            </button>
+            <button
+              type="button"
+              onClick={() => save(true)}
+              style={{ ...buttonStyle, background: '#c62828', borderColor: '#c62828', color: '#fff' }}
+            >
+              Accepter
+            </button>
+          </div>
+        </aside>
       )}
 
       {isOpen && (
@@ -125,7 +158,7 @@ export default function ClientCookieBanner({ onShowToast }) {
           style={backdropStyle}
           role="presentation"
           onClick={(event) => {
-            if (event.target === event.currentTarget && hasConsent) setIsOpen(false);
+            if (event.target === event.currentTarget) setIsOpen(false);
           }}
         >
           <section
@@ -153,16 +186,14 @@ export default function ClientCookieBanner({ onShowToast }) {
                   et peut être modifié à tout moment.
                 </p>
               </div>
-              {hasConsent && (
-                <button
-                  type="button"
-                  aria-label="Fermer"
-                  onClick={() => setIsOpen(false)}
-                  style={{ ...buttonStyle, minHeight: '36px', padding: '4px 10px', alignSelf: 'flex-start' }}
-                >
-                  ×
-                </button>
-              )}
+              <button
+                type="button"
+                aria-label="Fermer"
+                onClick={() => setIsOpen(false)}
+                style={{ ...buttonStyle, minHeight: '36px', padding: '4px 10px', alignSelf: 'flex-start' }}
+              >
+                ×
+              </button>
             </header>
 
             <nav aria-label="Informations de confidentialité" style={{ display: 'flex', gap: '8px', margin: '20px 0' }}>
