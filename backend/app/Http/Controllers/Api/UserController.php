@@ -9,6 +9,7 @@ use App\Http\Resources\UserResource;
 use App\Mail\AdminWelcomeMail;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
@@ -18,9 +19,15 @@ class UserController extends Controller
     /**
      * Liste paginée des utilisateurs.
      */
-    public function index(): AnonymousResourceCollection
+    public function index(Request $request): AnonymousResourceCollection
     {
-        return UserResource::collection(User::orderBy('nom', 'asc')->orderBy('prenom', 'asc')->paginate(15));
+        $query = User::orderBy('nom', 'asc')->orderBy('prenom', 'asc');
+
+        if ($request->user()?->role !== 'super_admin') {
+            $query->where('role', '!=', 'super_admin');
+        }
+
+        return UserResource::collection($query->paginate(15));
     }
 
     /**
@@ -29,7 +36,11 @@ class UserController extends Controller
     public function store(StoreUserRequest $request): JsonResponse
     {
         $data = $request->validated();
-        $plainPassword = $data['password'];
+        if (! empty($data['email'])) {
+            $data['email'] = trim($data['email']);
+        }
+        $plainPassword = trim($data['password']);
+        $data['password'] = $plainPassword;
 
         if (in_array($data['role'] ?? '', ['admin', 'super_admin'])) {
             $data['must_change_password'] = true;
@@ -64,9 +75,41 @@ class UserController extends Controller
      */
     public function update(UpdateUserRequest $request, User $user): UserResource
     {
-        $user->update($request->validated());
+        $data = $request->validated();
+        $plainPassword = null;
 
-        return new UserResource($user);
+        if (! empty($data['email'])) {
+            $data['email'] = trim($data['email']);
+        }
+
+        if (array_key_exists('password', $data)) {
+            if (empty($data['password'])) {
+                unset($data['password']);
+            } else {
+                $plainPassword = trim($data['password']);
+                $data['password'] = $plainPassword;
+                if (in_array($data['role'] ?? $user->role, ['admin', 'super_admin'])) {
+                    $data['must_change_password'] = true;
+                }
+            }
+        }
+
+        if (isset($data['telephone']) && $data['telephone'] === '') {
+            $data['telephone'] = null;
+        }
+
+        $user->update($data);
+        $updatedUser = $user->fresh();
+
+        if (! empty($updatedUser->email)) {
+            try {
+                Mail::to($updatedUser->email)->send(new AdminWelcomeMail($updatedUser, $plainPassword, true));
+            } catch (\Throwable $e) {
+                Log::warning("Impossible d'envoyer l'email de mise à jour du compte : " . $e->getMessage());
+            }
+        }
+
+        return new UserResource($updatedUser);
     }
 
     /**

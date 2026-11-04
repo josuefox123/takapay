@@ -5,13 +5,16 @@ import { adminService } from '../../services/adminService';
 import { resolveImageUrl } from '../../data/clientStore';
 
 export default function AdminProductsView({ onShowToast }) {
-  const [produits, setProduits] = useState(() => adminService.getCachedProduits());
+  const isSuperAdmin = adminService.getUser()?.role === 'super_admin';
+  const [produits, setProduits] = useState([]);
   const [categories, setCategories] = useState([]);
   const [sousCategories, setSousCategories] = useState([]);
   const [promotions, setPromotions] = useState([]);
   const [search, setSearch] = useState('');
   const [selectedCat, setSelectedCat] = useState('tous');
-  const [loading, setLoading] = useState(() => adminService.getCachedProduits().length === 0);
+  const [page, setPage] = useState(1);
+  const perPage = 10;
+  const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
   // Mode de vue : 'list' | 'create' | 'edit' | 'categories'
@@ -1004,6 +1007,10 @@ export default function AdminProductsView({ onShowToast }) {
       p.sous_categorie_id?.toString() === selectedCat;
     return matchSearch && matchCat;
   });
+
+  const lastPage = Math.max(1, Math.ceil(filtered.length / perPage));
+  const currentPage = Math.min(page, lastPage);
+  const paginated = filtered.slice((currentPage - 1) * perPage, currentPage * perPage);
 
   // Calcul auto des suggestions financières
   const autoMinStart = form.prix_total ? Math.floor(Number(form.prix_total) * 0.1) : 0;
@@ -2627,7 +2634,10 @@ export default function AdminProductsView({ onShowToast }) {
           type="text"
           placeholder="Rechercher par nom, référence..."
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={(e) => {
+            setSearch(e.target.value);
+            setPage(1);
+          }}
           style={{
             flex: 1,
             minWidth: '220px',
@@ -2643,7 +2653,10 @@ export default function AdminProductsView({ onShowToast }) {
 
         <select
           value={selectedCat}
-          onChange={(e) => setSelectedCat(e.target.value)}
+          onChange={(e) => {
+            setSelectedCat(e.target.value);
+            setPage(1);
+          }}
           style={{
             padding: '12px 16px',
             borderRadius: '10px',
@@ -2685,7 +2698,7 @@ export default function AdminProductsView({ onShowToast }) {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((item) => {
+                {paginated.map((item) => {
                   const param = item.parametre_produit || {};
                   const prixTotal = param.prix_total || 0;
                   const prixCash = param.prix_cash || prixTotal;
@@ -2751,6 +2764,20 @@ export default function AdminProductsView({ onShowToast }) {
                               Réf: {param.reference || `PRD-${item.id}`}
                               {item.video && ' · 🎥 Vidéo'}
                             </span>
+                            {isSuperAdmin && item.admin && (
+                              <span
+                                className="admin-sub-text"
+                                style={{
+                                  display: 'block',
+                                  marginTop: '2px',
+                                  color: 'var(--r)',
+                                  fontWeight: 600,
+                                  fontSize: '11.5px',
+                                }}
+                              >
+                                Créé par : {`${item.admin.prenom || ''} ${item.admin.nom || ''}`.trim() || item.admin.email}
+                              </span>
+                            )}
                           </div>
                         </div>
                       </td>
@@ -2822,6 +2849,89 @@ export default function AdminProductsView({ onShowToast }) {
                 })}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {/* Barre de pagination */}
+        {!loading && filtered.length > 0 && (
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              paddingTop: '20px',
+              marginTop: '20px',
+              borderTop: '1px solid var(--line)',
+              flexWrap: 'wrap',
+              gap: '12px',
+            }}
+          >
+            <div style={{ fontSize: '13px', color: 'var(--mut)' }}>
+              Affichage de <strong>{paginated.length}</strong> sur <strong>{filtered.length}</strong> produit{filtered.length > 1 ? 's' : ''} (Page {currentPage} sur {lastPage})
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <button
+                type="button"
+                disabled={currentPage <= 1}
+                onClick={() => setPage((prev) => Math.max(prev - 1, 1))}
+                style={{
+                  padding: '8px 14px',
+                  borderRadius: '8px',
+                  border: '1px solid var(--line)',
+                  background: currentPage <= 1 ? 'var(--bg)' : 'var(--card)',
+                  color: currentPage <= 1 ? 'var(--mut)' : 'var(--ink)',
+                  fontSize: '13px',
+                  fontWeight: 500,
+                  cursor: currentPage <= 1 ? 'not-allowed' : 'pointer',
+                  fontFamily: 'inherit',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  opacity: currentPage <= 1 ? 0.6 : 1,
+                  transition: 'all 0.2s ease',
+                }}
+              >
+                &larr; Précédent
+              </button>
+
+              <span
+                style={{
+                  padding: '6px 12px',
+                  borderRadius: '8px',
+                  background: 'var(--soft)',
+                  color: 'var(--r)',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                }}
+              >
+                {currentPage} / {lastPage}
+              </span>
+
+              <button
+                type="button"
+                disabled={currentPage >= lastPage}
+                onClick={() => setPage((prev) => Math.min(prev + 1, lastPage))}
+                style={{
+                  padding: '8px 14px',
+                  borderRadius: '8px',
+                  border: '1px solid var(--line)',
+                  background: currentPage >= lastPage ? 'var(--bg)' : 'var(--card)',
+                  color: currentPage >= lastPage ? 'var(--mut)' : 'var(--ink)',
+                  fontSize: '13px',
+                  fontWeight: 500,
+                  cursor: currentPage >= lastPage ? 'not-allowed' : 'pointer',
+                  fontFamily: 'inherit',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  opacity: currentPage >= lastPage ? 0.6 : 1,
+                  transition: 'all 0.2s ease',
+                }}
+              >
+                Suivant &rarr;
+              </button>
+            </div>
           </div>
         )}
       </div>

@@ -210,19 +210,21 @@ class Cagnotte extends Model
                 Log::warning('Demande d\'annulation enregistrée mais aucun email valide pour utilisateur #' . ($user?->id ?? 'anonyme'));
             }
 
-            // 3. Email à l'administrateur TakaPay
-            $adminEmail = config('mail.admin_email') ?? env('ADMIN_NOTIFICATION_EMAIL');
-            if (!empty($adminEmail)) {
-                Mail::to($adminEmail)->send(new CagnotteAnnuleeMail($this, $user, $montantRemboursement, $fraisAnnulation, $telephone, true));
-                Log::info('Email "Cagnotte annulée (Admin TakaPay)" envoyé à ' . $adminEmail . ' (cagnotte #' . $this->id . ')');
-            }
+            // 3. Notification interne au menu Cagnottes de l'admin créateur du produit (sans envoi d'email au .env)
+            Notification::notifyProductAdmins(
+                $this->produit,
+                $this->id,
+                'admin_cagnotte',
+                'Demande d\'annulation de cagnotte',
+                'Le client ' . ($user?->nom ?? 'Client') . ' a demandé l\'annulation de la cagnotte #' . $this->id . ' (' . ($this->produit?->nom ?? 'Article') . ').'
+            );
         } catch (\Throwable $e) {
             Log::error('Erreur lors de l\'envoi de la notification "Cagnotte annulée" : ' . $e->getMessage());
         }
     }
 
     /**
-     * Envoie la notification et l'email au client et à l'administrateur TakaPay lorsqu'une cagnotte est rétablie.
+     * Envoie la notification et l'email au client lorsqu'une cagnotte est rétablie.
      */
     public function sendCagnotteRetablieNotification(?string $overrideEmail = null): void
     {
@@ -248,12 +250,14 @@ class Cagnotte extends Model
                 Log::warning('Cagnotte rétablie mais aucun email valide pour utilisateur #' . ($user?->id ?? 'anonyme'));
             }
 
-            // 3. Envoi à l'administrateur TakaPay
-            $adminEmail = config('mail.admin_email') ?? env('ADMIN_NOTIFICATION_EMAIL');
-            if (!empty($adminEmail)) {
-                Mail::to($adminEmail)->send(new CagnotteRetablieMail($this, $user, true));
-                Log::info('Email "Cagnotte rétablie (Admin TakaPay)" envoyé à ' . $adminEmail . ' (cagnotte #' . $this->id . ')');
-            }
+            // 2. Notification interne au menu Cagnottes de l'admin créateur du produit (sans envoi d'email au .env)
+            Notification::notifyProductAdmins(
+                $this->produit,
+                $this->id,
+                'admin_cagnotte',
+                'Cagnotte réactivée',
+                'La cagnotte #' . $this->id . ' (' . ($this->produit?->nom ?? 'Article') . ') a été réactivée par le client.'
+            );
         } catch (\Throwable $e) {
             Log::error('Erreur lors de l\'envoi de la notification "Cagnotte rétablie" : ' . $e->getMessage());
         }

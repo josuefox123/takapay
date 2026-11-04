@@ -10,18 +10,34 @@ use App\Models\Cagnotte;
 use App\Models\Echeance;
 use App\Models\Transaction;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Support\Facades\DB;
 
 class TransactionController extends Controller
 {
-    public function index(): AnonymousResourceCollection
+    public function index(Request $request): AnonymousResourceCollection
     {
-        return TransactionResource::collection(
-            Transaction::with(['cagnotte', 'commande', 'echeance'])
-                ->latest()
-                ->paginate(15)
-        );
+        $user = $request->user();
+        $query = Transaction::with([
+            'cagnotte.produit',
+            'cagnotte.utilisateur',
+            'commande.utilisateur',
+            'commande.commandeProduits.produit',
+            'echeance',
+        ])
+            ->whereIn('statut', ['succes', 'reussi'])
+            ->orderByDesc('date')
+            ->orderByDesc('id');
+
+        if ($user && $user->role === 'admin') {
+            $query->where(function ($q) use ($user) {
+                $q->whereHas('cagnotte.produit', fn ($p) => $p->where('admin_id', $user->id))
+                    ->orWhereHas('commande.commandeProduits.produit', fn ($p) => $p->where('admin_id', $user->id));
+            });
+        }
+
+        return TransactionResource::collection($query->get());
     }
 
     public function store(StoreTransactionRequest $request): JsonResponse

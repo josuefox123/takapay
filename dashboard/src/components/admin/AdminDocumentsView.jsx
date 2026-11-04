@@ -7,6 +7,8 @@ export default function AdminDocumentsView({ onShowToast }) {
   const [statusFilter, setStatusFilter] = useState('tous');
   const [rejectingDoc, setRejectingDoc] = useState(null);
   const [motif, setMotif] = useState('');
+  const [page, setPage] = useState(1);
+  const perPage = 10;
 
   useEffect(() => {
     let isMounted = true;
@@ -53,6 +55,10 @@ export default function AdminDocumentsView({ onShowToast }) {
     return d.statut === statusFilter;
   });
 
+  const lastPage = Math.max(1, Math.ceil(filtered.length / perPage));
+  const currentPage = Math.min(page, lastPage);
+  const paginated = filtered.slice((currentPage - 1) * perPage, currentPage * perPage);
+
   return (
     <div>
       <div style={{ marginBottom: '24px' }}>
@@ -68,7 +74,10 @@ export default function AdminDocumentsView({ onShowToast }) {
           <button
             key={s}
             type="button"
-            onClick={() => setStatusFilter(s)}
+            onClick={() => {
+              setStatusFilter(s);
+              setPage(1);
+            }}
             className={`admin-nav-item ${statusFilter === s ? 'active' : ''}`}
             style={{ width: 'auto', padding: '8px 16px', borderRadius: '99px', fontSize: '13px' }}
           >
@@ -103,7 +112,7 @@ export default function AdminDocumentsView({ onShowToast }) {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((d) => {
+                {paginated.map((d) => {
                   const tailleMo = d.taille ? (d.taille / (1024 * 1024)).toFixed(1) + ' Mo' : '1.2 Mo';
                   return (
                     <tr key={d.id}>
@@ -160,6 +169,89 @@ export default function AdminDocumentsView({ onShowToast }) {
                 })}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {/* Barre de pagination */}
+        {!loading && filtered.length > 0 && (
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              paddingTop: '20px',
+              marginTop: '20px',
+              borderTop: '1px solid var(--line)',
+              flexWrap: 'wrap',
+              gap: '12px',
+            }}
+          >
+            <div style={{ fontSize: '13px', color: 'var(--mut)' }}>
+              Affichage de <strong>{paginated.length}</strong> sur <strong>{filtered.length}</strong> document{filtered.length > 1 ? 's' : ''} (Page {currentPage} sur {lastPage})
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <button
+                type="button"
+                disabled={currentPage <= 1}
+                onClick={() => setPage((prev) => Math.max(prev - 1, 1))}
+                style={{
+                  padding: '8px 14px',
+                  borderRadius: '8px',
+                  border: '1px solid var(--line)',
+                  background: currentPage <= 1 ? 'var(--bg)' : 'var(--card)',
+                  color: currentPage <= 1 ? 'var(--mut)' : 'var(--ink)',
+                  fontSize: '13px',
+                  fontWeight: 500,
+                  cursor: currentPage <= 1 ? 'not-allowed' : 'pointer',
+                  fontFamily: 'inherit',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  opacity: currentPage <= 1 ? 0.6 : 1,
+                  transition: 'all 0.2s ease',
+                }}
+              >
+                &larr; Précédent
+              </button>
+
+              <span
+                style={{
+                  padding: '6px 12px',
+                  borderRadius: '8px',
+                  background: 'var(--soft)',
+                  color: 'var(--r)',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                }}
+              >
+                {currentPage} / {lastPage}
+              </span>
+
+              <button
+                type="button"
+                disabled={currentPage >= lastPage}
+                onClick={() => setPage((prev) => Math.min(prev + 1, lastPage))}
+                style={{
+                  padding: '8px 14px',
+                  borderRadius: '8px',
+                  border: '1px solid var(--line)',
+                  background: currentPage >= lastPage ? 'var(--bg)' : 'var(--card)',
+                  color: currentPage >= lastPage ? 'var(--mut)' : 'var(--ink)',
+                  fontSize: '13px',
+                  fontWeight: 500,
+                  cursor: currentPage >= lastPage ? 'not-allowed' : 'pointer',
+                  fontFamily: 'inherit',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  opacity: currentPage >= lastPage ? 0.6 : 1,
+                  transition: 'all 0.2s ease',
+                }}
+              >
+                Suivant &rarr;
+              </button>
+            </div>
           </div>
         )}
       </div>

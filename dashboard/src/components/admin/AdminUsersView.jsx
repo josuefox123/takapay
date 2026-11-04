@@ -25,6 +25,19 @@ export default function AdminUsersView({ onShowToast, currentUser }) {
   const [createdAdmin, setCreatedAdmin] = useState(null);
   const [copied, setCopied] = useState(false);
 
+  const [editingUser, setEditingUser] = useState(null);
+  const [editForm, setEditForm] = useState({
+    nom: '',
+    prenom: '',
+    email: '',
+    telephone: '',
+    role: 'client',
+    statut_compte: 'actif',
+    password: '',
+  });
+  const [editLoading, setEditLoading] = useState(false);
+  const [editError, setEditError] = useState('');
+
   const generateRandomPassword = () => {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%&*';
     let pwd = 'Tk@';
@@ -119,14 +132,101 @@ export default function AdminUsersView({ onShowToast, currentUser }) {
   }, [page]);
 
   const handleStatusChange = async (userId, newStatus) => {
+    if (newStatus === 'supprimer') {
+      const target = users.find((u) => u.id === userId);
+      const label = target ? `${target.prenom || ''} ${target.nom || ''} (${target.email || ''})`.trim() : 'cet utilisateur';
+      if (!window.confirm(`Voulez-vous vraiment supprimer le compte de ${label} ?`)) {
+        return;
+      }
+      try {
+        await adminService.deleteUser(userId);
+        setUsers((prev) => prev.filter((u) => u.id !== userId));
+        setMeta((prev) => ({ ...prev, total: Math.max((prev.total || 1) - 1, 0) }));
+        if (onShowToast) {
+          onShowToast('Compte utilisateur supprimé avec succès.');
+        }
+      } catch (err) {
+        if (onShowToast) {
+          onShowToast(err.message || 'Erreur lors de la suppression du compte.');
+        }
+      }
+      return;
+    }
+
     await adminService.updateUserStatus(userId, newStatus);
     setUsers((prev) =>
       prev.map((u) => (u.id === userId ? { ...u, statut_compte: newStatus } : u))
     );
-    onShowToast(`Statut de l'utilisateur mis à jour : ${newStatus}`);
+    if (onShowToast) {
+      onShowToast(`Statut de l'utilisateur mis à jour : ${newStatus}`);
+    }
   };
 
-  const filtered = users.filter((u) => {
+  const handleOpenEditModal = (user) => {
+    if (!isSuperAdmin) return;
+    setEditingUser(user);
+    setEditForm({
+      nom: user.nom || '',
+      prenom: user.prenom || '',
+      email: user.email || '',
+      telephone: user.telephone || '',
+      role: user.role || 'client',
+      statut_compte: user.statut_compte || 'actif',
+      password: '',
+    });
+    setEditError('');
+  };
+
+  const handleEditUserSubmit = async (e) => {
+    e.preventDefault();
+    if (!editingUser) return;
+    setEditError('');
+
+    if (!editForm.nom.trim()) {
+      setEditError('Le nom est requis.');
+      return;
+    }
+    if (!editForm.email.trim()) {
+      setEditError("L'adresse e-mail est requise.");
+      return;
+    }
+
+    setEditLoading(true);
+    try {
+      const payload = {
+        nom: editForm.nom.trim(),
+        prenom: editForm.prenom.trim(),
+        email: editForm.email.trim(),
+        telephone: editForm.telephone.trim() || null,
+        role: editForm.role,
+        statut_compte: editForm.statut_compte,
+      };
+      if (editForm.password && editForm.password.trim()) {
+        payload.password = editForm.password.trim();
+      }
+
+      const res = await adminService.updateUser(editingUser.id, payload);
+      const updatedUser = res.data || res;
+
+      setUsers((prev) =>
+        prev.map((u) => (u.id === editingUser.id ? { ...u, ...updatedUser } : u))
+      );
+      setEditingUser(null);
+      if (onShowToast) {
+        onShowToast(`Compte de ${updatedUser.prenom || ''} ${updatedUser.nom} modifié avec succès.`);
+      }
+    } catch (err) {
+      setEditError(err.message || 'Erreur lors de la modification du compte.');
+    } finally {
+      setEditLoading(false);
+    }
+  };
+
+  const visibleUsers = isSuperAdmin
+    ? users
+    : users.filter((u) => u.role !== 'super_admin');
+
+  const filtered = visibleUsers.filter((u) => {
     const fullName = `${u.prenom || ''} ${u.nom || ''} ${u.email || ''}`.toLowerCase();
     const matchSearch = fullName.includes(search.toLowerCase()) || (u.telephone || '').includes(search);
     const matchRole = roleFilter === 'tous' || u.role === roleFilter;
@@ -142,9 +242,11 @@ export default function AdminUsersView({ onShowToast, currentUser }) {
     return prenomA.localeCompare(prenomB, 'fr', { sensitivity: 'base' });
   });
 
-  const clientCount = users.filter((u) => u.role === 'client').length;
-  const livreurCount = users.filter((u) => u.role === 'livreur').length;
-  const adminCount = users.filter((u) => (u.role || '').includes('admin')).length;
+  const clientCount = visibleUsers.filter((u) => u.role === 'client').length;
+  const livreurCount = visibleUsers.filter((u) => u.role === 'livreur').length;
+  const adminCount = visibleUsers.filter((u) =>
+    isSuperAdmin ? (u.role || '').includes('admin') : u.role === 'admin'
+  ).length;
 
   return (
     <div>
@@ -250,7 +352,7 @@ export default function AdminUsersView({ onShowToast, currentUser }) {
           <option value="client">Clients</option>
           <option value="livreur">Livreurs</option>
           <option value="admin">Administrateurs</option>
-          <option value="super_admin">Super Admins</option>
+          {isSuperAdmin && <option value="super_admin">Super Admins</option>}
         </select>
       </div>
 
@@ -274,7 +376,12 @@ export default function AdminUsersView({ onShowToast, currentUser }) {
               </thead>
               <tbody>
                 {sorted.map((u) => (
-                  <tr key={u.id}>
+                  <tr
+                    key={u.id}
+                    onClick={() => isSuperAdmin && handleOpenEditModal(u)}
+                    title={isSuperAdmin ? 'Cliquer pour modifier ce compte' : undefined}
+                    style={{ cursor: isSuperAdmin ? 'pointer' : 'default' }}
+                  >
                     <td>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                         <div
@@ -320,7 +427,7 @@ export default function AdminUsersView({ onShowToast, currentUser }) {
                         {u.statut_compte || 'actif'}
                       </span>
                     </td>
-                    <td>
+                    <td onClick={(e) => e.stopPropagation()}>
                       <select
                         value={u.statut_compte || 'actif'}
                         onChange={(e) => handleStatusChange(u.id, e.target.value)}
@@ -337,6 +444,7 @@ export default function AdminUsersView({ onShowToast, currentUser }) {
                         <option value="actif">Actif</option>
                         <option value="suspendu">Suspendre</option>
                         <option value="inactif">Inactif</option>
+                        <option value="supprimer">Supprimer</option>
                       </select>
                     </td>
                   </tr>
@@ -798,6 +906,303 @@ export default function AdminUsersView({ onShowToast, currentUser }) {
                 </div>
               </form>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Modal de modification de compte (Super Admin) */}
+      {editingUser && isSuperAdmin && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0, 0, 0, 0.65)',
+            zIndex: 1000,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '24px 16px',
+            backdropFilter: 'blur(5px)',
+            boxSizing: 'border-box',
+            overflowY: 'auto',
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !editLoading) {
+              setEditingUser(null);
+            }
+          }}
+        >
+          <div
+            style={{
+              background: 'var(--card)',
+              border: '1.5px solid var(--line)',
+              borderRadius: '20px',
+              maxWidth: '560px',
+              width: '100%',
+              padding: '32px',
+              boxShadow: '0 25px 60px rgba(0,0,0,0.3)',
+              boxSizing: 'border-box',
+              position: 'relative',
+            }}
+          >
+            <form onSubmit={handleEditUserSubmit}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px' }}>
+                <div>
+                  <h2 style={{ fontSize: '20px', fontWeight: 800, color: 'var(--ink)', margin: 0 }}>
+                    Modifier le compte
+                  </h2>
+                  <p style={{ margin: '4px 0 0', fontSize: '13px', color: 'var(--mut)' }}>
+                    {editingUser.prenom} {editingUser.nom} ({editingUser.email})
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setEditingUser(null)}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    fontSize: '20px',
+                    cursor: 'pointer',
+                    color: 'var(--mut)',
+                    padding: '4px',
+                  }}
+                >
+                  ✕
+                </button>
+              </div>
+
+              {editError && (
+                <div
+                  style={{
+                    background: 'rgba(239, 68, 68, 0.1)',
+                    color: '#ef4444',
+                    padding: '10px 14px',
+                    borderRadius: '8px',
+                    marginBottom: '16px',
+                    fontSize: '13px',
+                    fontWeight: 500,
+                  }}
+                >
+                  {editError}
+                </div>
+              )}
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '14px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--ink)', marginBottom: '6px' }}>
+                    Nom *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={editForm.nom}
+                    onChange={(e) => setEditForm({ ...editForm, nom: e.target.value })}
+                    style={{
+                      width: '100%',
+                      padding: '10px 12px',
+                      borderRadius: '8px',
+                      border: '1.5px solid var(--line)',
+                      background: 'var(--bg)',
+                      color: 'var(--ink)',
+                      fontSize: '13px',
+                      boxSizing: 'border-box',
+                    }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--ink)', marginBottom: '6px' }}>
+                    Prénom
+                  </label>
+                  <input
+                    type="text"
+                    value={editForm.prenom}
+                    onChange={(e) => setEditForm({ ...editForm, prenom: e.target.value })}
+                    style={{
+                      width: '100%',
+                      padding: '10px 12px',
+                      borderRadius: '8px',
+                      border: '1.5px solid var(--line)',
+                      background: 'var(--bg)',
+                      color: 'var(--ink)',
+                      fontSize: '13px',
+                      boxSizing: 'border-box',
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '14px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--ink)', marginBottom: '6px' }}>
+                    Email *
+                  </label>
+                  <input
+                    type="email"
+                    required
+                    value={editForm.email}
+                    onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
+                    style={{
+                      width: '100%',
+                      padding: '10px 12px',
+                      borderRadius: '8px',
+                      border: '1.5px solid var(--line)',
+                      background: 'var(--bg)',
+                      color: 'var(--ink)',
+                      fontSize: '13px',
+                      boxSizing: 'border-box',
+                    }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--ink)', marginBottom: '6px' }}>
+                    Téléphone
+                  </label>
+                  <input
+                    type="tel"
+                    value={editForm.telephone}
+                    onChange={(e) => setEditForm({ ...editForm, telephone: e.target.value })}
+                    style={{
+                      width: '100%',
+                      padding: '10px 12px',
+                      borderRadius: '8px',
+                      border: '1.5px solid var(--line)',
+                      background: 'var(--bg)',
+                      color: 'var(--ink)',
+                      fontSize: '13px',
+                      boxSizing: 'border-box',
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '14px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--ink)', marginBottom: '6px' }}>
+                    Rôle
+                  </label>
+                  <select
+                    value={editForm.role}
+                    onChange={(e) => setEditForm({ ...editForm, role: e.target.value })}
+                    style={{
+                      width: '100%',
+                      padding: '10px 12px',
+                      borderRadius: '8px',
+                      border: '1.5px solid var(--line)',
+                      background: 'var(--bg)',
+                      color: 'var(--ink)',
+                      fontSize: '13px',
+                      boxSizing: 'border-box',
+                    }}
+                  >
+                    <option value="client">Client</option>
+                    <option value="livreur">Livreur</option>
+                    <option value="admin">Administrateur</option>
+                    <option value="super_admin">Super Administrateur</option>
+                  </select>
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--ink)', marginBottom: '6px' }}>
+                    Statut du compte
+                  </label>
+                  <select
+                    value={editForm.statut_compte}
+                    onChange={(e) => setEditForm({ ...editForm, statut_compte: e.target.value })}
+                    style={{
+                      width: '100%',
+                      padding: '10px 12px',
+                      borderRadius: '8px',
+                      border: '1.5px solid var(--line)',
+                      background: 'var(--bg)',
+                      color: 'var(--ink)',
+                      fontSize: '13px',
+                      boxSizing: 'border-box',
+                    }}
+                  >
+                    <option value="actif">Actif</option>
+                    <option value="suspendu">Suspendu</option>
+                    <option value="inactif">Inactif</option>
+                  </select>
+                </div>
+              </div>
+
+              <div style={{ marginBottom: '20px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                  <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--ink)' }}>
+                    Nouveau mot de passe / PIN (optionnel)
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setEditForm({ ...editForm, password: generateRandomPassword() })}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: 'var(--r)',
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      padding: 0,
+                    }}
+                  >
+                    ↻ Générer un mot de passe temporaire
+                  </button>
+                </div>
+                <input
+                  type="text"
+                  value={editForm.password}
+                  onChange={(e) => setEditForm({ ...editForm, password: e.target.value })}
+                  placeholder="Laisser vide pour conserver le mot de passe actuel"
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    borderRadius: '8px',
+                    border: '1.5px solid var(--line)',
+                    background: 'var(--bg)',
+                    color: 'var(--ink)',
+                    fontSize: '13px',
+                    boxSizing: 'border-box',
+                  }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                <button
+                  type="button"
+                  onClick={() => setEditingUser(null)}
+                  disabled={editLoading}
+                  style={{
+                    padding: '10px 18px',
+                    borderRadius: '8px',
+                    border: '1px solid var(--line)',
+                    background: 'transparent',
+                    color: 'var(--ink)',
+                    fontSize: '13px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Annuler
+                </button>
+                <button
+                  type="submit"
+                  disabled={editLoading}
+                  style={{
+                    padding: '10px 20px',
+                    borderRadius: '8px',
+                    border: 'none',
+                    background: 'var(--r)',
+                    color: '#ffffff',
+                    fontSize: '13px',
+                    fontWeight: 700,
+                    cursor: editLoading ? 'not-allowed' : 'pointer',
+                    opacity: editLoading ? 0.7 : 1,
+                  }}
+                >
+                  {editLoading ? 'Enregistrement...' : 'Enregistrer les modifications'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

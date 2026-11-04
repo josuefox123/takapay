@@ -33,10 +33,17 @@ class CagnotteController extends Controller
 
         $query = Cagnotte::has('produit')
             ->with(['utilisateur', 'produit.imageProduits', 'produit.parametreProduit', 'produit.sousCategorie.categorie', 'transactions'])
+            ->where(function ($q) {
+                $q->where('statut', '!=', 'en_attente')
+                    ->orWhere('montant_verse', '>', 0);
+            })
             ->latest();
 
-        // 1. Administrateurs / super_admin / gestionnaires : accès à toutes les cagnottes
+        // 1. Administrateurs / super_admin / gestionnaires : accès aux cagnottes (filtré par admin_id pour un admin simple)
         if ($user && $user->role !== 'client') {
+            if ($user->role === 'admin') {
+                $query->whereHas('produit', fn ($q) => $q->where('admin_id', $user->id));
+            }
             if ($request->filled('user_id')) {
                 $query->where('utilisateur_id', $request->query('user_id'));
             }

@@ -11,7 +11,7 @@ import ClientProfileView from '../../components/client/ClientProfileView';
 import ClientNotificationsView from '../../components/client/ClientNotificationsView';
 import ClientWelcomeModal from '../../components/client/ClientWelcomeModal';
 import ClientCookieBanner from '../../components/client/ClientCookieBanner';
-import { PRODUCTS, mapAdminProductToClient, getMergedProducts, getCachedLiveProducts, refreshProductsFromStore, createCagnotteFromOrder, getStoredCagnottes, mapBackendCagnotteToClient, discountPercentage } from '../../data/clientStore';
+import { PRODUCTS, mapAdminProductToClient, getMergedProducts, getCachedLiveProducts, refreshProductsFromStore, createCagnotteFromOrder, getStoredCagnottes, mapBackendCagnotteToClient } from '../../data/clientStore';
 import { adminService } from '../../services/adminService';
 import FloatingActionButtons from '../../components/public/FloatingActionButtons';
 import './client.css';
@@ -97,8 +97,9 @@ export default function AppHome({ initialTab = 'home' }) {
   const [currentCagnotte, setCurrentCagnotte] = useState(null);
   const [unreadNotifCount, setUnreadNotifCount] = useState(0);
 
-  // Modal de bienvenue
+  // Modal de bienvenue (Popup promotionnel configuré depuis le back-office)
   const [showWelcome, setShowWelcome] = useState(false);
+  const [activePopupPromo, setActivePopupPromo] = useState(null);
   const [toastMessage, setToastMessage] = useState('');
 
   // Notification Toast
@@ -109,42 +110,70 @@ export default function AppHome({ initialTab = 'home' }) {
     }, 3200);
   };
 
-  // N'afficher le modal que lorsqu'une vraie promotion est disponible.
+  // Charger le popup promotionnel actif depuis le back-office (dans Promotions)
   useEffect(() => {
-    let alreadyShown = false;
-    try {
-      alreadyShown = localStorage.getItem('takapay-welcome-seen') === 'true';
-    } catch {
-      // Le stockage local peut être indisponible dans certains navigateurs.
-    }
-    if (!alreadyShown) {
-      try {
-        alreadyShown = sessionStorage.getItem('takapay-welcome-seen') === 'true';
-      } catch {
-        // Le stockage de session peut également être désactivé.
+    let isMounted = true;
+    let timer;
+    adminService.getPromotions().then((promos) => {
+      if (!isMounted || !Array.isArray(promos)) return;
+      const now = new Date();
+      const activePopup = promos.find((p) => {
+        if (!p || p.statut === 'inactif' || !p.afficher_popup) return false;
+        if (!p.image_popup_url && !p.image_popup) return false;
+        const debut = p.date_debut ? new Date(p.date_debut) : null;
+        const fin = p.date_fin ? new Date(p.date_fin) : null;
+        if (debut && now < debut) return false;
+        if (fin && now > fin) return false;
+        return true;
+      });
+
+      if (!activePopup) {
+        setActivePopupPromo(null);
+        setShowWelcome(false);
+        return;
       }
-    }
 
-    const hasPromotions = productsList.some((product) => discountPercentage(product) > 0);
-    if (hasPromotions && !alreadyShown) {
-      const timer = setTimeout(() => {
-        setShowWelcome(true);
+      setActivePopupPromo(activePopup);
+      const seenKey = `takapay-welcome-seen-${activePopup.id}`;
+      let alreadySeen = false;
+      try {
+        alreadySeen = localStorage.getItem('takapay-welcome-seen') === 'true'
+          || localStorage.getItem(seenKey) === 'true';
+      } catch {
+        // Le stockage local peut être indisponible dans certains navigateurs.
+      }
+      if (!alreadySeen) {
         try {
-          localStorage.setItem('takapay-welcome-seen', 'true');
+          alreadySeen = sessionStorage.getItem(seenKey) === 'true';
         } catch {
-          // La session évite au minimum de rouvrir le modal dans cet onglet.
+          // Le stockage de session peut également être désactivé.
         }
-        try {
-          sessionStorage.setItem('takapay-welcome-seen', 'true');
-        } catch {
-          // L'affichage du modal ne dépend pas du stockage de session.
-        }
-      }, 500);
-      return () => clearTimeout(timer);
-    }
+      }
 
-    return undefined;
-  }, [productsList]);
+      if (!alreadySeen) {
+        timer = setTimeout(() => {
+          if (!isMounted) return;
+          setShowWelcome(true);
+          try {
+            localStorage.setItem('takapay-welcome-seen', 'true');
+            localStorage.setItem(seenKey, 'true');
+          } catch {
+            // Le stockage local n'est pas nécessaire pour afficher le popup.
+          }
+          try {
+            sessionStorage.setItem(seenKey, 'true');
+          } catch {
+            // La fermeture du popup reste disponible si le stockage est désactivé.
+          }
+        }, 500);
+      }
+    }).catch(() => {});
+
+    return () => {
+      isMounted = false;
+      if (timer) clearTimeout(timer);
+    };
+  }, [location.search]);
 
   // Synchronisation bidirectionnelle avec les routes URL
   useEffect(() => {
@@ -763,10 +792,10 @@ export default function AppHome({ initialTab = 'home' }) {
         </div>
       </main>
 
-      {/* Modal Popup des promotions du moment */}
+      {/* Modal Popup des promotions du moment (envoyé depuis le back-office) */}
       <ClientWelcomeModal
         isOpen={showWelcome}
-        products={productsList}
+        popupPromo={activePopupPromo}
         onClose={() => setShowWelcome(false)}
         onSelectProduct={handleOpenProduct}
         onShowAllPromos={handleSelectPromo}

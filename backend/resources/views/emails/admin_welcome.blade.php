@@ -28,30 +28,46 @@
         <div class="content">
             <p style="font-size: 15px; margin-top: 0;">Bonjour <strong>{{ $user->prenom ? $user->prenom . ' ' . $user->nom : $user->nom }}</strong>,</p>
             <p style="font-size: 14px; color: #4b5563; line-height: 1.5;">
-                Un compte administrateur vient de vous être créé sur la plateforme <strong>TakaPay</strong> par le Super Administrateur.
+                @if(!empty($isUpdate))
+                    Les informations de votre compte sur la plateforme <strong>TakaPay</strong> viennent d'être mises à jour par le Super Administrateur.
+                @else
+                    Un compte administrateur vient de vous être créé sur la plateforme <strong>TakaPay</strong> par le Super Administrateur.
+                @endif
             </p>
 
             <div class="creds-box">
                 <div style="font-weight: 800; font-size: 13px; text-transform: uppercase; color: #dc2626; margin-bottom: 12px; letter-spacing: 0.5px;">
-                    Vos identifiants de connexion
+                    Vos informations de compte
                 </div>
                 <div class="creds-row">
                     <span class="creds-label">Identifiant / Email :</span>
                     <span class="creds-value">{{ $user->email }}</span>
                 </div>
+                <div class="creds-row">
+                    <span class="creds-label">Rôle :</span>
+                    <span class="creds-value">{{ ucfirst(str_replace('_', ' ', $user->role)) }}</span>
+                </div>
+                <div class="creds-row" style="{{ empty($temporaryPassword) ? 'margin-bottom: 0;' : '' }}">
+                    <span class="creds-label">Statut du compte :</span>
+                    <span class="creds-value">{{ ucfirst($user->statut_compte ?? 'actif') }}</span>
+                </div>
+                @if(!empty($temporaryPassword))
                 <div class="creds-row" style="margin-bottom: 0;">
                     <span class="creds-label">Mot de passe temporaire :</span>
                     <span class="creds-value" style="color: #dc2626;">{{ $temporaryPassword }}</span>
                 </div>
+                @endif
             </div>
 
             <div style="text-align: center; margin: 25px 0 15px;">
-                <a href="{{ $loginUrl }}" class="btn">Se connecter à l'espace Admin</a>
+                <a href="{{ $loginUrl }}" class="btn">Accéder à TakaPay</a>
             </div>
 
+            @if(!empty($temporaryPassword))
             <div class="notice">
-                🔒 <strong>Sécurité obligatoire :</strong> Ce mot de passe est temporaire. Lors de votre première connexion, la plateforme vous invitera automatiquement à définir votre mot de passe personnel sécurisé.
+                🔒 <strong>Sécurité obligatoire :</strong> Ce mot de passe est temporaire. Lors de votre prochaine connexion, la plateforme vous invitera automatiquement à définir votre mot de passe personnel sécurisé.
             </div>
+            @endif
         </div>
         <div class="footer">
             TakaPay Bénin · Espace réservé à l'équipe d'administration.

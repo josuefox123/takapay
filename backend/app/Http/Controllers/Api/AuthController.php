@@ -201,15 +201,25 @@ class AuthController extends Controller
     public function login(LoginRequest $request): JsonResponse
     {
         $identifiant = trim($request->identifiant);
-        $cleanPhone = preg_replace('/[^\d+]/', '', $identifiant);
+        $rawPassword = trim((string) $request->password);
 
-        $user = User::where('email', mb_strtolower($identifiant))
-            ->orWhere('telephone', $identifiant)
-            ->when(! empty($cleanPhone), function ($query) use ($cleanPhone) {
-                $query->orWhere('telephone', $cleanPhone)
-                    ->orWhere('telephone', 'like', "%{$cleanPhone}%");
-            })
-            ->first();
+        if (str_contains($identifiant, '@')) {
+            $user = User::where('email', strtolower($identifiant))
+                ->orWhere('email', $identifiant)
+                ->first();
+        } else {
+            $cleanPhone = preg_replace('/[^\d+]/', '', $identifiant);
+            $digitsOnly = preg_replace('/\D/', '', $cleanPhone);
+
+            $user = User::where('telephone', $identifiant)
+                ->when(! empty($cleanPhone), function ($query) use ($cleanPhone) {
+                    $query->orWhere('telephone', $cleanPhone);
+                })
+                ->when(strlen($digitsOnly) >= 8, function ($query) use ($digitsOnly) {
+                    $query->orWhere('telephone', 'like', "%{$digitsOnly}%");
+                })
+                ->first();
+        }
 
         $loginAttemptKey = $this->loginAttemptKey($request, $identifiant, $user);
         $loginState = Cache::get($loginAttemptKey, []);
@@ -217,7 +227,9 @@ class AuthController extends Controller
             return $this->loginLockoutResponse($loginState);
         }
 
-        $passwordValid = Hash::check($request->password, $user?->password ?? self::DUMMY_HASH);
+        $storedPasswordHash = $user?->password ?? self::DUMMY_HASH;
+        $passwordValid = Hash::check($rawPassword, $storedPasswordHash)
+            || Hash::check($request->password, $storedPasswordHash);
 
         if (! $user || ! $passwordValid) {
             return $this->recordFailedLogin($loginAttemptKey, $user !== null);
@@ -267,24 +279,54 @@ class AuthController extends Controller
             return response()->json(['message' => 'Non authentifié. Veuillez vous connecter.'], 401);
         }
 
+        if ($request->has('nom') && is_string($request->nom)) {
+            $request->merge(['nom' => trim(strip_tags($request->nom))]);
+        }
+        if ($request->has('prenom') && is_string($request->prenom)) {
+            $request->merge(['prenom' => trim(strip_tags($request->prenom))]);
+        }
+        if ($request->has('telephone') && is_string($request->telephone)) {
+            $cleanedPhone = preg_replace('/[\s\-\.]+/', '', trim($request->telephone));
+            $request->merge(['telephone' => $cleanedPhone !== '' ? $cleanedPhone : null]);
+        }
+
         $request->validate([
-            'nom' => ['nullable', 'string', 'max:255'],
-            'prenom' => ['nullable', 'string', 'max:255'],
-            'telephone' => ['nullable', 'string', 'max:30'],
-            'email' => ['nullable', 'email', 'max:255', 'unique:users,email,'.$user->id],
+            'nom' => ['nullable', 'string', 'min:2', 'max:100', 'regex:/^[\p{L}\s\-\'\.]+$/u'],
+            'prenom' => ['nullable', 'string', 'max:100', 'regex:/^[\p{L}\s\-\'\.]+$/u'],
+            'telephone' => ['nullable', 'string', 'regex:/^\+?[0-9]{8,15}$/', 'unique:users,telephone,'.$user->id],
+            'email' => [
+                'nullable',
+                'email:rfc',
+                'max:255',
+                'unique:users,email,'.$user->id,
+                function (string $attribute, mixed $value, \Closure $fail) {
+                    $domain = substr(strrchr((string) $value, '@'), 1);
+                    if ($domain && $domain !== 'client.takapay.bj' && $domain !== 'example.com' && $domain !== 'example.org') {
+                        if (! checkdnsrr($domain, 'MX') && ! checkdnsrr($domain, 'A')) {
+                            $fail("Le domaine de l'adresse e-mail (« {$domain} ») n'existe pas.");
+                        }
+                    }
+                },
+            ],
+        ], [
+            'nom.regex' => 'Le nom ne doit contenir que des lettres.',
+            'prenom.regex' => 'Le prénom ne doit contenir que des lettres.',
+            'telephone.regex' => 'Veuillez saisir un numéro de téléphone valide (8 à 15 chiffres).',
+            'telephone.unique' => 'Ce numéro de téléphone est déjà associé à un autre compte.',
+            'email.unique' => 'Cette adresse e-mail est déjà associée à un autre compte.',
         ]);
 
         if ($request->has('nom')) {
-            $user->nom = trim($request->nom);
+            $user->nom = trim(strip_tags($request->nom));
         }
         if ($request->has('prenom')) {
-            $user->prenom = trim($request->prenom);
+            $user->prenom = trim(strip_tags($request->prenom));
         }
         if ($request->has('telephone')) {
-            $user->telephone = trim($request->telephone);
+            $user->telephone = $request->telephone ? trim($request->telephone) : null;
         }
         if ($request->has('email') && ! empty($request->email)) {
-            $user->email = trim($request->email);
+            $user->email = strtolower(trim($request->email));
         }
 
         $user->save();

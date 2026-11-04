@@ -65,6 +65,9 @@ export const adminService = {
     if (!res.ok) {
       throw new Error(data.message || "Erreur lors de l'initialisation du paiement FeexPay.");
     }
+    if (data?.reference) {
+      activeTransactionRef = data.reference;
+    }
     return data;
   },
 
@@ -253,6 +256,46 @@ export const adminService = {
     }
   },
 
+  async getAdminMenuCounts() {
+    const token = this.getToken();
+    if (!token) return { cagnottes: 0, commandes: 0 };
+    try {
+      const res = await fetch(`${API_BASE}/admin/notifications/menu-counts`, {
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      if (!res.ok) return { cagnottes: 0, commandes: 0 };
+      const data = await res.json();
+      return {
+        cagnottes: Number(data.cagnottes || 0),
+        commandes: Number(data.commandes || 0),
+      };
+    } catch {
+      return { cagnottes: 0, commandes: 0 };
+    }
+  },
+
+  async markAdminMenuRead(menu) {
+    const token = this.getToken();
+    if (!token) return false;
+    try {
+      const res = await fetch(`${API_BASE}/admin/notifications/mark-menu-read`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ menu }),
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  },
+
   getUser() {
     try {
       const u = localStorage.getItem('takapay_admin_user') || localStorage.getItem('takapay-client-user');
@@ -269,14 +312,21 @@ export const adminService = {
         'Content-Type': 'application/json',
         Accept: 'application/json',
       },
-      body: JSON.stringify({ identifiant, password }),
+      body: JSON.stringify({
+        identifiant: (identifiant || '').trim(),
+        password: (password || '').trim(),
+      }),
     });
 
+    const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      throw new Error('Identifiant ou mot de passe incorrect.');
+      const msg =
+        data.message ||
+        Object.values(data.errors || {})?.[0]?.[0] ||
+        'Identifiant ou mot de passe incorrect.';
+      throw new Error(msg);
     }
 
-    const data = await res.json();
     if (data.access_token) {
       localStorage.setItem('takapay_admin_token', data.access_token);
     }
@@ -1165,8 +1215,14 @@ export const adminService = {
   },
 
   async getPromotions() {
+    const token = this.getToken();
     try {
-      const res = await fetch(`${API_BASE}/promotions`);
+      const res = await fetch(`${API_BASE}/promotions`, {
+        headers: {
+          Accept: 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      });
       if (res.ok) {
         const json = await res.json();
         const list = json.data || json;
@@ -1182,34 +1238,40 @@ export const adminService = {
 
   async createPromotion(payload) {
     const token = this.getToken();
-    try {
-      const res = await fetch(`${API_BASE}/promotions`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          Accept: 'application/json',
-        },
-        body: JSON.stringify(payload),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        return { success: true, data: data.data || data };
-      }
-    } catch (_error) {
-      void _error;
-    }
-    return {
-      success: true,
-      data: {
-        id: Date.now(),
-        pourcentage_promo: parseFloat(payload.pourcentage_promo),
-        date_debut: payload.date_debut,
-        date_fin: payload.date_fin,
-        statut: payload.statut || 'actif',
-        produits_count: 0,
+    const res = await fetch(`${API_BASE}/promotions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        Accept: 'application/json',
       },
-    };
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const msg = data.message || Object.values(data.errors || {})?.[0]?.[0] || 'Erreur lors de la création de la promotion.';
+      throw new Error(msg);
+    }
+    return { success: true, data: data.data || data };
+  },
+
+  async updatePromotion(promoId, payload) {
+    const token = this.getToken();
+    const res = await fetch(`${API_BASE}/promotions/${promoId}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        Accept: 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const msg = data.message || Object.values(data.errors || {})?.[0]?.[0] || 'Erreur lors de la modification de la promotion.';
+      throw new Error(msg);
+    }
+    return { success: true, data: data.data || data };
   },
 
   async deletePromotion(promoId) {
@@ -1382,6 +1444,42 @@ export const adminService = {
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       const msg = data.message || Object.values(data.errors || {})[0]?.[0] || "Erreur lors de la création de l'utilisateur.";
+      throw new Error(msg);
+    }
+    return data;
+  },
+
+  async updateUser(userId, payload) {
+    const token = this.getToken();
+    const res = await fetch(`${API_BASE}/users/${userId}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const msg = data.message || Object.values(data.errors || {})[0]?.[0] || "Erreur lors de la modification de l'utilisateur.";
+      throw new Error(msg);
+    }
+    return data;
+  },
+
+  async deleteUser(userId) {
+    const token = this.getToken();
+    const res = await fetch(`${API_BASE}/users/${userId}`, {
+      method: 'DELETE',
+      headers: {
+        Accept: 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const msg = data.message || "Erreur lors de la suppression de l'utilisateur.";
       throw new Error(msg);
     }
     return data;
@@ -1642,7 +1740,20 @@ let isPaymentCancelled = false;
 let paymentStartTime = 0;
 let activeTransactionRef = null;
 
-export const cancelFeexpayPayment = (reason = 'CANCELLED', wasSubmitted = null) => {
+export const cancelFeexpayPayment = (reason = 'CANCELLED', wasSubmitted = null, reference = null) => {
+  const refToCancel = reference || activeTransactionRef;
+  if (refToCancel) {
+    try {
+      fetch(`${API_BASE}/payment/cancel`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({ reference: refToCancel }),
+      }).catch(() => {});
+    } catch {}
+  }
   const hadStarted = wasSubmitted !== null ? wasSubmitted : (paymentStartTime > 0);
   isPaymentCancelled = true;
   if (watchdogPaymentTimer) {

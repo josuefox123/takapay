@@ -25,6 +25,12 @@ class CommandeController extends Controller
         $query = Commande::with(['utilisateur', 'commandeProduits.produit', 'transactions.cagnotte'])->latest();
 
         if ($user && $user->isAdmin()) {
+            if ($user->role === 'admin') {
+                $query->where(function ($q) use ($user) {
+                    $q->whereHas('commandeProduits.produit', fn ($p) => $p->where('admin_id', $user->id))
+                        ->orWhereHas('transactions.cagnotte.produit', fn ($p) => $p->where('admin_id', $user->id));
+                });
+            }
             if ($request->filled('user_id')) {
                 $query->where('utilisateur_id', $request->query('user_id'));
             }
@@ -34,10 +40,10 @@ class CommandeController extends Controller
             $query->whereRaw('1 = 0');
         }
 
-        // Écarte les simples ébauches de cagnottes orphelines (abandonnées sans versement)
+        // Seules les commandes payées ou confirmées apparaissent
         $query->where(function ($q) {
-            $q->where('type_commande', 'cash')
-                ->orWhereHas('transactions');
+            $q->whereIn('statut', ['payee', 'terminee', 'livree', 'annulee'])
+                ->orWhere('mode_paiement', 'livraison');
         });
 
         $perPage = (int) $request->query('per_page', 50);
@@ -50,16 +56,25 @@ class CommandeController extends Controller
      */
     public function adminIndex(Request $request): AnonymousResourceCollection
     {
+        $user = $request->user();
         $query = Commande::with([
             'utilisateur',
             'commandeProduits.produit',
             'transactions.cagnotte',
         ])
+        // Seules les commandes payées ou confirmées apparaissent
         ->where(function ($q) {
-            $q->where('type_commande', 'cash')
-                ->orWhereHas('transactions');
+            $q->whereIn('statut', ['payee', 'terminee', 'livree', 'annulee'])
+                ->orWhere('mode_paiement', 'livraison');
         })
         ->latest();
+
+        if ($user && $user->role === 'admin') {
+            $query->where(function ($q) use ($user) {
+                $q->whereHas('commandeProduits.produit', fn ($p) => $p->where('admin_id', $user->id))
+                    ->orWhereHas('transactions.cagnotte.produit', fn ($p) => $p->where('admin_id', $user->id));
+            });
+        }
 
         if ($request->filled('statut')) {
             $query->where('statut', $request->query('statut'));
@@ -69,7 +84,13 @@ class CommandeController extends Controller
             $q = $request->query('q');
             $query->where(function ($sub) use ($q) {
                 $sub->where('reference', 'like', "%{$q}%")
-                    ->orWhereHas('utilisateur', fn ($u) => $u->where('nom', 'like', "%{$q}%"));
+                    ->orWhereHas('utilisateur', fn ($u) => $u
+                        ->where('nom', 'like', "%{$q}%")
+                        ->orWhere('prenom', 'like', "%{$q}%")
+                        ->orWhere('telephone', 'like', "%{$q}%")
+                        ->orWhere('email', 'like', "%{$q}%")
+                    )
+                    ->orWhere('telephone_livraison', 'like', "%{$q}%");
             });
         }
 
