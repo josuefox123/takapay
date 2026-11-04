@@ -26,6 +26,8 @@ export default function AdminCagnottesView() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('tous');
+  const [page, setPage] = useState(1);
+  const perPage = 10;
 
   // Remboursement FeexPay
   const [selectedCagnotte, setSelectedCagnotte] = useState(null);
@@ -156,10 +158,15 @@ export default function AdminCagnottesView() {
     return matchSearch && matchStatus;
   });
 
+  const lastPage = Math.max(1, Math.ceil(filtered.length / perPage));
+  const currentPage = Math.min(page, lastPage);
+  const paginated = filtered.slice((currentPage - 1) * perPage, currentPage * perPage);
+
   const totalMontant = cagnottes.reduce((acc, c) => acc + (Number(c.montant_verse) || 0), 0);
-  const activeCount = cagnottes.filter((c) => c.statut === 'en_cours' || c.statut === 'active' || c.statut === 'en_attente').length;
+  const activeCount = cagnottes.filter((c) => c.statut === 'en_cours' || c.statut === 'active').length;
   const completedCount = cagnottes.filter((c) => c.statut === 'terminee').length;
   const cancelRequestedCount = cagnottes.filter((c) => c.statut === 'annulation_demandee').length;
+  const cancelledCount = cagnottes.filter((c) => c.statut === 'annulee' || c.statut === 'cancelled').length;
 
   const selClientNom = selectedCagnotte
     ? (selectedCagnotte.client_nom || (selectedCagnotte.utilisateur ? `${selectedCagnotte.utilisateur.prenom || ''} ${selectedCagnotte.utilisateur.nom || ''}`.trim() : 'Client Takapay'))
@@ -178,7 +185,7 @@ export default function AdminCagnottesView() {
       </div>
 
       {/* Cartes récapitulatives */}
-      <div className="admin-kpi-grid" style={{ marginTop: 0 }}>
+      <div className="admin-kpi-grid" style={{ marginTop: 0, gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
         <div className="admin-kpi-card">
           <div className="admin-kpi-header">
             <span>Total cagnottes</span>
@@ -207,6 +214,13 @@ export default function AdminCagnottesView() {
           </div>
           <b style={{ color: cancelRequestedCount > 0 ? '#dc2626' : 'inherit' }}>{cancelRequestedCount}</b>
         </div>
+        <div className="admin-kpi-card" style={{ borderColor: cancelledCount > 0 ? '#fecaca' : 'var(--line)', background: cancelledCount > 0 ? '#fef2f2' : 'var(--surface)' }}>
+          <div className="admin-kpi-header">
+            <span style={{ color: cancelledCount > 0 ? '#b91c1c' : 'inherit' }}>Cagnottes annulées</span>
+            <i style={{ color: cancelledCount > 0 ? '#b91c1c' : 'inherit' }}><AdminIcon name="x" size={16} /></i>
+          </div>
+          <b style={{ color: cancelledCount > 0 ? '#b91c1c' : 'inherit' }}>{cancelledCount}</b>
+        </div>
       </div>
 
       {/* Filtres */}
@@ -215,7 +229,10 @@ export default function AdminCagnottesView() {
           type="text"
           placeholder="Rechercher par client, article, code, téléphone..."
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={(e) => {
+            setSearch(e.target.value);
+            setPage(1);
+          }}
           style={{
             flex: 1,
             minWidth: '220px',
@@ -231,7 +248,10 @@ export default function AdminCagnottesView() {
 
         <select
           value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
+          onChange={(e) => {
+            setStatusFilter(e.target.value);
+            setPage(1);
+          }}
           style={{
             padding: '10px 14px',
             borderRadius: '10px',
@@ -271,7 +291,7 @@ export default function AdminCagnottesView() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((c) => {
+                {paginated.map((c) => {
                   const verse = Number(c.montant_verse || 0);
                   const prixUnitaire = Number(c.prix_unitaire || 0);
                   const pct = c.progression !== undefined
@@ -402,6 +422,89 @@ export default function AdminCagnottesView() {
                 })}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {/* Barre de pagination */}
+        {!loading && filtered.length > 0 && (
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              paddingTop: '20px',
+              marginTop: '20px',
+              borderTop: '1px solid var(--line)',
+              flexWrap: 'wrap',
+              gap: '12px',
+            }}
+          >
+            <div style={{ fontSize: '13px', color: 'var(--mut)' }}>
+              Affichage de <strong>{paginated.length}</strong> sur <strong>{filtered.length}</strong> cagnotte{filtered.length > 1 ? 's' : ''} (Page {currentPage} sur {lastPage})
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <button
+                type="button"
+                disabled={currentPage <= 1}
+                onClick={() => setPage((prev) => Math.max(prev - 1, 1))}
+                style={{
+                  padding: '8px 14px',
+                  borderRadius: '8px',
+                  border: '1px solid var(--line)',
+                  background: currentPage <= 1 ? 'var(--bg)' : 'var(--card)',
+                  color: currentPage <= 1 ? 'var(--mut)' : 'var(--ink)',
+                  fontSize: '13px',
+                  fontWeight: 500,
+                  cursor: currentPage <= 1 ? 'not-allowed' : 'pointer',
+                  fontFamily: 'inherit',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  opacity: currentPage <= 1 ? 0.6 : 1,
+                  transition: 'all 0.2s ease',
+                }}
+              >
+                &larr; Précédent
+              </button>
+
+              <span
+                style={{
+                  padding: '6px 12px',
+                  borderRadius: '8px',
+                  background: 'var(--soft)',
+                  color: 'var(--r)',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                }}
+              >
+                {currentPage} / {lastPage}
+              </span>
+
+              <button
+                type="button"
+                disabled={currentPage >= lastPage}
+                onClick={() => setPage((prev) => Math.min(prev + 1, lastPage))}
+                style={{
+                  padding: '8px 14px',
+                  borderRadius: '8px',
+                  border: '1px solid var(--line)',
+                  background: currentPage >= lastPage ? 'var(--bg)' : 'var(--card)',
+                  color: currentPage >= lastPage ? 'var(--mut)' : 'var(--ink)',
+                  fontSize: '13px',
+                  fontWeight: 500,
+                  cursor: currentPage >= lastPage ? 'not-allowed' : 'pointer',
+                  fontFamily: 'inherit',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  opacity: currentPage >= lastPage ? 0.6 : 1,
+                  transition: 'all 0.2s ease',
+                }}
+              >
+                Suivant &rarr;
+              </button>
+            </div>
           </div>
         )}
       </div>

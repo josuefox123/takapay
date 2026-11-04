@@ -1,21 +1,25 @@
 import { useState } from 'react';
 
 export default function AdminRecoveryChart({ recouvrement, kpis }) {
-  const [viewMode, setViewMode] = useState('semaine'); // 'semaine' | 'mois'
+  const [viewMode, setViewMode] = useState('semaine'); // 'semaine' | 'mois' | 'annee'
 
   const cetteSemaine = recouvrement?.cette_semaine || [];
   const semaines = recouvrement?.semaines || [];
+  const annee = recouvrement?.annee || [];
 
   const computedSemaineTotal = cetteSemaine.reduce((sum, j) => sum + (Number(j.total || j.cash || j.cagnotte) || 0), 0);
   const computedMoisTotal = semaines.reduce((sum, s) => sum + (Number(s.total || s.cash || s.cagnotte) || 0), 0);
+  const computedAnneeTotal = annee.reduce((sum, m) => sum + (Number(m.total || m.cash || m.cagnotte) || 0), 0);
 
   const totalSemaine = Number(recouvrement?.total_semaine ?? computedSemaineTotal) || 0;
   const fallbackMoisTotal = semaines.length > 0
     ? computedMoisTotal
     : Number(kpis?.encaisse_ce_mois) || 0;
   const totalMois = Number(recouvrement?.total_mois ?? fallbackMoisTotal) || 0;
+  const totalAnnee = Number(recouvrement?.total_annee ?? computedAnneeTotal) || 0;
 
-  const activeItems = viewMode === 'semaine' ? cetteSemaine : semaines;
+  const activeItems =
+    viewMode === 'semaine' ? cetteSemaine : viewMode === 'mois' ? semaines : annee;
 
   // Calcul du plafond pour l'échelle dynamique
   const maxVal = Math.max(
@@ -44,7 +48,9 @@ export default function AdminRecoveryChart({ recouvrement, kpis }) {
           <span style={{ fontSize: '13px', color: 'var(--mut)', marginTop: '2px', display: 'block' }}>
             {viewMode === 'semaine'
               ? 'Activité quotidienne de cette semaine (Lundi au Dimanche)'
-              : 'Répartition hebdomadaire du mois en cours'}
+              : viewMode === 'mois'
+                ? 'Répartition hebdomadaire du mois en cours'
+                : 'Répartition mensuelle de l’année en cours (Janvier à Décembre)'}
           </span>
         </div>
 
@@ -94,6 +100,24 @@ export default function AdminRecoveryChart({ recouvrement, kpis }) {
             >
               Ce mois
             </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('annee')}
+              style={{
+                background: viewMode === 'annee' ? 'var(--card, #ffffff)' : 'transparent',
+                color: viewMode === 'annee' ? 'var(--ink)' : 'var(--mut)',
+                border: 'none',
+                borderRadius: '8px',
+                padding: '5px 12px',
+                fontSize: '12px',
+                fontWeight: 700,
+                cursor: 'pointer',
+                boxShadow: viewMode === 'annee' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                transition: 'all 0.2s',
+              }}
+            >
+              Cette année
+            </button>
           </div>
 
           <span
@@ -102,7 +126,9 @@ export default function AdminRecoveryChart({ recouvrement, kpis }) {
           >
             {viewMode === 'semaine'
               ? `${totalSemaine.toLocaleString('fr-FR')} F`
-              : `${totalMois.toLocaleString('fr-FR')} F`}
+              : viewMode === 'mois'
+                ? `${totalMois.toLocaleString('fr-FR')} F`
+                : `${totalAnnee.toLocaleString('fr-FR')} F`}
           </span>
         </div>
       </div>
@@ -133,13 +159,13 @@ export default function AdminRecoveryChart({ recouvrement, kpis }) {
           const heightCagnotte = cagnotteVal > 0 ? Math.max(14, Math.min(92, Math.round((cagnotteVal / maxVal) * 88))) : 0;
           const maxBarHeight = Math.max(heightCash, heightCagnotte);
 
-          const colLabel = item.jour || item.semaine || `S${index + 1}`;
+          const colLabel = item.jour || item.semaine || item.mois || `S${index + 1}`;
           const isHighlight =
             item.is_current ||
             (item.date && item.date === new Date().toISOString().slice(0, 10));
 
           return (
-            <div key={item.date || item.semaine || index} className="admin-chart-col">
+            <div key={item.date || item.semaine || item.mois || index} className="admin-chart-col">
               {/* Montant textuel flottant au-dessus de la barre */}
               {totalVal > 0 && (
                 <span
@@ -164,7 +190,7 @@ export default function AdminRecoveryChart({ recouvrement, kpis }) {
                   display: 'flex',
                   alignItems: 'flex-end',
                   justifyContent: 'center',
-                  gap: '5px',
+                  gap: viewMode === 'annee' ? '3px' : '5px',
                   width: '100%',
                   height: '100%',
                 }}
@@ -176,7 +202,7 @@ export default function AdminRecoveryChart({ recouvrement, kpis }) {
                     height: `${heightCash}%`,
                     background: '#0284c7',
                     animationDelay: `${0.12 + index * 0.05}s`,
-                    minWidth: '10px',
+                    minWidth: viewMode === 'annee' ? '6px' : '10px',
                   }}
                 />
                 <div
@@ -186,7 +212,7 @@ export default function AdminRecoveryChart({ recouvrement, kpis }) {
                     height: `${heightCagnotte}%`,
                     background: 'var(--r)',
                     animationDelay: `${0.18 + index * 0.05}s`,
-                    minWidth: '10px',
+                    minWidth: viewMode === 'annee' ? '6px' : '10px',
                   }}
                 />
               </div>
@@ -202,7 +228,7 @@ export default function AdminRecoveryChart({ recouvrement, kpis }) {
               </span>
 
               <div className="admin-tooltip">
-                <strong>{item.label || item.semaine || `Période ${index + 1}`}</strong>
+                <strong>{item.label || item.semaine || item.mois || `Période ${index + 1}`}</strong>
                 {item.periode && (
                   <>
                     <br />

@@ -19,6 +19,8 @@ export default function AdminPartenairesView({ onShowToast }) {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [page, setPage] = useState(1);
+  const perPage = 10;
   const formRef = useRef(null);
 
   useEffect(() => {
@@ -149,6 +151,10 @@ export default function AdminPartenairesView({ onShowToast }) {
 
   const activeCount = partenaires.filter((partenaire) => partenaire.actif).length;
 
+  const lastPage = Math.max(1, Math.ceil(partenaires.length / perPage));
+  const currentPage = Math.min(page, lastPage);
+  const paginated = partenaires.slice((currentPage - 1) * perPage, currentPage * perPage);
+
   return (
     <div className="admin-partners-view">
       <header className="admin-partners-header">
@@ -261,34 +267,116 @@ export default function AdminPartenairesView({ onShowToast }) {
           <span>Ajoutez un logo pour le faire apparaître sur la page d’accueil.</span>
         </div>
       ) : (
-        <div className="admin-partners-list">
-          {partenaires.map((partenaire) => (
-            <article key={partenaire.id} className="admin-partner-card">
-              <div className="admin-partner-logo">
-                <img src={partenaire.logo_url} alt={`Logo ${partenaire.nom}`} />
-              </div>
-              <div className="admin-partner-info">
-                <strong>{partenaire.nom}</strong>
-                <span>{partenaire.lien || 'Aucun site web renseigné'}</span>
-                <small>Position {partenaire.ordre}</small>
-              </div>
-              <span className={`admin-partner-status ${partenaire.actif ? 'is-active' : ''}`}>
-                {partenaire.actif ? 'Visible' : 'Masqué'}
+        <>
+          <div className="admin-partners-list">
+            {paginated.map((partenaire) => (
+              <article key={partenaire.id} className="admin-partner-card">
+                <div className="admin-partner-logo">
+                  <img src={partenaire.logo_url} alt={`Logo ${partenaire.nom}`} />
+                </div>
+                <div className="admin-partner-info">
+                  <strong>{partenaire.nom}</strong>
+                  <span>{partenaire.lien || 'Aucun site web renseigné'}</span>
+                  <small>Position {partenaire.ordre}</small>
+                </div>
+                <span className={`admin-partner-status ${partenaire.actif ? 'is-active' : ''}`}>
+                  {partenaire.actif ? 'Visible' : 'Masqué'}
+                </span>
+                <div className="admin-partner-actions">
+                  <button type="button" className="admin-partner-secondary" onClick={() => toggleStatus(partenaire)}>
+                    {partenaire.actif ? 'Masquer' : 'Afficher'}
+                  </button>
+                  <button type="button" className="admin-partner-secondary" onClick={() => openEdit(partenaire)}>
+                    Modifier
+                  </button>
+                  <button type="button" className="admin-partner-delete" onClick={() => deletePartenaire(partenaire)}>
+                    Supprimer
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              paddingTop: '20px',
+              marginTop: '20px',
+              borderTop: '1px solid var(--line)',
+              flexWrap: 'wrap',
+              gap: '12px',
+            }}
+          >
+            <div style={{ fontSize: '13px', color: 'var(--mut)' }}>
+              Affichage de <strong>{paginated.length}</strong> sur <strong>{partenaires.length}</strong> partenaire{partenaires.length > 1 ? 's' : ''} (Page {currentPage} sur {lastPage})
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <button
+                type="button"
+                disabled={currentPage <= 1}
+                onClick={() => setPage((prev) => Math.max(prev - 1, 1))}
+                style={{
+                  padding: '8px 14px',
+                  borderRadius: '8px',
+                  border: '1px solid var(--line)',
+                  background: currentPage <= 1 ? 'var(--bg)' : 'var(--card)',
+                  color: currentPage <= 1 ? 'var(--mut)' : 'var(--ink)',
+                  fontSize: '13px',
+                  fontWeight: 500,
+                  cursor: currentPage <= 1 ? 'not-allowed' : 'pointer',
+                  fontFamily: 'inherit',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  opacity: currentPage <= 1 ? 0.6 : 1,
+                  transition: 'all 0.2s ease',
+                }}
+              >
+                &larr; Précédent
+              </button>
+
+              <span
+                style={{
+                  padding: '6px 12px',
+                  borderRadius: '8px',
+                  background: 'var(--soft)',
+                  color: 'var(--r)',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                }}
+              >
+                {currentPage} / {lastPage}
               </span>
-              <div className="admin-partner-actions">
-                <button type="button" className="admin-partner-secondary" onClick={() => toggleStatus(partenaire)}>
-                  {partenaire.actif ? 'Masquer' : 'Afficher'}
-                </button>
-                <button type="button" className="admin-partner-secondary" onClick={() => openEdit(partenaire)}>
-                  Modifier
-                </button>
-                <button type="button" className="admin-partner-delete" onClick={() => deletePartenaire(partenaire)}>
-                  Supprimer
-                </button>
-              </div>
-            </article>
-          ))}
-        </div>
+
+              <button
+                type="button"
+                disabled={currentPage >= lastPage}
+                onClick={() => setPage((prev) => Math.min(prev + 1, lastPage))}
+                style={{
+                  padding: '8px 14px',
+                  borderRadius: '8px',
+                  border: '1px solid var(--line)',
+                  background: currentPage >= lastPage ? 'var(--bg)' : 'var(--card)',
+                  color: currentPage >= lastPage ? 'var(--mut)' : 'var(--ink)',
+                  fontSize: '13px',
+                  fontWeight: 500,
+                  cursor: currentPage >= lastPage ? 'not-allowed' : 'pointer',
+                  fontFamily: 'inherit',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  opacity: currentPage >= lastPage ? 0.6 : 1,
+                  transition: 'all 0.2s ease',
+                }}
+              >
+                Suivant &rarr;
+              </button>
+            </div>
+          </div>
+        </>
       )}
     </div>
   );

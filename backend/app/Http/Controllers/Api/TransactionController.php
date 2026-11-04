@@ -19,7 +19,14 @@ class TransactionController extends Controller
     public function index(Request $request): AnonymousResourceCollection
     {
         $user = $request->user();
-        $query = Transaction::with(['cagnotte.produit', 'commande.commandeProduits.produit', 'echeance'])
+        $query = Transaction::with([
+            'cagnotte.produit',
+            'cagnotte.utilisateur',
+            'commande.utilisateur',
+            'commande.commandeProduits.produit',
+            'echeance',
+        ])
+            ->whereIn('statut', ['succes', 'reussi'])
             ->orderByDesc('date')
             ->orderByDesc('id');
 

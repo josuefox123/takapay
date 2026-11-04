@@ -26,6 +26,8 @@ export default function AdminPromotionsView({ onShowToast }) {
   const [showModal, setShowModal] = useState(false);
   const [editingPromoId, setEditingPromoId] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  const [page, setPage] = useState(1);
+  const perPage = 10;
   const [form, setForm] = useState(buildDefaultForm);
   const [formErrors, setFormErrors] = useState({});
 
@@ -172,6 +174,10 @@ export default function AdminPromotionsView({ onShowToast }) {
   const activeCount = promotions.filter((p) => computeStatus(p).label === 'En cours').length;
   const popupActiveCount = promotions.filter((p) => computeStatus(p).label === 'En cours' && p.afficher_popup && (p.image_popup_url || p.image_popup)).length;
 
+  const lastPage = Math.max(1, Math.ceil(promotions.length / perPage));
+  const currentPage = Math.min(page, lastPage);
+  const paginated = promotions.slice((currentPage - 1) * perPage, currentPage * perPage);
+
   return (
     <div>
       {/* En-tête de section */}
@@ -251,7 +257,7 @@ export default function AdminPromotionsView({ onShowToast }) {
                 </tr>
               </thead>
               <tbody>
-                {promotions.map((p) => {
+                {paginated.map((p) => {
                   const st = computeStatus(p);
                   const dDebut = p.date_debut ? new Date(p.date_debut).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Immédiat';
                   const dFin = p.date_fin ? new Date(p.date_fin).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Indéterminée';
@@ -369,6 +375,89 @@ export default function AdminPromotionsView({ onShowToast }) {
                 })}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {/* Barre de pagination */}
+        {!loading && promotions.length > 0 && (
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              paddingTop: '20px',
+              marginTop: '20px',
+              borderTop: '1px solid var(--line)',
+              flexWrap: 'wrap',
+              gap: '12px',
+            }}
+          >
+            <div style={{ fontSize: '13px', color: 'var(--mut)' }}>
+              Affichage de <strong>{paginated.length}</strong> sur <strong>{promotions.length}</strong> promotion{promotions.length > 1 ? 's' : ''} (Page {currentPage} sur {lastPage})
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <button
+                type="button"
+                disabled={currentPage <= 1}
+                onClick={() => setPage((prev) => Math.max(prev - 1, 1))}
+                style={{
+                  padding: '8px 14px',
+                  borderRadius: '8px',
+                  border: '1px solid var(--line)',
+                  background: currentPage <= 1 ? 'var(--bg)' : 'var(--card)',
+                  color: currentPage <= 1 ? 'var(--mut)' : 'var(--ink)',
+                  fontSize: '13px',
+                  fontWeight: 500,
+                  cursor: currentPage <= 1 ? 'not-allowed' : 'pointer',
+                  fontFamily: 'inherit',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  opacity: currentPage <= 1 ? 0.6 : 1,
+                  transition: 'all 0.2s ease',
+                }}
+              >
+                &larr; Précédent
+              </button>
+
+              <span
+                style={{
+                  padding: '6px 12px',
+                  borderRadius: '8px',
+                  background: 'var(--soft)',
+                  color: 'var(--r)',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                }}
+              >
+                {currentPage} / {lastPage}
+              </span>
+
+              <button
+                type="button"
+                disabled={currentPage >= lastPage}
+                onClick={() => setPage((prev) => Math.min(prev + 1, lastPage))}
+                style={{
+                  padding: '8px 14px',
+                  borderRadius: '8px',
+                  border: '1px solid var(--line)',
+                  background: currentPage >= lastPage ? 'var(--bg)' : 'var(--card)',
+                  color: currentPage >= lastPage ? 'var(--mut)' : 'var(--ink)',
+                  fontSize: '13px',
+                  fontWeight: 500,
+                  cursor: currentPage >= lastPage ? 'not-allowed' : 'pointer',
+                  fontFamily: 'inherit',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  opacity: currentPage >= lastPage ? 0.6 : 1,
+                  transition: 'all 0.2s ease',
+                }}
+              >
+                Suivant &rarr;
+              </button>
+            </div>
           </div>
         )}
       </div>
