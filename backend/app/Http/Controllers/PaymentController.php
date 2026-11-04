@@ -339,7 +339,7 @@ class PaymentController extends Controller
 
         return response()->json([
             'shop_id' => config('services.feexpay.shop_id'),
-            'api_key' => config('services.feexpay.api_key'),
+            'api_key' => 'fp_public_' . substr(hash('sha256', (string) config('services.feexpay.api_key')), 0, 48),
             'mode' => config('services.feexpay.mode', 'SANDBOX'),
             'amount' => $amount,
             'reference' => $feexpayResponse['reference'] ?? $reference,
@@ -916,5 +916,102 @@ class PaymentController extends Controller
         }
 
         return Transaction::create($attributes);
+    }
+
+    /**
+     * Relais sécurisé côté serveur pour le widget client FeexPay afin de ne jamais exposer FEEXPAY_API_KEY au navigateur.
+     */
+    public function feexpayProxy(Request $request): JsonResponse
+    {
+        $request->validate([
+            'url' => ['required', 'string', 'max:500'],
+            'method' => ['nullable', 'string', 'in:GET,POST'],
+            'body' => ['nullable', 'array'],
+        ]);
+
+        $targetUrl = $request->input('url');
+        $parsed = parse_url($targetUrl);
+        $host = strtolower((string) ($parsed['host'] ?? ''));
+        $path = (string) ($parsed['path'] ?? '');
+        $query = isset($parsed['query']) ? '?'.$parsed['query'] : '';
+
+        if (! in_array($host, ['api.feexpay.me', 'api-v2.feexpay.me', 'sandbox-api.feexpay.me'], true)) {
+            return response()->json(['message' => 'Domaine cible non autorisé.'], 403);
+        }
+
+        // Liste blanche stricte des opérations autorisées pour le widget de paiement client (aucun payout autorisé)
+        $isAllowedPath = str_contains($path, '/get_shop')
+            || $path === '/api/transactions/details'
+            || $path === '/api/transactions/requesttopay/integration'
+            || str_starts_with($path, '/api/transactions/public/single/status/')
+            || str_starts_with($path, '/api/transactions/getrequesttopay/integration/');
+
+        if (! $isAllowedPath) {
+            return response()->json(['message' => 'Opération FeexPay non autorisée depuis le client.'], 403);
+        }
+
+        // Normalisation de l'ancien endpoint de statut v1 vers v2
+        if (preg_match('#^/api/transactions/getrequesttopay/integration/([^/?\#]+)#', $path, $matches)) {
+            $path = '/api/transactions/public/single/status/'.$matches[1];
+        }
+
+        if (str_contains($path, '/get_shop')) {
+            return response()->json([
+                'name' => 'Takapay Store',
+                'reference' => config('services.feexpay.shop_id') ?: 'Takapay',
+                'status' => 'ACTIVE',
+            ]);
+        }
+
+        $apiKey = config('services.feexpay.api_key');
+        $shopId = config('services.feexpay.shop_id');
+
+        if (empty($apiKey) || empty($shopId)) {
+            return response()->json(['message' => 'Configuration FeexPay manquante sur le serveur.'], 503);
+        }
+
+        $method = strtoupper((string) $request->input('method', 'GET'));
+        $body = $request->input('body', []);
+        if (is_array($body)) {
+            if (isset($body['token'])) {
+                $body['token'] = $apiKey;
+            }
+            if (isset($body['shop'])) {
+                $body['shop'] = $shopId;
+            }
+            if (isset($body['network']) && ! isset($body['reseau'])) {
+                $body['reseau'] = $body['network'];
+            }
+        }
+
+        $finalUrl = 'https://api-v2.feexpay.me'.$path.$query;
+
+        try {
+            $http = Http::timeout(20)
+                ->withToken($apiKey)
+                ->withHeaders([
+                    'Accept' => 'application/json',
+                    'Content-Type' => 'application/json',
+                ]);
+
+            $res = $method === 'POST'
+                ? $http->post($finalUrl, is_array($body) ? $body : [])
+                : $http->get($finalUrl);
+
+            $data = $res->json();
+            if ($data !== null) {
+                return response()->json($data, $res->status());
+            }
+
+            return response($res->body(), $res->status())
+                ->header('Content-Type', $res->header('Content-Type') ?: 'application/json');
+        } catch (\Throwable $e) {
+            Log::warning('Erreur feexpayProxy : '.$e->getMessage());
+
+            return response()->json([
+                'status' => 'FAILED',
+                'message' => 'Erreur de communication avec FeexPay.',
+            ], 502);
+        }
     }
 }

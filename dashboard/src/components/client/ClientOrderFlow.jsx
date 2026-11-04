@@ -412,6 +412,17 @@ export default function ClientOrderFlow({
     setSubmitting(true);
     setPaymentFailed(false);
     try {
+      const rawUserPhone = paymentPhone.trim() || activeUser?.telephone || user?.telephone || phone || '';
+      const cleanPhone = rawUserPhone.replace(/\D/g, '').replace(/^229/, '');
+      const userFullName = paymentName.trim() || `${activeUser?.prenom || user?.prenom || prenom || ''} ${activeUser?.nom || user?.nom || nom || ''}`.trim() || 'Client';
+      const userEmail = (email && email.trim()) || (activeUser?.email && !activeUser.email.endsWith('@client.takapay.bj') ? activeUser.email : '') || '';
+
+      window.__takapayPrefillUser = {
+        fullName: userFullName,
+        phoneDigits: cleanPhone,
+        email: userEmail,
+      };
+
       const initRes = await adminService.initiatePayment({
         amount: paymentAmount,
         produit_id: product?.id,
@@ -1020,8 +1031,8 @@ export default function ClientOrderFlow({
                           first_name: (paymentName.trim().split(' ')[0]) || activeUser?.prenom || user?.prenom || prenom || 'Client',
                           last_name: (paymentName.trim().split(' ').slice(1).join(' ')) || activeUser?.nom || user?.nom || nom || '',
                           email: (email && email.trim()) || (activeUser?.email && !activeUser.email.endsWith('@client.takapay.bj') ? activeUser.email : '') || '',
-                          phone: paymentPhone.trim() || activeUser?.telephone || activeUser?.phone || user?.telephone || user?.phone || phone || '',
-                          phoneNumber: paymentPhone.trim() || activeUser?.telephone || activeUser?.phone || user?.telephone || user?.phone || phone || '',
+                          phone: (paymentPhone.trim() || activeUser?.telephone || activeUser?.phone || user?.telephone || user?.phone || phone || '').replace(/\D/g, '').replace(/^229/, ''),
+                          phoneNumber: (paymentPhone.trim() || activeUser?.telephone || activeUser?.phone || user?.telephone || user?.phone || phone || '').replace(/\D/g, '').replace(/^229/, ''),
                           reseau: provider,
                           network: provider,
                         }}

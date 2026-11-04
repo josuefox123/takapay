@@ -117,6 +117,9 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
     };
   }, [isProcessingPayment, paymentCountdown]);
   const [showCancelModal, setShowCancelModal] = useState(false);
+  const [cancelReason, setCancelReason] = useState('Changement de priorité / imprévu financier');
+  const [cancelReasonCustom, setCancelReasonCustom] = useState('');
+  const [cancelReasonError, setCancelReasonError] = useState('');
   const [isCancelling, setIsCancelling] = useState(false);
   const [isReactivating, setIsReactivating] = useState(false);
   const [dismissCancelledBanner, setDismissCancelledBanner] = useState(false);
@@ -378,11 +381,24 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
 
   const openCancelModal = () => {
     setCancelPhone(user?.telephone || user?.phone || activeCagnotte?.deliveryPhone || '');
+    setCancelReason('Changement de priorité / imprévu financier');
+    setCancelReasonCustom('');
+    setCancelReasonError('');
     setShowCancelModal(true);
   };
 
   const handleCancelCagnotte = async () => {
     if (!activeCagnotte) return;
+
+    const effectiveReason = cancelReason === 'Autre raison'
+      ? cancelReasonCustom.trim()
+      : cancelReason;
+
+    if (cancelReason === 'Autre raison' && !effectiveReason) {
+      setCancelReasonError('Veuillez préciser la raison de votre annulation.');
+      return;
+    }
+
     setIsCancelling(true);
 
     const targetId = activeCagnotte.id;
@@ -405,6 +421,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
       montantRemboursement: refundAmount,
       fraisAnnulation: penaltyAmount,
       telephoneRemboursement: effectivePhone,
+      motifAnnulation: effectiveReason,
       dateDemandeAnnulation: dateFormatted,
       transactions: activeCagnotte.transactions || [],
     };
@@ -428,6 +445,8 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
         await adminService.cancelCagnotte(backendCagnotteId, {
           telephone: effectivePhone,
           email: user?.email || '',
+          motif_annulation: effectiveReason,
+          motif: effectiveReason,
         });
         window.dispatchEvent(new CustomEvent('takapay_products_updated'));
       } catch (err) {
@@ -591,17 +610,20 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
       return;
     }
 
-    const isEchelonne = targetCagnotte.product?.payment?.mode === 'echelonne' || targetCagnotte.mode === 'echelonne';
-    const minInstallment = Number(targetCagnotte.product?.payment?.installmentAmount || targetCagnotte.prochainVersement?.montant) || 0;
-    if (isEchelonne && minInstallment > 0 && targetRemaining >= minInstallment && amountNum < minInstallment) {
-      setDepositError(`Pour une cagnotte échelonnée, chaque versement doit être d'au moins ${formatFCFA(minInstallment)}.`);
-      return;
-    }
-
     setDepositError('');
     setIsSubmitting(true);
     setPaymentFailed(false);
     try {
+      const cleanPhone = (user?.telephone || user?.phone || depositPhone || '').replace(/\D/g, '').replace(/^229/, '');
+      const userFullName = `${user?.prenom || ''} ${user?.nom || ''}`.trim() || user?.nom || 'Client';
+      const userEmail = (user?.email && !user.email.endsWith('@client.takapay.bj')) ? user.email : '';
+
+      window.__takapayPrefillUser = {
+        fullName: userFullName,
+        phoneDigits: cleanPhone,
+        email: userEmail,
+      };
+
       const initRes = await adminService.initiatePayment({
         amount: amountNum,
         produit_id: targetCagnotte.product?.id ? Number(targetCagnotte.product.id) : undefined,
@@ -2799,8 +2821,8 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                         first_name: user?.prenom || user?.nom || 'Client',
                         last_name: user?.nom || '',
                         email: (user?.email && !user.email.endsWith('@client.takapay.bj')) ? user.email : '',
-                        phone: user?.telephone || user?.phone || '',
-                        phoneNumber: user?.telephone || user?.phone || '',
+                        phone: (user?.telephone || user?.phone || depositPhone || '').replace(/\D/g, '').replace(/^229/, ''),
+                        phoneNumber: (user?.telephone || user?.phone || depositPhone || '').replace(/\D/g, '').replace(/^229/, ''),
                       }}
                       callback={handleFeexpayCallback}
                       buttonText={`Payer ${formatFCFA(Number(paymentData.amount))} avec FeexPay`}
@@ -3140,6 +3162,70 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                 </div>
               </>
             )}
+
+            {/* Raison de l'annulation */}
+            <div style={{ marginBottom: '20px' }}>
+              <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 700, marginBottom: '6px', color: '#1b1716' }}>
+                Raison de l’annulation *
+              </label>
+              <select
+                value={cancelReason}
+                onChange={(e) => {
+                  setCancelReason(e.target.value);
+                  if (cancelReasonError) setCancelReasonError('');
+                }}
+                style={{
+                  width: '100%',
+                  padding: '11px 14px',
+                  borderRadius: '10px',
+                  border: '1.5px solid #ded6cd',
+                  fontSize: '13.5px',
+                  boxSizing: 'border-box',
+                  background: '#ffffff',
+                  color: '#1b1716',
+                  cursor: 'pointer',
+                }}
+              >
+                <option value="Changement de priorité / imprévu financier">Changement de priorité / imprévu financier</option>
+                <option value="Délais trop longs / besoin immédiat de l’article">Délais trop longs / besoin immédiat de l’article</option>
+                <option value="J’ai trouvé une autre offre / moins cher ailleurs">J’ai trouvé une autre offre / moins cher ailleurs</option>
+                <option value="Erreur lors de la commande ou du choix de l’article">Erreur lors de la commande ou du choix de l’article</option>
+                <option value="Autre raison">Autre raison (à préciser)</option>
+              </select>
+
+              {cancelReason === 'Autre raison' && (
+                <div style={{ marginTop: '10px' }}>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, marginBottom: '5px', color: '#4b443f' }}>
+                    Veuillez préciser votre raison *
+                  </label>
+                  <textarea
+                    rows={3}
+                    required
+                    value={cancelReasonCustom}
+                    onChange={(e) => {
+                      setCancelReasonCustom(e.target.value);
+                      if (cancelReasonError) setCancelReasonError('');
+                    }}
+                    placeholder="Expliquez brièvement pourquoi vous souhaitez annuler..."
+                    style={{
+                      width: '100%',
+                      padding: '10px 12px',
+                      borderRadius: '10px',
+                      border: cancelReasonError ? '1.5px solid #dc2626' : '1.5px solid #ded6cd',
+                      fontSize: '13px',
+                      boxSizing: 'border-box',
+                      resize: 'vertical',
+                      outline: 'none',
+                    }}
+                  />
+                  {cancelReasonError && (
+                    <small style={{ color: '#dc2626', fontSize: '11.5px', marginTop: '4px', display: 'block' }}>
+                      {cancelReasonError}
+                    </small>
+                  )}
+                </div>
+              )}
+            </div>
 
             <div style={{ display: 'flex', gap: '10px' }}>
               <button

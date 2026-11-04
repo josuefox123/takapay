@@ -3,81 +3,53 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.jsx'
 
-// Adaptateur FeexPay v2 : redirection automatique de l'ancien domaine api.feexpay.me vers api-v2.feexpay.me
-let cachedFeexPayToken = '';
-
+// Adaptateur FeexPay v2 : relais sécurisé via le backend Laravel (la clé secrète FEEXPAY_API_KEY ne quitte jamais le serveur)
 const originalFetch = window.fetch;
 window.fetch = async (...args) => {
   let [resource, config] = args;
   let url = typeof resource === 'string' ? resource : (resource?.url || '');
 
   if (typeof url === 'string' && url.includes('feexpay.me')) {
-    // 1. Redirection vers la nouvelle API officielle api-v2
     url = url.replace('api.feexpay.me', 'api-v2.feexpay.me');
 
-    const headers = new Headers(config?.headers || (resource instanceof Request ? resource.headers : {}));
-
-    // Sauvegarde du token d'authentification s'il est présent
-    const authHeader = headers.get('Authorization') || headers.get('authorization');
-    if (authHeader && authHeader.includes('Bearer')) {
-      cachedFeexPayToken = authHeader;
-    }
-
-    // 2. Correction de la vérification de statut pour FeexPay v2
-    // L'ancien endpoint SDK getrequesttopay/integration/:id devient /api/transactions/public/single/status/:id
     const statusMatch = url.match(/\/api\/transactions\/getrequesttopay\/integration\/([^/?#]+)/);
     if (statusMatch) {
       const txRef = statusMatch[1];
       url = `https://api-v2.feexpay.me/api/transactions/public/single/status/${txRef}`;
-      if (cachedFeexPayToken && !headers.has('Authorization')) {
-        headers.set('Authorization', cachedFeexPayToken);
-      }
     }
 
-    // 3. Correction du calcul des frais /details (FeexPay v2 attend 'reseau' au lieu de 'network')
-    let body = config?.body;
-    if (url.includes('/api/transactions/details') && body && typeof body === 'string') {
+    const method = (config?.method || (resource instanceof Request ? resource.method : 'GET') || 'GET').toUpperCase();
+    let parsedBody = null;
+    if (config?.body && typeof config.body === 'string') {
       try {
-        const parsed = JSON.parse(body);
-        if (parsed.network && !parsed.reseau) {
-          parsed.reseau = parsed.network;
-          body = JSON.stringify(parsed);
-        }
-        if (parsed.token && !cachedFeexPayToken) {
-          cachedFeexPayToken = `Bearer ${parsed.token}`;
+        parsedBody = JSON.parse(config.body);
+        if (parsedBody.network && !parsedBody.reseau) {
+          parsedBody.reseau = parsedBody.network;
         }
       } catch {
-        // Ignorer l'erreur de parsing
+        parsedBody = null;
       }
     }
-
-    // Sauvegarde du token si envoyé dans le body de requesttopay
-    if (body && typeof body === 'string' && !cachedFeexPayToken) {
-      try {
-        const parsed = JSON.parse(body);
-        if (parsed.token) {
-          cachedFeexPayToken = `Bearer ${parsed.token}`;
-        }
-      } catch {
-        // Ignorer
-      }
-    }
-
-    const newConfig = {
-      ...config,
-      headers,
-      ...(body ? { body } : {}),
-    };
 
     try {
-      const res = await originalFetch(url, newConfig);
+      const res = await originalFetch('/api/payment/feexpay-proxy', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({
+          url,
+          method,
+          body: parsedBody,
+        }),
+      });
 
-      // Si l'appel /get_shop échoue ou n'est pas OK, fallback propre
       if (!res.ok && url.includes('/get_shop')) {
         return new Response(
           JSON.stringify({
             name: 'Takapay Store',
-            reference: '4HgUAuyVdYvnMPc',
+            reference: 'Takapay',
             status: 'ACTIVE',
           }),
           { status: 200, headers: { 'Content-Type': 'application/json' } }
@@ -90,7 +62,7 @@ window.fetch = async (...args) => {
         return new Response(
           JSON.stringify({
             name: 'Takapay Store',
-            reference: '4HgUAuyVdYvnMPc',
+            reference: 'Takapay',
             status: 'ACTIVE',
           }),
           { status: 200, headers: { 'Content-Type': 'application/json' } }
@@ -106,60 +78,110 @@ window.fetch = async (...args) => {
 // Pré-remplissage automatique des informations client dans le modal FeexPay
 if (typeof window !== 'undefined') {
   const setNativeInputValue = (element, value) => {
-    if (!element || !value) return;
+    if (!element || value === undefined || value === null) return;
+    const strVal = String(value).trim();
+    if (!strVal || element.value === strVal) return;
+
+    const previousValue = element.value;
     const valueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
     if (valueSetter) {
-      valueSetter.call(element, value);
+      valueSetter.call(element, strVal);
     } else {
-      element.value = value;
+      element.value = strVal;
+    }
+    const tracker = element._valueTracker;
+    if (tracker) {
+      tracker.setValue(previousValue);
     }
     element.dispatchEvent(new Event('input', { bubbles: true }));
     element.dispatchEvent(new Event('change', { bubbles: true }));
+  };
+
+  const getActiveClientInfo = () => {
+    if (window.__takapayPrefillUser && (window.__takapayPrefillUser.fullName || window.__takapayPrefillUser.phoneDigits)) {
+      return window.__takapayPrefillUser;
+    }
+    let u = null;
+    try {
+      const s1 = localStorage.getItem('takapay-client-user');
+      if (s1) u = JSON.parse(s1);
+    } catch {
+      // Ignorer
+    }
+    if (!u) {
+      try {
+        const s2 = localStorage.getItem('takapay_admin_user');
+        if (s2) u = JSON.parse(s2);
+      } catch {
+        // Ignorer
+      }
+    }
+    if (!u) return null;
+
+    const fullName = `${u.prenom || ''} ${u.nom || ''}`.trim() || u.nom || u.prenom || u.name || '';
+    let rawPhone = u.telephone || u.phone || '';
+    let phoneDigits = String(rawPhone).replace(/\D/g, '');
+    if (phoneDigits.startsWith('229') && phoneDigits.length > 8) {
+      phoneDigits = phoneDigits.substring(3);
+    }
+    const email = u.email && !u.email.endsWith('@client.takapay.bj') ? u.email : '';
+    return { fullName, phoneDigits, email };
   };
 
   const tryPrefillFeexpayModal = () => {
     try {
       // Détection et marquage de la modal FeexPay pour le style et le z-index
       const feexpayModalEl = document.querySelector('img[src*="feexpay"]')?.closest('.fixed.inset-0') ||
-        document.querySelector('input[placeholder="Numéro de téléphone sans indicatif"]')?.closest('.fixed.inset-0');
+        document.querySelector('input[placeholder*="téléphone"]')?.closest('.fixed.inset-0') ||
+        document.querySelector('input[placeholder*="telephone"]')?.closest('.fixed.inset-0') ||
+        document.querySelector('div.fixed.inset-0.z-50');
+
       if (feexpayModalEl && !feexpayModalEl.classList.contains('feexpay-modal-overlay-custom')) {
         feexpayModalEl.classList.add('feexpay-modal-overlay-custom');
         const card = feexpayModalEl.querySelector('.bg-white.rounded-lg') || feexpayModalEl.querySelector('.max-w-md');
         if (card) card.classList.add('feexpay-modal-card-custom');
       }
 
-      const savedUserStr = localStorage.getItem('takapay-client-user');
-      const savedUser = savedUserStr ? JSON.parse(savedUserStr) : null;
-      if (!savedUser) return;
+      const clientInfo = getActiveClientInfo();
+      if (!clientInfo) return;
 
-      const fullName = `${savedUser.prenom || ''} ${savedUser.nom || ''}`.trim() || savedUser.nom || '';
-      let rawPhone = savedUser.telephone || savedUser.phone || '';
-      let phoneDigits = String(rawPhone).replace(/\D/g, '');
-      if (phoneDigits.startsWith('229') && phoneDigits.length > 8) {
-        phoneDigits = phoneDigits.substring(3);
-      }
-      const email = savedUser.email && !savedUser.email.endsWith('@client.takapay.bj') ? savedUser.email : '';
+      const { fullName, phoneDigits, email } = clientInfo;
 
-      // Nom et Prénoms
-      const nameInput = document.querySelector('input[placeholder="Nom et Prénoms"]');
-      if (nameInput && !nameInput.value && fullName && !nameInput.dataset.prefilled) {
-        nameInput.dataset.prefilled = 'true';
-        setNativeInputValue(nameInput, fullName);
-      }
+      const modalScope = feexpayModalEl || document;
+      const inputs = Array.from(modalScope.querySelectorAll('input'));
 
-      // Email
-      const emailInput = document.querySelector('input[placeholder="Email"]');
-      if (emailInput && !emailInput.value && email && !emailInput.dataset.prefilled) {
-        emailInput.dataset.prefilled = 'true';
-        setNativeInputValue(emailInput, email);
-      }
+      inputs.forEach((input) => {
+        const ph = (input.getAttribute('placeholder') || '').toLowerCase();
+        const type = (input.getAttribute('type') || '').toLowerCase();
 
-      // Numéro de téléphone sans indicatif
-      const phoneInput = document.querySelector('input[placeholder="Numéro de téléphone sans indicatif"]');
-      if (phoneInput && !phoneInput.value && phoneDigits && !phoneInput.dataset.prefilled) {
-        phoneInput.dataset.prefilled = 'true';
-        setNativeInputValue(phoneInput, phoneDigits);
-      }
+        // 1. Champ Téléphone (sans indicatif)
+        if (type === 'tel' || ph.includes('téléphone') || ph.includes('telephone') || ph.includes('numéro') || ph.includes('numero')) {
+          if (phoneDigits && input.value !== phoneDigits && !input.dataset.manuallyEdited) {
+            setNativeInputValue(input, phoneDigits);
+          }
+        }
+        // 2. Champ Nom et Prénoms
+        else if (ph.includes('nom') || ph.includes('prénom') || ph.includes('prenom')) {
+          if (fullName && input.value !== fullName && !input.dataset.manuallyEdited) {
+            setNativeInputValue(input, fullName);
+          }
+        }
+        // 3. Champ Email
+        else if (type === 'email' || ph.includes('email') || ph.includes('e-mail') || ph.includes('courriel')) {
+          if (email && input.value !== email && !input.dataset.manuallyEdited) {
+            setNativeInputValue(input, email);
+          }
+        }
+
+        if (!input.dataset.boundManual) {
+          input.dataset.boundManual = 'true';
+          input.addEventListener('input', (e) => {
+            if (e.isTrusted) {
+              input.dataset.manuallyEdited = 'true';
+            }
+          });
+        }
+      });
     } catch {
       // Ignorer
     }

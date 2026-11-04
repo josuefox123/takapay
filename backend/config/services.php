@@ -46,4 +46,8 @@ return [
         'mode' => env('FEEXPAY_MODE', 'SANDBOX'),
     ],
 
+    'google' => [
+        'client_id' => env('GOOGLE_CLIENT_ID'),
+    ],
+
 ];
