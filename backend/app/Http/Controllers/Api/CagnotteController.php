@@ -33,6 +33,10 @@ class CagnotteController extends Controller
 
         $query = Cagnotte::has('produit')
             ->with(['utilisateur', 'produit.imageProduits', 'produit.parametreProduit', 'produit.sousCategorie.categorie', 'transactions'])
+            ->where(function ($q) {
+                $q->where('statut', '!=', 'en_attente')
+                    ->orWhere('montant_verse', '>', 0);
+            })
             ->latest();
 
         // 1. Administrateurs / super_admin / gestionnaires : accès à toutes les cagnottes

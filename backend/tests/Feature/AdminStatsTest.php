@@ -20,7 +20,7 @@ class AdminStatsTest extends TestCase
         parent::tearDown();
     }
 
-    public function test_monthly_stats_exclude_previous_month_and_list_pending_payment_attempts(): void
+    public function test_monthly_stats_exclude_previous_month_and_only_lists_successful_versements(): void
     {
         Carbon::setTestNow('2026-11-02 12:00:00');
         $admin = User::factory()->admin()->create();
@@ -63,12 +63,12 @@ class AdminStatsTest extends TestCase
         $response->assertJsonPath('kpis.encaisse_ce_mois', 1000);
         $response->assertJsonPath('recouvrement.total_mois', 1000);
         $response->assertJsonPath('recouvrement.semaines.0.periode', '01/11 au 01/11');
-        $response->assertJsonPath('derniers_versements.0.statut', 'en_attente');
+        $response->assertJsonPath('derniers_versements.0.statut', 'succes');
 
-        $this->assertSame('pending-payment', $response->json('derniers_versements.0.commande_reference'));
+        $this->assertSame('november-payment', $response->json('derniers_versements.0.commande_reference'));
     }
 
-    public function test_dashboard_lists_pending_orders_without_a_transaction(): void
+    public function test_dashboard_does_not_list_pending_orders_without_a_successful_transaction(): void
     {
         Carbon::setTestNow('2026-11-02 12:00:00');
         $admin = User::factory()->admin()->create();
@@ -85,8 +85,7 @@ class AdminStatsTest extends TestCase
             ->getJson('/api/admin/stats')
             ->assertOk();
 
-        $response->assertJsonPath('derniers_versements.0.commande_reference', 'CMD_PENDING');
-        $response->assertJsonPath('derniers_versements.0.statut', 'en_attente');
+        $response->assertJsonCount(0, 'derniers_versements');
         $response->assertJsonPath('kpis.encaisse_ce_mois', 0);
         $response->assertJsonPath('kpis.cagnottes_actives', 0);
     }
