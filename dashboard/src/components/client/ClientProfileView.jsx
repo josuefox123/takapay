@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { adminService } from '../../services/adminService';
 import ClientForgotPinModal from './ClientForgotPinModal';
 import useLoginLockout, { formatLockoutTime } from './useLoginLockout';
+import { openCookiePreferences } from '../../services/cookieConsent';
 
 export default function ClientProfileView({
   user = null,
@@ -1899,7 +1900,7 @@ export default function ClientProfileView({
             style={{
               background: '#ffffff',
               borderRadius: '24px',
-              maxWidth: '460px',
+              maxWidth: '560px',
               width: '100%',
               padding: '24px',
               boxShadow: '0 20px 60px rgba(0,0,0,0.25)',
@@ -1984,9 +1985,46 @@ export default function ClientProfileView({
             </div>
 
             <div style={{ maxHeight: '360px', overflowY: 'auto', fontSize: '13px', color: '#4b443f', lineHeight: 1.6 }}>
-              <p><b>1. Confidentialité</b> : Vos coordonnées et numéros Mobile Money sont cryptés et protégés.</p>
-              <p><b>2. Transactions sécurisées</b> : Opérées conformément aux régulations financières de l'UEMOA.</p>
+              <p>
+                Takapay utilise les informations de compte (nom, téléphone et e-mail), les
+                informations de commande, de cagnotte, de paiement et de livraison pour fournir
+                le service, répondre aux demandes et sécuriser les opérations.
+              </p>
+              <p>
+                Les paiements sont initiés avec FeexPay. Les fonctions de localisation ne
+                sollicitent leurs services externes que lorsque vous les utilisez. Google
+                Traduction est chargé uniquement après votre accord. Les polices et icônes Google
+                Fonts sont chargées avec l’interface et peuvent transmettre à Google des données
+                techniques comme l’adresse IP.
+              </p>
+              <p>
+                L’application ne publie pas encore de durée précise de conservation. Pour demander
+                l’accès, la correction ou la suppression de vos données, contactez
+                {' '}support@takapay.bj. Certaines données d’opérations peuvent devoir être
+                conservées pour les obligations applicables.
+              </p>
             </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                setActiveModal(null);
+                openCookiePreferences('cookies');
+              }}
+              style={{
+                width: '100%',
+                marginTop: '12px',
+                padding: '12px',
+                background: '#fff2ef',
+                color: '#1b1716',
+                borderRadius: '12px',
+                border: '1px solid #e6b9b3',
+                fontWeight: 700,
+                cursor: 'pointer',
+              }}
+            >
+              Gérer mes préférences de cookies
+            </button>
 
             <button
               type="button"

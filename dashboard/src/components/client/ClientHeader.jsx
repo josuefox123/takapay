@@ -1,5 +1,10 @@
 import { useState, useEffect } from 'react';
 import Brand from '../public/Brand';
+import {
+  openCookiePreferences,
+  readCookieConsent,
+  removeTranslationCookie,
+} from '../../services/cookieConsent';
 
 export default function ClientHeader({
   activeTab = 'home',
@@ -16,18 +21,43 @@ export default function ClientHeader({
   const [localSearch, setLocalSearch] = useState(searchQuery);
   const [lang, setLang] = useState(() => {
     if (typeof document !== 'undefined') {
-      const match = document.cookie.match(/(?:^|;\s*)googtrans=([^;]+)/);
-      if (match && match[1]) {
-        const val = decodeURIComponent(match[1]);
-        if (val.toLowerCase().endsWith('/en')) {
-          return 'EN';
+      try {
+        if (readCookieConsent()?.preferences) {
+          const match = document.cookie.match(/(?:^|;\s*)googtrans=([^;]+)/);
+          if (match && match[1]) {
+            const val = decodeURIComponent(match[1]);
+            if (val.toLowerCase().endsWith('/en')) {
+              return 'EN';
+            }
+          }
         }
+      } catch {
+        return 'FR';
       }
     }
     return 'FR';
   });
 
   const handleLanguageChange = (newLang) => {
+    const hasPreferenceConsent = (() => {
+      try {
+        return Boolean(readCookieConsent()?.preferences);
+      } catch {
+        return false;
+      }
+    })();
+
+    if (newLang === 'EN' && !hasPreferenceConsent) {
+      openCookiePreferences('cookies');
+      return;
+    }
+
+    if (newLang === 'FR' && !hasPreferenceConsent) {
+      setLang('FR');
+      removeTranslationCookie();
+      return;
+    }
+
     setLang(newLang);
     const target = newLang === 'EN' ? '/fr/en' : '/fr/fr';
     const expires = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toUTCString();
@@ -675,4 +705,3 @@ export default function ClientHeader({
     </header>
   );
 }
-

@@ -1,6 +1,3 @@
-import { useEffect, useState } from 'react';
-import { adminService } from '../../services/adminService';
-
 function PartnerLogo({ partenaire, duplicate = false }) {
   const content = (
     <>
@@ -26,26 +23,9 @@ function PartnerLogo({ partenaire, duplicate = false }) {
   );
 }
 
-export default function ClientPartnersStrip() {
-  const [partenaires, setPartenaires] = useState([]);
-  const [error, setError] = useState('');
-
-  useEffect(() => {
-    let active = true;
-    adminService.getPartenaires()
-      .then((items) => {
-        if (active) setPartenaires(items);
-      })
-      .catch(() => {
-        if (active) setError('Les partenaires ne sont pas disponibles pour le moment.');
-      });
-    return () => {
-      active = false;
-    };
-  }, []);
-
+export default function ClientPartnersStrip({ partenaires = [], error = '', className = '' }) {
   return (
-    <section className="home-partners-section" aria-label="Partenaires Takapay">
+    <section className={`home-partners-section ${className}`.trim()} aria-label="Partenaires Takapay">
       <div className="home-partners-heading">
         <span className="home-partners-kicker">Ils nous accompagnent</span>
         <h2>Nos partenaires</h2>
