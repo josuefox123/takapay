@@ -39,23 +39,21 @@ class CagnotteController extends Controller
             })
             ->latest();
 
-        // 1. Administrateurs / super_admin / gestionnaires : accès aux cagnottes (filtré par admin_id pour un admin simple)
-        if ($user && $user->role !== 'client') {
+        if (! $user) {
+            return CagnotteResource::collection(collect());
+        }
+
+        // 1. Administrateurs / super_admin : accès aux cagnottes (filtré par admin_id pour un admin simple)
+        if ($user->isAdmin()) {
             if ($user->role === 'admin') {
                 $query->whereHas('produit', fn ($q) => $q->where('admin_id', $user->id));
             }
             if ($request->filled('user_id')) {
                 $query->where('utilisateur_id', $request->query('user_id'));
             }
-        } elseif ($request->filled('user_id')) {
-            // 2. Requête filtrée par identifiant client
-            $query->where('utilisateur_id', $request->query('user_id'));
-        } elseif ($user) {
-            // 3. Client authentifié : ses propres cagnottes
-            $query->where('utilisateur_id', $user->id);
         } else {
-            // 4. Visiteur non authentifié sans paramètre : liste vide
-            $query->whereRaw('1 = 0');
+            // 2. Client authentifié : uniquement ses propres cagnottes (user_id ignoré)
+            $query->where('utilisateur_id', $user->id);
         }
 
         return CagnotteResource::collection($query->get());
@@ -164,16 +162,58 @@ class CagnotteController extends Controller
     }
 
     /**
-     * Confirmer la réception d'un article par le client (Paiement cash / livraison).
+     * Vérifie que l'utilisateur connecté est le propriétaire de la cagnotte ou l'administrateur autorisé.
+     */
+    private function authorizeCagnotteOwnerOrProductAdmin(Request $request, Cagnotte $cagnotte): void
+    {
+        $user = $request->user();
+        if (! $user) {
+            abort(401, 'Non authentifié.');
+        }
+
+        if ($user->role === 'super_admin') {
+            return;
+        }
+
+        if ($user->role === 'admin') {
+            $produitAdminId = $cagnotte->produit?->admin_id;
+            if ($produitAdminId && (int) $produitAdminId !== (int) $user->id) {
+                abort(403, 'Accès non autorisé à cette cagnotte.');
+            }
+            return;
+        }
+
+        if ((int) $cagnotte->utilisateur_id !== (int) $user->id) {
+            abort(403, 'Vous n\'êtes pas autorisé à modifier cette cagnotte.');
+        }
+    }
+
+    /**
+     * Confirmer la réception d'un article par le client (Paiement cash / livraison ou cagnotte soldée).
      */
     public function confirmerReception(Request $request, Cagnotte $cagnotte): JsonResponse
     {
+        $this->authorizeCagnotteOwnerOrProductAdmin($request, $cagnotte);
+
+        $isCod = $cagnotte->moyen_paiement === 'livraison'
+            || $cagnotte->transactions()->where('prestataire', 'LIVRAISON')->exists();
+        $objectif = (float) ($cagnotte->objectif_effectif ?: $cagnotte->prix_unitaire);
+        $isFullyPaid = $objectif > 0 && (float) $cagnotte->montant_verse >= $objectif;
+
+        if (! $isCod && ! $isFullyPaid && $cagnotte->statut !== 'terminee') {
+            return response()->json([
+                'message' => 'La réception ne peut être confirmée que lorsque la cagnotte est soldée à 100 % ou pour une commande payable à la livraison.',
+            ], 422);
+        }
+
         $cagnotte->update([
             'statut' => 'terminee',
-            'montant_verse' => $cagnotte->prix_unitaire,
+            'montant_verse' => $isCod ? $cagnotte->prix_unitaire : $cagnotte->montant_verse,
         ]);
 
-        $cagnotte->transactions()->update(['statut' => 'succes']);
+        if ($isCod) {
+            $cagnotte->transactions()->where('prestataire', 'LIVRAISON')->update(['statut' => 'succes']);
+        }
 
         // Mise à jour de la commande liée via transaction ou jointure utilisateur + produit
         $tx = $cagnotte->transactions()->whereNotNull('commande_id')->latest()->first();
@@ -216,6 +256,8 @@ class CagnotteController extends Controller
      */
     public function demanderAnnulation(Request $request, Cagnotte $cagnotte): JsonResponse
     {
+        $this->authorizeCagnotteOwnerOrProductAdmin($request, $cagnotte);
+
         if (in_array($cagnotte->statut, ['annulee', 'terminee', 'annulation_demandee'])) {
             return response()->json([
                 'message' => 'Cette cagnotte ne peut pas être annulée ou a déjà fait l\'objet d\'une demande.',
@@ -226,19 +268,43 @@ class CagnotteController extends Controller
         $frais = round($totalVerse * 0.05, 2);
         $remboursement = max(0, round($totalVerse * 0.95, 2));
 
-        $telephone = $request->input('telephone')
+        $rawInputPhone = $request->filled('telephone')
+            ? preg_replace('/[\s\-\.]+/', '', trim((string) $request->input('telephone')))
+            : null;
+        if ($rawInputPhone && ! preg_match('/^\+?[0-9]{8,15}$/', $rawInputPhone)) {
+            return response()->json([
+                'message' => 'Le numéro de téléphone de remboursement est invalide.',
+            ], 422);
+        }
+
+        $telephone = $rawInputPhone
             ?? $cagnotte->telephone_livraison
             ?? $cagnotte->utilisateur?->telephone
-            ?? $request->user('sanctum')?->telephone
+            ?? $request->user()?->telephone
             ?? 'Numéro de paiement';
 
-        $cagnotte->update([
+        $motif = $request->input('motif_annulation') ?? $request->input('motif') ?? $request->input('raison');
+        $motifClean = $motif ? trim(strip_tags((string) $motif)) : null;
+
+        $updatePayload = [
             'statut' => 'annulation_demandee',
             'montant_remboursement' => $remboursement,
             'frais_annulation' => $frais,
             'telephone_remboursement' => $telephone,
             'date_demande_annulation' => now(),
-        ]);
+        ];
+
+        if ($motifClean !== null && $motifClean !== '') {
+            if (\Illuminate\Support\Facades\Schema::hasColumn('cagnottes', 'motif_annulation')) {
+                $updatePayload['motif_annulation'] = $motifClean;
+            }
+            $existingNote = $cagnotte->note_livraison ? trim($cagnotte->note_livraison) : '';
+            $updatePayload['note_livraison'] = $existingNote !== ''
+                ? $existingNote . "\n[Annulation] Motif : " . $motifClean
+                : '[Annulation] Motif : ' . $motifClean;
+        }
+
+        $cagnotte->update($updatePayload);
 
         // Incrémentation du stock disponible car la commande / cagnotte est annulée
         if ($cagnotte->produit) {
@@ -282,9 +348,17 @@ class CagnotteController extends Controller
      */
     public function reactiver(Request $request, Cagnotte $cagnotte): JsonResponse
     {
+        $this->authorizeCagnotteOwnerOrProductAdmin($request, $cagnotte);
+
         if (!in_array($cagnotte->statut, ['annulation_demandee', 'annulee'])) {
             return response()->json([
                 'message' => 'Seule une cagnotte annulée ou en attente de remboursement peut être rétablie.',
+            ], 422);
+        }
+
+        if ($cagnotte->transactions()->where('type', 'remboursement')->whereIn('statut', ['succes', 'reussi'])->exists()) {
+            return response()->json([
+                'message' => 'Cette cagnotte a déjà été remboursée et ne peut plus être rétablie.',
             ], 422);
         }
 
@@ -334,6 +408,15 @@ class CagnotteController extends Controller
      */
     public function validerRemboursementFeexpay(Request $request, Cagnotte $cagnotte): JsonResponse
     {
+        $admin = $request->user();
+        if (! $admin || ! in_array($admin->role, ['admin', 'super_admin'], true)) {
+            abort(403, 'Action réservée aux administrateurs.');
+        }
+
+        if ($admin->role === 'admin' && $cagnotte->produit?->admin_id && (int) $cagnotte->produit->admin_id !== (int) $admin->id) {
+            abort(403, 'Accès non autorisé à cette cagnotte.');
+        }
+
         $request->validate([
             'mode' => 'nullable|string|in:feexpay_api,manuel',
             'network' => 'nullable|string|in:MTN,MOOV,CELTIIS',
@@ -346,11 +429,18 @@ class CagnotteController extends Controller
             ], 422);
         }
 
+        // Protection idempotence : empêcher tout double remboursement
+        if ($cagnotte->transactions()->where('type', 'remboursement')->whereIn('statut', ['succes', 'reussi'])->exists()) {
+            return response()->json([
+                'message' => 'Le remboursement de cette cagnotte a déjà été exécuté.',
+            ], 422);
+        }
+
         $mode = $request->input('mode', 'feexpay_api');
-        $rawPhone = $request->input('telephone')
-            ?? $cagnotte->telephone_remboursement
+        $rawPhone = $cagnotte->telephone_remboursement
             ?? $cagnotte->telephone_livraison
-            ?? $cagnotte->utilisateur?->telephone;
+            ?? $cagnotte->utilisateur?->telephone
+            ?? $request->input('telephone');
 
         // Normalisation au plan national 10 chiffres (Bénin : 229 + 01XXXXXXXX)
         $cleanPhone = preg_replace('/[^0-9]/', '', (string) $rawPhone);
