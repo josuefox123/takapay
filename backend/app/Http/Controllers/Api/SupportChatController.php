@@ -3,17 +3,47 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Mail\NewSupportMessageMail;
+use App\Models\Cagnotte;
+use App\Models\Commande;
 use App\Models\SupportConversation;
 use App\Models\SupportMessage;
+use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 
 class SupportChatController extends Controller
 {
+    /**
+     * Détermine l'administrateur lié au dernier produit de la dernière cagnotte commencée par le client.
+     */
+    private function resolveAssignedAdminId(?int $clientUserId): ?int
+    {
+        if ($clientUserId) {
+            $latestCagnotte = Cagnotte::with('produit')
+                ->where('utilisateur_id', $clientUserId)
+                ->latest('id')
+                ->first();
+
+            if ($latestCagnotte?->produit?->admin_id) {
+                return (int) $latestCagnotte->produit->admin_id;
+            }
+
+            $latestCommande = Commande::with('commandeProduits.produit')
+                ->where('utilisateur_id', $clientUserId)
+                ->latest('id')
+                ->first();
+
+            $cmdAdminId = $latestCommande?->commandeProduits?->first()?->produit?->admin_id;
+            if ($cmdAdminId) {
+                return (int) $cmdAdminId;
+            }
+        }
+
+        $superAdminId = User::where('role', 'super_admin')->value('id');
+
+        return $superAdminId ? (int) $superAdminId : null;
+    }
     /**
      * Récupérer les messages pour le client (avec support du paramètre after_id)
      */
@@ -117,41 +147,43 @@ class SupportChatController extends Controller
             $conversation = SupportConversation::where('session_token', $token)->first();
         }
 
+        $assignedAdminId = $this->resolveAssignedAdminId($userId ? (int) $userId : null);
+
         if (!$conversation) {
             $conversation = SupportConversation::create([
                 'user_id' => $userId,
+                'admin_id' => $assignedAdminId,
                 'session_token' => $token ?: Str::random(60),
                 'status' => 'open',
                 'last_message_at' => now(),
             ]);
             $isNewConversation = true;
         } else {
-            // Si le client s'est connecté entre-temps, rattacher son compte
+            $updates = ['last_message_at' => now()];
             if ($userId && !$conversation->user_id) {
-                $conversation->update(['user_id' => $userId]);
+                $updates['user_id'] = $userId;
             }
-            $conversation->update(['last_message_at' => now()]);
+            if ($assignedAdminId) {
+                $updates['admin_id'] = $assignedAdminId;
+            }
+            $conversation->update($updates);
+        }
+
+        $cleanMessage = trim(strip_tags($validated['message']));
+        if ($cleanMessage === '') {
+            return response()->json([
+                'message' => 'Le message ne peut pas être vide.',
+                'errors' => ['message' => ['Le message ne peut pas être vide.']],
+            ], 422);
         }
 
         $message = SupportMessage::create([
             'conversation_id' => $conversation->id,
             'sender_type' => 'client',
             'sender_id' => $userId,
-            'message' => trim($validated['message']),
+            'message' => $cleanMessage,
             'is_read' => false,
         ]);
-
-        // Étape 6 : Notification par e-mail à l'administrateur (en file d'attente pour réponse instantanée < 20ms)
-        if ($isNewConversation) {
-            try {
-                $adminEmail = config('mail.from.address') ?: 'aurianedescous@gmail.com';
-                $clientUser = $user ?: ($userId ? \App\Models\User::find($userId) : null);
-                $senderName = $validated['name'] ?? ($clientUser ? ($clientUser->nom . ' ' . $clientUser->prenom) : 'Visiteur #' . $conversation->id);
-                Mail::to($adminEmail)->queue(new NewSupportMessageMail($conversation, $message, $senderName));
-            } catch (\Throwable $e) {
-                Log::warning('Support email error: ' . $e->getMessage());
-            }
-        }
 
         return response()->json([
             'success' => true,
@@ -166,10 +198,16 @@ class SupportChatController extends Controller
      */
     public function adminListConversations(Request $request): JsonResponse
     {
-        $conversations = SupportConversation::with(['user:id,nom,prenom,email,telephone', 'latestMessage'])
+        $admin = $request->user();
+        $query = SupportConversation::with(['user:id,nom,prenom,email,telephone', 'admin:id,nom,prenom,email', 'latestMessage'])
             ->withCount('unreadMessagesForAdmin')
-            ->orderByDesc('last_message_at')
-            ->paginate($request->integer('per_page', 20));
+            ->orderByDesc('last_message_at');
+
+        if ($admin && $admin->role === 'admin') {
+            $query->where('admin_id', $admin->id);
+        }
+
+        $conversations = $query->paginate($request->integer('per_page', 20));
 
         return response()->json([
             'success' => true,
@@ -182,18 +220,25 @@ class SupportChatController extends Controller
      */
     public function adminGetConversation(Request $request, $id): JsonResponse
     {
-        $conversation = SupportConversation::with(['user:id,nom,prenom,email,telephone'])
+        $admin = $request->user();
+        $conversation = SupportConversation::with(['user:id,nom,prenom,email,telephone', 'admin:id,nom,prenom,email'])
             ->findOrFail($id);
+
+        if ($admin && $admin->role === 'admin' && (int) $conversation->admin_id !== (int) $admin->id) {
+            abort(403, 'Accès non autorisé à cette conversation.');
+        }
 
         $messages = $conversation->messages()
             ->orderBy('id', 'asc')
             ->get();
 
-        // Marquer les messages clients comme lus par l'admin
-        $conversation->messages()
-            ->where('sender_type', 'client')
-            ->where('is_read', false)
-            ->update(['is_read' => true]);
+        // Marquer les messages clients comme lus uniquement si c'est l'admin assigné (ou si assigné au super_admin)
+        if (! $admin || $admin->role !== 'super_admin' || (int) $conversation->admin_id === (int) $admin->id) {
+            $conversation->messages()
+                ->where('sender_type', 'client')
+                ->where('is_read', false)
+                ->update(['is_read' => true]);
+        }
 
         return response()->json([
             'success' => true,
@@ -212,14 +257,25 @@ class SupportChatController extends Controller
         ]);
 
         $conversation = SupportConversation::findOrFail($id);
+        $admin = $request->user() ?? auth()->user();
 
-        $admin = auth()->user();
+        if ($admin && $admin->role === 'admin' && (int) $conversation->admin_id !== (int) $admin->id) {
+            abort(403, 'Accès non autorisé à cette conversation.');
+        }
+
+        $cleanReply = trim(strip_tags($validated['message']));
+        if ($cleanReply === '') {
+            return response()->json([
+                'message' => 'Le message ne peut pas être vide.',
+                'errors' => ['message' => ['Le message ne peut pas être vide.']],
+            ], 422);
+        }
 
         $message = SupportMessage::create([
             'conversation_id' => $conversation->id,
             'sender_type' => 'admin',
             'sender_id' => $admin?->id,
-            'message' => trim($validated['message']),
+            'message' => $cleanReply,
             'is_read' => false,
         ]);
 
@@ -234,11 +290,17 @@ class SupportChatController extends Controller
     /**
      * ADMIN : Compteur global de messages non lus (pastille légère)
      */
-    public function adminUnreadCount(): JsonResponse
+    public function adminUnreadCount(Request $request): JsonResponse
     {
-        $count = SupportMessage::where('sender_type', 'client')
-            ->where('is_read', false)
-            ->count();
+        $admin = $request->user();
+        $query = SupportMessage::where('sender_type', 'client')
+            ->where('is_read', false);
+
+        if ($admin && $admin->role === 'admin') {
+            $query->whereHas('conversation', fn ($q) => $q->where('admin_id', $admin->id));
+        }
+
+        $count = $query->count();
 
         return response()->json([
             'success' => true,
