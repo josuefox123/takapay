@@ -3,6 +3,7 @@ import ClientHeroCarousel from './ClientHeroCarousel';
 import ClientPartnersStrip from './ClientPartnersStrip';
 import ClientProductCard from './ClientProductCard';
 import { PRODUCTS, TAKAPAY_CATEGORIES, rebuildCategories } from '../../data/clientStore';
+import { openCookiePreferences } from '../../services/cookieConsent';
 
 export default function ClientHomeView({
   products = [],
@@ -386,6 +387,22 @@ export default function ClientHomeView({
         {/* Droits réservés centrés */}
         <div className="client-footer-bottom">
           <span>© {new Date().getFullYear()} Takapay Bénin. Tous droits réservés.</span>
+          <div className="client-footer-links">
+            <button
+              type="button"
+              onClick={() => openCookiePreferences('privacy')}
+              style={{ color: 'inherit', background: 'none', border: 0, cursor: 'pointer', font: 'inherit' }}
+            >
+              Confidentialité
+            </button>
+            <button
+              type="button"
+              onClick={() => openCookiePreferences('cookies')}
+              style={{ color: 'inherit', background: 'none', border: 0, cursor: 'pointer', font: 'inherit' }}
+            >
+              Gérer les cookies
+            </button>
+          </div>
         </div>
       </footer>
     </div>

@@ -114,17 +114,27 @@
   <body class="bg-[#fffdf8] text-[#211d1b] font-sans antialiased selection:bg-[#ffc928] selection:text-[#211d1b]">
     <div id="google_translate_element" style="display:none"></div>
     <script type="text/javascript">
-      function googleTranslateElementInit() {
-        if (window.google && window.google.translate) {
-          new window.google.translate.TranslateElement({
-            pageLanguage: 'fr',
-            includedLanguages: 'fr,en',
-            autoDisplay: false
-          }, 'google_translate_element');
-        }
-      }
+      window.takapayLoadOptionalServices = window.takapayLoadOptionalServices || function () {
+        if (document.querySelector('script[data-takapay-translate]')) return;
+
+        window.googleTranslateElementInit = function () {
+          if (window.google && window.google.translate) {
+            new window.google.translate.TranslateElement({
+              pageLanguage: 'fr',
+              includedLanguages: 'fr,en',
+              autoDisplay: false
+            }, 'google_translate_element');
+          }
+        };
+
+        var script = document.createElement('script');
+        script.type = 'text/javascript';
+        script.src = 'https://translate.google.com/translate_a/element.js?cb=googleTranslateElementInit';
+        script.async = true;
+        script.dataset.takapayTranslate = 'true';
+        document.body.appendChild(script);
+      };
     </script>
-    <script type="text/javascript" src="https://translate.google.com/translate_a/element.js?cb=googleTranslateElementInit"></script>
 
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>

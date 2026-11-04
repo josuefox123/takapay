@@ -1,5 +1,6 @@
 import Brand from './Brand';
 import { footerData } from '../../data/homeData';
+import { openCookiePreferences } from '../../services/cookieConsent';
 
 export default function Footer({ isClient = false }) {
   if (isClient) {
@@ -24,6 +25,20 @@ export default function Footer({ isClient = false }) {
             <span>© 2026 Takapay. Tous droits réservés · Montants en FCFA (XOF).</span>
             <div className="client-footer-links">
               <span>Cotonou, Bénin</span>
+              <button
+                type="button"
+                onClick={() => openCookiePreferences('privacy')}
+                style={{ color: 'inherit', background: 'none', border: 0, cursor: 'pointer', font: 'inherit' }}
+              >
+                Confidentialité
+              </button>
+              <button
+                type="button"
+                onClick={() => openCookiePreferences('cookies')}
+                style={{ color: 'inherit', background: 'none', border: 0, cursor: 'pointer', font: 'inherit' }}
+              >
+                Cookies
+              </button>
               <a href="tel:+2290162180290" style={{ color: 'inherit', textDecoration: 'none', opacity: 0.85 }}>
                 📞 +229 01 62 18 02 90
               </a>
@@ -72,6 +87,22 @@ export default function Footer({ isClient = false }) {
       {/* Bas de page / Copyright */}
       <div className="footer-bottom">
         <span>{footerData.copyright}</span>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px' }}>
+          <button
+            type="button"
+            onClick={() => openCookiePreferences('privacy')}
+            style={{ color: 'inherit', background: 'none', border: 0, cursor: 'pointer', font: 'inherit' }}
+          >
+            Confidentialité
+          </button>
+          <button
+            type="button"
+            onClick={() => openCookiePreferences('cookies')}
+            style={{ color: 'inherit', background: 'none', border: 0, cursor: 'pointer', font: 'inherit' }}
+          >
+            Gérer les cookies
+          </button>
+        </div>
       </div>
     </footer>
   );

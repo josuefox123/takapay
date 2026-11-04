@@ -8,6 +8,7 @@ import Faq from '../../components/public/Faq';
 import Download from '../../components/public/Download';
 import Footer from '../../components/public/Footer';
 import FloatingActionButtons from '../../components/public/FloatingActionButtons';
+import ClientCookieBanner from '../../components/client/ClientCookieBanner';
 import frigoImg from '../../assets/frigotakapay.jpeg';
 import { productSectionData } from '../../data/homeData';
 
@@ -78,6 +79,7 @@ export default function Home() {
       </main>
       <Footer />
       <FloatingActionButtons />
+      <ClientCookieBanner />
     </>
   );
 }
