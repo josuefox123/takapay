@@ -9,21 +9,51 @@ use App\Models\Document;
 use App\Models\Transaction;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
 class AdminStatsController extends Controller
 {
-    public function stats(): JsonResponse
+    public function stats(Request $request): JsonResponse
     {
         $now = now();
         $startOfMonth = $now->copy()->startOfMonth();
+        $user = $request->user();
+        $adminId = ($user && $user->role === 'admin') ? $user->id : null;
+
+        $scopeTx = function ($query) use ($adminId) {
+            if ($adminId !== null) {
+                $query->where(function ($q) use ($adminId) {
+                    $q->whereHas('cagnotte.produit', fn ($p) => $p->where('admin_id', $adminId))
+                        ->orWhereHas('commande.commandeProduits.produit', fn ($p) => $p->where('admin_id', $adminId));
+                });
+            }
+            return $query;
+        };
+
+        $scopeCagnotte = function ($query) use ($adminId) {
+            if ($adminId !== null) {
+                $query->whereHas('produit', fn ($p) => $p->where('admin_id', $adminId));
+            }
+            return $query;
+        };
+
+        $scopeCommande = function ($query) use ($adminId) {
+            if ($adminId !== null) {
+                $query->where(function ($q) use ($adminId) {
+                    $q->whereHas('commandeProduits.produit', fn ($p) => $p->where('admin_id', $adminId))
+                        ->orWhereHas('transactions.cagnotte.produit', fn ($p) => $p->where('admin_id', $adminId));
+                });
+            }
+            return $query;
+        };
 
         // ---- KPIs ----
-        $encaisseCeMois = (float) Transaction::whereIn('statut', ['succes', 'reussi'])
-            ->where('date', '>=', $startOfMonth)
+        $encaisseCeMois = (float) $scopeTx(Transaction::whereIn('statut', ['succes', 'reussi'])
+            ->where('date', '>=', $startOfMonth))
             ->sum('montant');
 
-        $cagnottesActives = (int) Cagnotte::whereIn('statut', [
+        $cagnottesActives = (int) $scopeCagnotte(Cagnotte::whereIn('statut', [
             'active',
             'en_attente',
             'en_cours',
@@ -35,7 +65,7 @@ class AdminStatsController extends Controller
                         ->orWhereIn('statut', ['livree', 'terminee']);
                 });
             });
-        })->count();
+        }))->count();
 
         $documentsAValider = (int) Document::where('statut', 'en_attente')->count();
 
@@ -43,25 +73,25 @@ class AdminStatsController extends Controller
 
         // ---- 1. Flux Réel : Les 7 jours de CETTE SEMAINE (Lundi à Dimanche) ----
         $startOfWeek = $now->copy()->startOfWeek();
-        $cetteSemaineJours = collect(range(0, 6))->map(function ($i) use ($startOfWeek) {
+        $cetteSemaineJours = collect(range(0, 6))->map(function ($i) use ($startOfWeek, $scopeTx) {
             $day = $startOfWeek->copy()->addDays($i);
             $start = $day->copy()->startOfDay();
             $end = $day->copy()->endOfDay();
 
-            $cash = (float) Transaction::whereIn('statut', ['succes', 'reussi'])
+            $cash = (float) $scopeTx(Transaction::whereIn('statut', ['succes', 'reussi'])
                 ->whereBetween('date', [$start, $end])
                 ->where(function ($q) {
                     $q->where('type', 'paiement_livraison')
                         ->orWhere('type', 'commande_cash')
                         ->orWhere('moyen_paiement', 'livraison')
                         ->orWhereNull('cagnotte_id');
-                })
+                }))
                 ->sum('montant');
 
-            $cagnotte = (float) Transaction::whereIn('statut', ['succes', 'reussi'])
+            $cagnotte = (float) $scopeTx(Transaction::whereIn('statut', ['succes', 'reussi'])
                 ->whereBetween('date', [$start, $end])
                 ->whereNotNull('cagnotte_id')
-                ->whereNotIn('type', ['paiement_livraison', 'commande_cash'])
+                ->whereNotIn('type', ['paiement_livraison', 'commande_cash']))
                 ->sum('montant');
 
             $nomsJours = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
@@ -90,20 +120,20 @@ class AdminStatsController extends Controller
             $periodStart = $weekStart->lt($startOfMonth) ? $startOfMonth->copy() : $weekStart;
             $periodEnd = $weekEnd->gt($endOfMonth) ? $endOfMonth->copy() : $weekEnd;
 
-            $cash = (float) Transaction::whereIn('statut', ['succes', 'reussi'])
+            $cash = (float) $scopeTx(Transaction::whereIn('statut', ['succes', 'reussi'])
                 ->whereBetween('date', [$periodStart, $periodEnd])
                 ->where(function ($q) {
                     $q->where('type', 'paiement_livraison')
                         ->orWhere('type', 'commande_cash')
                         ->orWhere('moyen_paiement', 'livraison')
                         ->orWhereNull('cagnotte_id');
-                })
+                }))
                 ->sum('montant');
 
-            $cagnotte = (float) Transaction::whereIn('statut', ['succes', 'reussi'])
+            $cagnotte = (float) $scopeTx(Transaction::whereIn('statut', ['succes', 'reussi'])
                 ->whereBetween('date', [$periodStart, $periodEnd])
                 ->whereNotNull('cagnotte_id')
-                ->whereNotIn('type', ['paiement_livraison', 'commande_cash'])
+                ->whereNotIn('type', ['paiement_livraison', 'commande_cash']))
                 ->sum('montant');
 
             $isCurrent = $now->between($weekStart, $weekEnd);
@@ -124,7 +154,43 @@ class AdminStatsController extends Controller
             $numSemaine++;
         }
 
+        // ---- 3. Flux Réel : Les 12 mois de CETTE ANNÉE ----
+        $nomsMois = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Août', 'Sep', 'Oct', 'Nov', 'Déc'];
+        $nomsMoisComplets = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'];
+        $cetteAnneeMois = collect(range(1, 12))->map(function ($m) use ($now, $nomsMois, $nomsMoisComplets, $scopeTx) {
+            $mStart = $now->copy()->month($m)->startOfMonth();
+            $mEnd = $now->copy()->month($m)->endOfMonth();
+
+            $cash = (float) $scopeTx(Transaction::whereIn('statut', ['succes', 'reussi'])
+                ->whereBetween('date', [$mStart, $mEnd])
+                ->where(function ($q) {
+                    $q->where('type', 'paiement_livraison')
+                        ->orWhere('type', 'commande_cash')
+                        ->orWhere('moyen_paiement', 'livraison')
+                        ->orWhereNull('cagnotte_id');
+                }))
+                ->sum('montant');
+
+            $cagnotte = (float) $scopeTx(Transaction::whereIn('statut', ['succes', 'reussi'])
+                ->whereBetween('date', [$mStart, $mEnd])
+                ->whereNotNull('cagnotte_id')
+                ->whereNotIn('type', ['paiement_livraison', 'commande_cash']))
+                ->sum('montant');
+
+            return [
+                'mois' => $nomsMois[$m - 1],
+                'label' => $nomsMoisComplets[$m - 1].' '.$now->year,
+                'is_current' => $now->month === $m,
+                'cash' => $cash,
+                'cagnotte' => $cagnotte,
+                'total' => $cash + $cagnotte,
+                'attendu' => $cash,
+                'encaisse' => $cagnotte,
+            ];
+        });
+
         $totalEncaisse = (float) $semaines->sum('total');
+        $totalAnnee = (float) $cetteAnneeMois->sum('total');
         $tauxRecouvrement = $totalEncaisse > 0 ? 100 : 0;
 
         // ---- Documents à valider ----
@@ -143,13 +209,13 @@ class AdminStatsController extends Controller
             ]);
 
         // ---- Derniers versements ----
-        $derniersVersements = Transaction::with([
+        $derniersVersements = $scopeTx(Transaction::with([
             'commande.utilisateur',
             'commande.commandeProduits.produit',
             'cagnotte.produit',
             'cagnotte.utilisateur',
         ])
-            ->whereIn('statut', ['succes', 'reussi', 'en_attente'])
+            ->whereIn('statut', ['succes', 'reussi', 'en_attente']))
             ->orderByDesc('date')
             ->orderByDesc('id')
             ->take(5)
@@ -198,12 +264,12 @@ class AdminStatsController extends Controller
                 ];
             });
 
-        $commandesSansTransaction = Commande::with([
+        $commandesSansTransaction = $scopeCommande(Commande::with([
             'utilisateur',
             'commandeProduits.produit',
         ])
             ->where('statut', 'en_attente')
-            ->whereDoesntHave('transactions')
+            ->whereDoesntHave('transactions'))
             ->latest()
             ->take(5)
             ->get()
@@ -238,22 +304,24 @@ class AdminStatsController extends Controller
             ->values();
 
         // ---- Indicateurs Réels à surveiller ----
-        $cagnottesPretesALivrer = Cagnotte::where('statut', 'terminee')
-            ->orWhere(function ($q) {
-                $q->where('montant_verse', '>=', DB::raw('COALESCE(montant_objectif, prix_unitaire, 0)'))
-                    ->where('montant_verse', '>', 0)
-                    ->where('statut', '!=', 'livree')
-                    ->where('statut', '!=', 'annulee');
-            })->count();
+        $cagnottesPretesALivrer = $scopeCagnotte(Cagnotte::where(function ($outer) {
+            $outer->where('statut', 'terminee')
+                ->orWhere(function ($q) {
+                    $q->where('montant_verse', '>=', DB::raw('COALESCE(montant_objectif, prix_unitaire, 0)'))
+                        ->where('montant_verse', '>', 0)
+                        ->where('statut', '!=', 'livree')
+                        ->where('statut', '!=', 'annulee');
+                });
+        }))->count();
 
-        $commandesCashEnAttente = Commande::where(function ($q) {
+        $commandesCashEnAttente = $scopeCommande(Commande::where(function ($q) {
             $q->where('type_commande', 'cash')
                 ->orWhere('mode_paiement', 'livraison');
         })
-            ->whereNotIn('statut', ['terminee', 'livree', 'annulee'])
+            ->whereNotIn('statut', ['terminee', 'livree', 'annulee']))
             ->count();
 
-        $cagnottesAnnulation = Cagnotte::where('statut', 'annulation_demandee')->count();
+        $cagnottesAnnulation = $scopeCagnotte(Cagnotte::where('statut', 'annulation_demandee'))->count();
 
         $aSurveiller = [
             ['label' => 'Cagnottes prêtes à livrer', 'valeur' => $cagnottesPretesALivrer, 'pulse' => $cagnottesPretesALivrer > 0],
@@ -272,8 +340,10 @@ class AdminStatsController extends Controller
                 'taux' => $tauxRecouvrement,
                 'semaines' => $semaines->toArray(),
                 'cette_semaine' => $cetteSemaineJours->toArray(),
+                'cette_annee' => $cetteAnneeMois->toArray(),
                 'total_semaine' => (float) $cetteSemaineJours->sum('total'),
                 'total_mois' => $totalEncaisse,
+                'total_annee' => $totalAnnee,
             ],
             'documents' => $documents,
             'derniers_versements' => $derniersVersements,

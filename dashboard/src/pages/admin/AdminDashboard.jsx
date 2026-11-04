@@ -128,6 +128,7 @@ export default function AdminDashboard() {
   const [toastMessage, setToastMessage] = useState('');
   const [toastVisible, setToastVisible] = useState(false);
   const [unreadSupportCount, setUnreadSupportCount] = useState(0);
+  const [menuCounts, setMenuCounts] = useState({ cagnottes: 0, commandes: 0 });
 
   // Changement de mot de passe obligatoire (première connexion)
   const [newPassword, setNewPassword] = useState('');
@@ -182,7 +183,25 @@ export default function AdminDashboard() {
       .getSupportUnreadCount()
       .then((count) => setUnreadSupportCount(count || 0))
       .catch(() => {});
+    adminService
+      .getAdminMenuCounts()
+      .then((counts) => {
+        if (counts) {
+          setMenuCounts((prev) => ({
+            cagnottes: activeTab === 'cagnottes' ? 0 : (counts.cagnottes || 0),
+            commandes: activeTab === 'commandes' ? 0 : (counts.commandes || 0),
+          }));
+        }
+      })
+      .catch(() => {});
   };
+
+  useEffect(() => {
+    if (activeTab === 'cagnottes' || activeTab === 'commandes') {
+      setMenuCounts((prev) => ({ ...prev, [activeTab]: 0 }));
+      adminService.markAdminMenuRead(activeTab);
+    }
+  }, [activeTab]);
 
   useEffect(() => {
     refreshUnreadSupport();
@@ -273,6 +292,7 @@ export default function AdminDashboard() {
           onSelectTab={handleSelectTab}
           onLogout={handleLogout}
           unreadSupportCount={unreadSupportCount}
+          menuCounts={menuCounts}
           theme={theme}
           onToggleTheme={toggleTheme}
         />

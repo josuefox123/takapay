@@ -15,6 +15,7 @@ class Produit extends Model
     protected $table = 'produits';
 
     protected $fillable = [
+        'admin_id',
         'sous_categorie_id',
         'nom',
         'description',
@@ -33,6 +34,11 @@ class Produit extends Model
             'duree' => 'integer',
             'garantie_duree' => 'integer',
         ];
+    }
+
+    public function admin(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'admin_id');
     }
 
     public function sousCategorie(): BelongsTo

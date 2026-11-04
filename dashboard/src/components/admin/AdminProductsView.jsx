@@ -5,13 +5,14 @@ import { adminService } from '../../services/adminService';
 import { resolveImageUrl } from '../../data/clientStore';
 
 export default function AdminProductsView({ onShowToast }) {
-  const [produits, setProduits] = useState(() => adminService.getCachedProduits());
+  const isSuperAdmin = adminService.getUser()?.role === 'super_admin';
+  const [produits, setProduits] = useState([]);
   const [categories, setCategories] = useState([]);
   const [sousCategories, setSousCategories] = useState([]);
   const [promotions, setPromotions] = useState([]);
   const [search, setSearch] = useState('');
   const [selectedCat, setSelectedCat] = useState('tous');
-  const [loading, setLoading] = useState(() => adminService.getCachedProduits().length === 0);
+  const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
   // Mode de vue : 'list' | 'create' | 'edit' | 'categories'
@@ -2751,6 +2752,20 @@ export default function AdminProductsView({ onShowToast }) {
                               Réf: {param.reference || `PRD-${item.id}`}
                               {item.video && ' · 🎥 Vidéo'}
                             </span>
+                            {isSuperAdmin && item.admin && (
+                              <span
+                                className="admin-sub-text"
+                                style={{
+                                  display: 'block',
+                                  marginTop: '2px',
+                                  color: 'var(--r)',
+                                  fontWeight: 600,
+                                  fontSize: '11.5px',
+                                }}
+                              >
+                                Créé par : {`${item.admin.prenom || ''} ${item.admin.nom || ''}`.trim() || item.admin.email}
+                              </span>
+                            )}
                           </div>
                         </div>
                       </td>

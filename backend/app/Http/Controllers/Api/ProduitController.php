@@ -11,6 +11,7 @@ use App\Models\ParametreProduit;
 use App\Models\Produit;
 use App\Services\ImageStorageService;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -43,17 +44,21 @@ class ProduitController extends Controller
     /**
      * Liste complète des produits pour le back-office, y compris ceux des catégories archivées.
      */
-    public function adminIndex(): AnonymousResourceCollection
+    public function adminIndex(Request $request): AnonymousResourceCollection
     {
-        return ProduitResource::collection(
-            Produit::with(['sousCategorie.categorie', 'parametreProduit.promotion', 'imageProduits'])
-                ->withCount(['cagnottes as cagnottes_actives_count' => function ($query) {
-                    $query->whereIn('statut', ['en_cours', 'active']);
-                }])
-                ->withCount('cagnottes')
-                ->latest()
-                ->paginate(25)
-        );
+        $user = $request->user();
+        $query = Produit::with(['admin', 'sousCategorie.categorie', 'parametreProduit.promotion', 'imageProduits'])
+            ->withCount(['cagnottes as cagnottes_actives_count' => function ($q) {
+                $q->whereIn('statut', ['en_cours', 'active']);
+            }])
+            ->withCount('cagnottes')
+            ->latest();
+
+        if ($user && $user->role === 'admin') {
+            $query->where('admin_id', $user->id);
+        }
+
+        return ProduitResource::collection($query->paginate(25));
     }
 
     /**
@@ -61,9 +66,12 @@ class ProduitController extends Controller
      */
     public function store(StoreProduitRequest $request)
     {
-        $produit = Produit::create($request->validated());
+        $data = $request->validated();
+        $data['admin_id'] = $request->user()?->id;
 
-        return (new ProduitResource($produit))
+        $produit = Produit::create($data);
+
+        return (new ProduitResource($produit->load('admin')))
             ->response()
             ->setStatusCode(201);
     }
@@ -85,6 +93,10 @@ class ProduitController extends Controller
      */
     public function update(UpdateProduitRequest $request, Produit $produit)
     {
+        if ($request->user()?->role === 'admin' && (int) $produit->admin_id !== (int) $request->user()->id) {
+            abort(403, 'Vous ne pouvez modifier que les produits que vous avez créés.');
+        }
+
         $validated = $request->validated();
 
         $deletedImagePaths = [];
@@ -231,14 +243,19 @@ class ProduitController extends Controller
             }
         }
 
-        return new ProduitResource($produit->fresh(['sousCategorie.categorie', 'parametreProduit.promotion', 'imageProduits']));
+        return new ProduitResource($produit->fresh(['admin', 'sousCategorie.categorie', 'parametreProduit.promotion', 'imageProduits']));
     }
 
     /**
      * Supprimer un produit : base d'abord, fichiers ensuite.
      */
-    public function destroy(Produit $produit): JsonResponse
+    public function destroy(Request $request, Produit $produit): JsonResponse
     {
+        if ($request->user()?->role === 'admin' && (int) $produit->admin_id !== (int) $request->user()->id) {
+            return response()->json([
+                'message' => 'Vous ne pouvez supprimer que les produits que vous avez créés.',
+            ], 403);
+        }
         $activeCagnottesCount = $produit->cagnottes()
             ->whereIn('statut', ['en_cours', 'active'])
             ->count();

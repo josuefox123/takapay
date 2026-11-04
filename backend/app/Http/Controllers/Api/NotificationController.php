@@ -101,4 +101,56 @@ class NotificationController extends Controller
 
         return response()->json(['message' => 'Toutes les notifications ont été marquées comme lues.']);
     }
+
+    /**
+     * Compteurs non-répétitifs de nouveautés par menu ('cagnottes', 'commandes') pour l'admin connecté.
+     */
+    public function adminMenuCounts(Request $request)
+    {
+        $user = $request->user();
+        if (! $user) {
+            return response()->json(['cagnottes' => 0, 'commandes' => 0]);
+        }
+
+        $cagnottesCount = Notification::where('utilisateur_id', $user->id)
+            ->where('type', 'admin_cagnotte')
+            ->where('statut', 'non_lu')
+            ->count();
+
+        $commandesCount = Notification::where('utilisateur_id', $user->id)
+            ->where('type', 'admin_commande')
+            ->where('statut', 'non_lu')
+            ->count();
+
+        return response()->json([
+            'cagnottes' => $cagnottesCount,
+            'commandes' => $commandesCount,
+        ]);
+    }
+
+    /**
+     * Marquer les notifications d'un menu ('cagnottes' ou 'commandes') comme lues pour l'admin connecté.
+     */
+    public function markAdminMenuRead(Request $request)
+    {
+        $user = $request->user();
+        if (! $user) {
+            return response()->json(['success' => false], 401);
+        }
+
+        $menu = $request->input('menu');
+        $typeMap = [
+            'cagnottes' => 'admin_cagnotte',
+            'commandes' => 'admin_commande',
+        ];
+
+        if (isset($typeMap[$menu])) {
+            Notification::where('utilisateur_id', $user->id)
+                ->where('type', $typeMap[$menu])
+                ->where('statut', 'non_lu')
+                ->update(['statut' => 'lu']);
+        }
+
+        return response()->json(['success' => true]);
+    }
 }

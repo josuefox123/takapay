@@ -16,6 +16,14 @@ class ProduitResource extends JsonResource
     {
         return [
             'id' => $this->id,
+            'admin_id' => $this->admin_id,
+            'admin' => $this->whenLoaded('admin', fn () => $this->admin ? [
+                'id' => $this->admin->id,
+                'nom' => $this->admin->nom,
+                'prenom' => $this->admin->prenom,
+                'email' => $this->admin->email,
+                'role' => $this->admin->role,
+            ] : null),
             'sous_categorie_id' => $this->sous_categorie_id,
             'sous_categorie' => new SousCategorieResource($this->whenLoaded('sousCategorie')),
             'parametre_produit' => new ParametreProduitResource($this->whenLoaded('parametreProduit')),
