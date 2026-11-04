@@ -557,18 +557,39 @@ class PaymentController extends Controller
         } elseif (in_array($status, ['FAILED', 'CANCELLED'], true)) {
             $commande = Commande::where('reference', $reference)->first();
             if ($commande && $commande->statut === 'en_attente') {
-                $commande->update(['statut' => 'echouee']);
+                $commande->commandeProduits()->delete();
+                $commande->delete();
             }
 
             Transaction::where('reference_externe', $reference)
                 ->where('statut', 'en_attente')
-                ->update([
-                    'date' => now(),
-                    'statut' => 'echoue',
-                ]);
+                ->delete();
         }
 
         return response()->json(['status' => 'success'], 200);
+    }
+
+    /**
+     * Annule et purge immédiatement une tentative de paiement non terminée par le client.
+     */
+    public function cancelPayment(Request $request): JsonResponse
+    {
+        $reference = $request->input('reference');
+        if (! empty($reference)) {
+            $commande = Commande::where('reference', $reference)
+                ->where('statut', 'en_attente')
+                ->first();
+            if ($commande) {
+                $commande->commandeProduits()->delete();
+                $commande->delete();
+            }
+
+            Transaction::where('reference_externe', $reference)
+                ->where('statut', 'en_attente')
+                ->delete();
+        }
+
+        return response()->json(['status' => 'cancelled']);
     }
 
     /**

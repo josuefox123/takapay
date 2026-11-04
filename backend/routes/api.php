@@ -203,3 +203,4 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
 Route::post('/payment/initiate', [PaymentController::class, 'initiatePayment']);
 Route::post('/payment/confirm', [PaymentController::class, 'confirmPayment']);
 Route::post('/payment/webhook', [PaymentController::class, 'handleWebhook']);
+Route::post('/payment/cancel', [PaymentController::class, 'cancelPayment']);

@@ -18,7 +18,14 @@ class TransactionController extends Controller
     public function index(): AnonymousResourceCollection
     {
         return TransactionResource::collection(
-            Transaction::with(['cagnotte.produit', 'commande', 'echeance'])
+            Transaction::with([
+                'cagnotte.produit',
+                'cagnotte.utilisateur',
+                'commande.utilisateur',
+                'commande.commandeProduits.produit',
+                'echeance',
+            ])
+                ->whereIn('statut', ['succes', 'reussi'])
                 ->orderByDesc('date')
                 ->orderByDesc('id')
                 ->get()

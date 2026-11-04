@@ -65,6 +65,9 @@ export const adminService = {
     if (!res.ok) {
       throw new Error(data.message || "Erreur lors de l'initialisation du paiement FeexPay.");
     }
+    if (data?.reference) {
+      activeTransactionRef = data.reference;
+    }
     return data;
   },
 
@@ -1619,7 +1622,20 @@ let isPaymentCancelled = false;
 let paymentStartTime = 0;
 let activeTransactionRef = null;
 
-export const cancelFeexpayPayment = (reason = 'CANCELLED', wasSubmitted = null) => {
+export const cancelFeexpayPayment = (reason = 'CANCELLED', wasSubmitted = null, reference = null) => {
+  const refToCancel = reference || activeTransactionRef;
+  if (refToCancel) {
+    try {
+      fetch(`${API_BASE}/payment/cancel`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({ reference: refToCancel }),
+      }).catch(() => {});
+    } catch {}
+  }
   const hadStarted = wasSubmitted !== null ? wasSubmitted : (paymentStartTime > 0);
   isPaymentCancelled = true;
   if (watchdogPaymentTimer) {

@@ -86,9 +86,22 @@ export default function AdminRecentTransactions({ transactions = [] }) {
                     </span>
                   </td>
 
-                  {/* Progression : % + barre pour cagnotte, ou Badge Cash pour achat comptant */}
+                  {/* Progression : % + barre pour cagnotte, ou Badge Cash / Remboursement */}
                   <td>
-                    {tx.is_cash ? (
+                    {tx.is_refund ? (
+                      <span
+                        className="admin-badge"
+                        style={{
+                          background: '#fef2f2',
+                          color: '#dc2626',
+                          border: '1px solid #fecaca',
+                          fontWeight: 700,
+                          fontSize: '11.5px',
+                        }}
+                      >
+                        Remboursement
+                      </span>
+                    ) : tx.is_cash ? (
                       <span
                         className="admin-badge"
                         style={{
@@ -136,8 +149,8 @@ export default function AdminRecentTransactions({ transactions = [] }) {
                     )}
                   </td>
 
-                  <td style={{ fontWeight: 600 }}>
-                    {montant.toLocaleString('fr-FR')}
+                  <td style={{ fontWeight: 700, color: tx.is_refund ? '#dc2626' : 'inherit' }}>
+                    {tx.is_refund ? `- ${montant.toLocaleString('fr-FR')}` : montant.toLocaleString('fr-FR')}
                   </td>
 
                   <td>

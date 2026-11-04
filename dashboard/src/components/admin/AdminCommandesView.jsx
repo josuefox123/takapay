@@ -10,10 +10,12 @@ export default function AdminCommandesView({ onShowToast }) {
   const [search, setSearch] = useState('');
   const [filterStatut, setFilterStatut] = useState('');
 
-  const load = () => {
+  const load = (overrides = {}) => {
+    const q = 'q' in overrides ? overrides.q : search;
+    const p = 'page' in overrides ? overrides.page : page;
     setLoading(true);
     adminService
-      .getCommandes({ q: search, statut: filterStatut, page })
+      .getCommandes({ q, statut: filterStatut, page: p })
       .then((res) => {
         setCommandes(res.data);
         setMeta(res.meta);
@@ -30,7 +32,7 @@ export default function AdminCommandesView({ onShowToast }) {
   useEffect(() => {
     const t = setTimeout(() => {
       setPage(1);
-      load();
+      load({ q: search, page: 1 });
     }, 350);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -39,7 +41,10 @@ export default function AdminCommandesView({ onShowToast }) {
   // --- KPIs calculés localement ---
   const stats = useMemo(() => {
     const total = commandes.length;
-    const totalMontant = commandes.reduce(
+    const paidCommandes = commandes.filter(
+      (c) => ['payee', 'terminee', 'livree'].includes(String(c.statut).toLowerCase()) || c.statut_reception === 'recu'
+    );
+    const totalMontant = paidCommandes.reduce(
       (sum, c) => sum + Number(c.prix_total || 0),
       0
     );
@@ -57,6 +62,8 @@ export default function AdminCommandesView({ onShowToast }) {
     if (isRecu) return { label: 'Terminée (Article reçu)', cls: 's1' };
     const s = String(cmd.statut || '').toLowerCase();
     if (s === 'annulee' || s === 'cancelled') return { label: 'Annulée', cls: 's3' };
+    if (s === 'payee') return { label: 'Payée', cls: 's1' };
+    if (s === 'en_attente') return { label: 'En attente', cls: 's2' };
     return { label: 'En cours', cls: 's2' };
   };
 

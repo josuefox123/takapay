@@ -34,10 +34,10 @@ class CommandeController extends Controller
             $query->whereRaw('1 = 0');
         }
 
-        // Écarte les simples ébauches de cagnottes orphelines (abandonnées sans versement)
+        // Seules les commandes payées ou confirmées apparaissent
         $query->where(function ($q) {
-            $q->where('type_commande', 'cash')
-                ->orWhereHas('transactions');
+            $q->whereIn('statut', ['payee', 'terminee', 'livree', 'annulee'])
+                ->orWhere('mode_paiement', 'livraison');
         });
 
         $perPage = (int) $request->query('per_page', 50);
@@ -55,9 +55,10 @@ class CommandeController extends Controller
             'commandeProduits.produit',
             'transactions.cagnotte',
         ])
+        // Seules les commandes payées ou confirmées apparaissent
         ->where(function ($q) {
-            $q->where('type_commande', 'cash')
-                ->orWhereHas('transactions');
+            $q->whereIn('statut', ['payee', 'terminee', 'livree', 'annulee'])
+                ->orWhere('mode_paiement', 'livraison');
         })
         ->latest();
 
@@ -69,7 +70,13 @@ class CommandeController extends Controller
             $q = $request->query('q');
             $query->where(function ($sub) use ($q) {
                 $sub->where('reference', 'like', "%{$q}%")
-                    ->orWhereHas('utilisateur', fn ($u) => $u->where('nom', 'like', "%{$q}%"));
+                    ->orWhereHas('utilisateur', fn ($u) => $u
+                        ->where('nom', 'like', "%{$q}%")
+                        ->orWhere('prenom', 'like', "%{$q}%")
+                        ->orWhere('telephone', 'like', "%{$q}%")
+                        ->orWhere('email', 'like', "%{$q}%")
+                    )
+                    ->orWhere('telephone_livraison', 'like', "%{$q}%");
             });
         }
 

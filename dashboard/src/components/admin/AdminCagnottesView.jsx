@@ -163,9 +163,10 @@ export default function AdminCagnottesView() {
   const paginated = filtered.slice((currentPage - 1) * perPage, currentPage * perPage);
 
   const totalMontant = cagnottes.reduce((acc, c) => acc + (Number(c.montant_verse) || 0), 0);
-  const activeCount = cagnottes.filter((c) => c.statut === 'en_cours' || c.statut === 'active' || c.statut === 'en_attente').length;
+  const activeCount = cagnottes.filter((c) => c.statut === 'en_cours' || c.statut === 'active').length;
   const completedCount = cagnottes.filter((c) => c.statut === 'terminee').length;
   const cancelRequestedCount = cagnottes.filter((c) => c.statut === 'annulation_demandee').length;
+  const cancelledCount = cagnottes.filter((c) => c.statut === 'annulee' || c.statut === 'cancelled').length;
 
   const selClientNom = selectedCagnotte
     ? (selectedCagnotte.client_nom || (selectedCagnotte.utilisateur ? `${selectedCagnotte.utilisateur.prenom || ''} ${selectedCagnotte.utilisateur.nom || ''}`.trim() : 'Client Takapay'))
@@ -184,7 +185,7 @@ export default function AdminCagnottesView() {
       </div>
 
       {/* Cartes récapitulatives */}
-      <div className="admin-kpi-grid" style={{ marginTop: 0 }}>
+      <div className="admin-kpi-grid" style={{ marginTop: 0, gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
         <div className="admin-kpi-card">
           <div className="admin-kpi-header">
             <span>Total cagnottes</span>
@@ -212,6 +213,13 @@ export default function AdminCagnottesView() {
             <i style={{ color: '#dc2626' }}><AdminIcon name="wallet" size={16} /></i>
           </div>
           <b style={{ color: cancelRequestedCount > 0 ? '#dc2626' : 'inherit' }}>{cancelRequestedCount}</b>
+        </div>
+        <div className="admin-kpi-card" style={{ borderColor: cancelledCount > 0 ? '#fecaca' : 'var(--line)', background: cancelledCount > 0 ? '#fef2f2' : 'var(--surface)' }}>
+          <div className="admin-kpi-header">
+            <span style={{ color: cancelledCount > 0 ? '#b91c1c' : 'inherit' }}>Cagnottes annulées</span>
+            <i style={{ color: cancelledCount > 0 ? '#b91c1c' : 'inherit' }}><AdminIcon name="x" size={16} /></i>
+          </div>
+          <b style={{ color: cancelledCount > 0 ? '#b91c1c' : 'inherit' }}>{cancelledCount}</b>
         </div>
       </div>
 
