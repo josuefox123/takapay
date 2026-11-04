@@ -16,6 +16,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\RateLimiter;
@@ -72,48 +73,87 @@ class AuthController extends Controller
     }
 
     /**
-     * Connexion ou création directe via Google
+     * Connexion ou création directe via Google (avec vérification stricte de l'id_token auprès de Google)
      */
     public function googleAuth(Request $request): JsonResponse
     {
+        $googleClientId = config('services.google.client_id');
+        if (empty($googleClientId)) {
+            return response()->json([
+                'message' => "La connexion via Google n'est pas activée sur cette plateforme.",
+            ], 503);
+        }
+
         $request->validate([
-            'email' => ['required', 'string', 'email'],
-            'nom' => ['required', 'string', 'max:255'],
-            'prenom' => ['nullable', 'string', 'max:255'],
-            'telephone' => ['nullable', 'string', 'max:30'],
-            'photo_profil' => ['nullable', 'string'],
+            'id_token' => ['required', 'string'],
         ]);
 
-        $user = User::where('email', $request->email)
-            ->when($request->filled('telephone'), function ($query) use ($request) {
-                $cleanPhone = preg_replace('/[^\d+]/', '', $request->telephone);
-                $query->orWhere('telephone', $request->telephone)
-                    ->orWhere('telephone', $cleanPhone);
-            })
-            ->first();
+        try {
+            $googleRes = Http::timeout(10)->get('https://oauth2.googleapis.com/tokeninfo', [
+                'id_token' => $request->input('id_token'),
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'message' => 'Impossible de vérifier le jeton Google.',
+            ], 401);
+        }
+
+        if (! $googleRes->successful()) {
+            return response()->json([
+                'message' => 'Jeton Google invalide ou expiré.',
+            ], 401);
+        }
+
+        $payload = $googleRes->json();
+        $aud = $payload['aud'] ?? null;
+        $emailVerified = filter_var($payload['email_verified'] ?? false, FILTER_VALIDATE_BOOLEAN);
+        $verifiedEmail = isset($payload['email']) ? strtolower(trim((string) $payload['email'])) : null;
+
+        if ($aud !== $googleClientId || ! $emailVerified || empty($verifiedEmail)) {
+            return response()->json([
+                'message' => 'Le jeton Google ne correspond pas à cette application ou l’adresse e-mail n’est pas vérifiée.',
+            ], 401);
+        }
+
+        $user = User::where('email', $verifiedEmail)->first();
+
+        if ($user && in_array($user->role, ['admin', 'super_admin'], true)) {
+            return response()->json([
+                'message' => 'Les comptes administrateurs doivent se connecter avec leur mot de passe sur le portail dédié.',
+            ], 403);
+        }
+
+        if ($user && $user->statut_compte !== 'actif') {
+            return response()->json([
+                'message' => 'Votre compte est suspendu ou inactif.',
+            ], 403);
+        }
+
+        $nom = trim(strip_tags((string) ($payload['family_name'] ?? $payload['name'] ?? 'Client')));
+        $prenom = trim(strip_tags((string) ($payload['given_name'] ?? '')));
+        $picture = isset($payload['picture']) && is_string($payload['picture']) ? $payload['picture'] : null;
 
         $isNewUser = false;
         if (! $user) {
             $isNewUser = true;
             $user = User::create([
-                'nom' => $request->nom,
-                'prenom' => $request->prenom,
-                'email' => $request->email,
-                'telephone' => $request->telephone,
-                'photo_profil' => $request->photo_profil,
+                'nom' => $nom !== '' ? $nom : 'Client',
+                'prenom' => $prenom !== '' ? $prenom : null,
+                'email' => $verifiedEmail,
+                'photo_profil' => $picture,
                 'password' => Hash::make(Str::random(24)),
                 'role' => 'client',
                 'statut_compte' => 'actif',
             ]);
         } else {
             $user->update(array_filter([
-                'nom' => $user->nom ?: $request->nom,
-                'prenom' => $user->prenom ?: $request->prenom,
-                'telephone' => $user->telephone ?: $request->telephone,
-                'photo_profil' => $user->photo_profil ?: $request->photo_profil,
+                'nom' => $user->nom ?: ($nom !== '' ? $nom : null),
+                'prenom' => $user->prenom ?: ($prenom !== '' ? $prenom : null),
+                'photo_profil' => $user->photo_profil ?: $picture,
             ]));
         }
 
+        $user->tokens()->delete();
         $token = $user->createToken('auth_token')->plainTextToken;
 
         return response()->json([
@@ -269,11 +309,7 @@ class AuthController extends Controller
      */
     public function updateProfile(Request $request): JsonResponse
     {
-        $user = $request->user('sanctum') ?? $request->user();
-
-        if (! $user && $request->filled('user_id')) {
-            $user = User::find($request->user_id);
-        }
+        $user = $request->user();
 
         if (! $user) {
             return response()->json(['message' => 'Non authentifié. Veuillez vous connecter.'], 401);
@@ -342,32 +378,37 @@ class AuthController extends Controller
      */
     public function updatePin(Request $request): JsonResponse
     {
-        $user = $request->user('sanctum') ?? $request->user();
-
-        if (! $user && $request->filled('user_id')) {
-            $user = User::find($request->user_id);
-        }
+        $user = $request->user();
 
         if (! $user) {
             return response()->json(['message' => 'Non authentifié. Veuillez vous connecter.'], 401);
         }
 
         $request->validate([
-            'current_pin' => ['nullable', 'string'],
+            'current_pin' => ['required', 'string', 'size:6'],
             'new_pin' => ['required', 'string', 'size:6'],
             'confirm_pin' => ['required', 'string', 'same:new_pin'],
+        ], [
+            'current_pin.required' => 'Veuillez renseigner votre code PIN actuel.',
+            'current_pin.size' => 'Le code PIN actuel doit comporter 6 chiffres.',
         ]);
 
-        if ($request->filled('current_pin') && ! empty($user->password)) {
-            if (! Hash::check($request->current_pin, $user->password)) {
-                throw ValidationException::withMessages([
-                    'current_pin' => ['Le code PIN actuel est incorrect.'],
-                ]);
-            }
+        if (! empty($user->password) && ! Hash::check($request->current_pin, $user->password)) {
+            throw ValidationException::withMessages([
+                'current_pin' => ['Le code PIN actuel est incorrect.'],
+            ]);
         }
 
         $user->password = $request->new_pin;
         $user->save();
+
+        // Révoquer toutes les autres sessions actives du compte
+        $currentTokenId = $user->currentAccessToken()?->id;
+        if ($currentTokenId) {
+            $user->tokens()->where('id', '!=', $currentTokenId)->delete();
+        } else {
+            $user->tokens()->delete();
+        }
 
         // Notification in-app et email si renseigné
         $this->notifyPinChanged($user);
@@ -382,11 +423,7 @@ class AuthController extends Controller
      */
     public function updatePassword(Request $request): JsonResponse
     {
-        $user = $request->user('sanctum') ?? $request->user();
-
-        if (! $user && $request->filled('user_id')) {
-            $user = User::find($request->user_id);
-        }
+        $user = $request->user();
 
         if (! $user) {
             return response()->json(['message' => 'Non authentifié. Veuillez vous connecter.'], 401);
@@ -414,6 +451,14 @@ class AuthController extends Controller
         $user->password = Hash::make($request->new_password);
         $user->must_change_password = false;
         $user->save();
+
+        // Révoquer toutes les autres sessions actives du compte
+        $currentTokenId = $user->currentAccessToken()?->id;
+        if ($currentTokenId) {
+            $user->tokens()->where('id', '!=', $currentTokenId)->delete();
+        } else {
+            $user->tokens()->delete();
+        }
 
         return response()->json([
             'message' => 'Votre mot de passe a été défini avec succès.',
@@ -511,7 +556,7 @@ class AuthController extends Controller
         }
 
         return Carbon::parse($tokenRecord->created_at)
-            ->addMinutes(15)
+            ->addMinutes(10)
             ->isFuture()
             && Hash::check($code, $tokenRecord->token);
     }
@@ -568,9 +613,7 @@ class AuthController extends Controller
         $hasRealEmail = filter_var($user->email, FILTER_VALIDATE_EMAIL)
             && ! str_ends_with(strtolower($user->email), '@client.takapay.bj');
         if (! $hasRealEmail) {
-            return response()->json([
-                'message' => 'Aucune adresse e-mail personnelle n’est associée à ce compte. Contactez l’assistance pour récupérer votre accès.',
-            ], 422);
+            return response()->json(['message' => $genericMessage], 202);
         }
 
         $code = str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
@@ -663,7 +706,7 @@ class AuthController extends Controller
 
             if (! $tokenRecord
                 || ! $tokenRecord->created_at
-                || ! Carbon::parse($tokenRecord->created_at)->addMinutes(15)->isFuture()
+                || ! Carbon::parse($tokenRecord->created_at)->addMinutes(10)->isFuture()
                 || ! Hash::check($request->code, $tokenRecord->token)) {
                 return false;
             }

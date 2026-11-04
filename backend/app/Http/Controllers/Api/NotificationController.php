@@ -17,18 +17,16 @@ class NotificationController extends Controller
     public function index(Request $request)
     {
         $user = $request->user('sanctum') ?? $request->user();
-        $userId = $request->query('user_id') ?? $user?->id;
+        if (! $user) {
+            return NotificationResource::collection(collect());
+        }
 
         $query = Notification::query()->latest();
 
-        if ($userId && (!$user || $user->role === 'client')) {
-            $query->where('utilisateur_id', $userId);
-        } elseif (!$user || $user->role === 'client') {
-            if ($user) {
-                $query->where('utilisateur_id', $user->id);
-            } else {
-                return NotificationResource::collection(collect());
-            }
+        if ($user->isAdmin() && $request->filled('user_id')) {
+            $query->where('utilisateur_id', $request->query('user_id'));
+        } else {
+            $query->where('utilisateur_id', $user->id);
         }
 
         return NotificationResource::collection($query->get());
@@ -83,6 +81,14 @@ class NotificationController extends Controller
      */
     public function marquerCommeLu(Request $request, Notification $notification)
     {
+        $user = $request->user('sanctum') ?? $request->user();
+        if (! $user) {
+            abort(401, 'Non authentifié.');
+        }
+        if (! $user->isAdmin() && (int) $notification->utilisateur_id !== (int) $user->id) {
+            abort(403, 'Accès refusé.');
+        }
+
         $notification->update(['statut' => 'lu']);
         return new NotificationResource($notification);
     }
@@ -93,11 +99,15 @@ class NotificationController extends Controller
     public function toutMarquerCommeLu(Request $request)
     {
         $user = $request->user('sanctum') ?? $request->user();
-        $userId = $request->input('user_id') ?? $request->query('user_id') ?? $user?->id;
-
-        if ($userId) {
-            Notification::where('utilisateur_id', $userId)->update(['statut' => 'lu']);
+        if (! $user) {
+            abort(401, 'Non authentifié.');
         }
+
+        $userId = ($user->isAdmin() && ($request->filled('user_id') || $request->query('user_id')))
+            ? ($request->input('user_id') ?? $request->query('user_id'))
+            : $user->id;
+
+        Notification::where('utilisateur_id', $userId)->update(['statut' => 'lu']);
 
         return response()->json(['message' => 'Toutes les notifications ont été marquées comme lues.']);
     }

@@ -117,12 +117,14 @@ export const adminService = {
   },
 
   async confirmCagnotteReception(cagnotteId) {
+    const token = this.getClientToken() || this.getToken();
     try {
       const res = await fetch(`${API_BASE}/cagnottes/${cagnotteId}/confirmer-reception`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Accept: 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
       });
       return res.ok;

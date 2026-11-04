@@ -31,6 +31,7 @@ class CagnotteResource extends JsonResource
             'montant_remboursement' => $this->montant_remboursement,
             'frais_annulation' => $this->frais_annulation,
             'telephone_remboursement' => $this->telephone_remboursement,
+            'motif_annulation' => $this->motif_annulation,
             'date_demande_annulation' => $this->date_demande_annulation,
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,

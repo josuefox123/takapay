@@ -33,6 +33,7 @@ class Cagnotte extends Model
         'montant_remboursement',
         'frais_annulation',
         'telephone_remboursement',
+        'motif_annulation',
         'date_demande_annulation',
     ];
 
