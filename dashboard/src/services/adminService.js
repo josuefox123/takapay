@@ -327,7 +327,11 @@ export const adminService = {
         data.message ||
         Object.values(data.errors || {})?.[0]?.[0] ||
         'Identifiant ou code PIN incorrect.';
-      throw new Error(msg);
+      const error = new Error(msg);
+      error.status = res.status;
+      error.locked = data.locked === true;
+      error.retryAfter = Number(data.retry_after || res.headers.get('Retry-After')) || 0;
+      throw error;
     }
 
     if (data.access_token) {
@@ -767,8 +771,27 @@ export const adminService = {
         const json = await res.json();
         const list = json.data || json;
         if (Array.isArray(list)) {
-          writeCachedList('takapay_backend_products', list);
-          return list;
+          const lastPage = Number(json.meta?.last_page) || 1;
+          const remainingPages = await Promise.all(
+            Array.from({ length: Math.max(0, lastPage - 1) }, async (_, index) => {
+              const pageRes = await fetch(`${API_BASE}/produits?page=${index + 2}`, {
+                headers: { Accept: 'application/json' },
+              });
+              if (!pageRes.ok) {
+                throw new Error(`Impossible de charger les produits (${pageRes.status}).`);
+              }
+
+              const pageJson = await pageRes.json();
+              const pageList = pageJson.data || pageJson;
+              if (!Array.isArray(pageList)) {
+                throw new Error('Réponse invalide lors du chargement des produits.');
+              }
+              return pageList;
+            })
+          );
+          const allProducts = [...list, ...remainingPages.flat()];
+          writeCachedList('takapay_backend_products', allProducts);
+          return allProducts;
         }
       }
     } catch {
@@ -1930,4 +1953,3 @@ adminService.registerFeexpayWatchdog = registerFeexpayWatchdog;
 adminService.cancelFeexpayPayment = cancelFeexpayPayment;
 
 export default adminService;
-

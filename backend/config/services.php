@@ -22,6 +22,11 @@ return [
         'key' => env('RESEND_API_KEY'),
     ],
 
+    'termii' => [
+        'api_key' => env('TERMII_API_KEY', env('SMS_API_KEY')),
+        'sender_id' => env('SMS_SENDER_ID', 'TakaPay'),
+    ],
+
     'ses' => [
         'key' => env('AWS_ACCESS_KEY_ID'),
         'secret' => env('AWS_SECRET_ACCESS_KEY'),
@@ -36,9 +41,9 @@ return [
     ],
 
     'feexpay' => [
-    'shop_id' => env('FEEXPAY_SHOP_ID'),
-    'api_key' => env('FEEXPAY_API_KEY'),
-    'mode' => env('FEEXPAY_MODE', 'SANDBOX'),
-],
+        'shop_id' => env('FEEXPAY_SHOP_ID'),
+        'api_key' => env('FEEXPAY_API_KEY'),
+        'mode' => env('FEEXPAY_MODE', 'SANDBOX'),
+    ],
 
 ];

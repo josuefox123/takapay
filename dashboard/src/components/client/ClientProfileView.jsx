@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { adminService } from '../../services/adminService';
 import ClientForgotPinModal from './ClientForgotPinModal';
+import useLoginLockout, { formatLockoutTime } from './useLoginLockout';
 
 export default function ClientProfileView({
   user = null,
@@ -15,10 +16,12 @@ export default function ClientProfileView({
   const [authNotice, setAuthNotice] = useState('');
   const [isSubmittingAuth, setIsSubmittingAuth] = useState(false);
   const [showForgotPinModal, setShowForgotPinModal] = useState(false);
+  const { startLockout, clearLockout, remainingFor } = useLoginLockout();
 
   // Formulaire connexion
   const [loginId, setLoginId] = useState('');
   const [loginPin, setLoginPin] = useState('');
+  const loginLockoutSeconds = remainingFor(loginId);
 
   // Formulaire inscription
   const [signupNom, setSignupNom] = useState('');
@@ -116,7 +119,12 @@ export default function ClientProfileView({
         };
         if (onUpdateUser) onUpdateUser(loggedUser, 'Connexion réussie.');
       } catch (err) {
-        setAuthError(err.message || 'Identifiant ou code PIN incorrect.');
+        if (err.locked) {
+          startLockout(loginId, err.retryAfter);
+          setAuthError('');
+        } else {
+          setAuthError(err.message || 'Identifiant ou code PIN incorrect.');
+        }
       } finally {
         setIsSubmittingAuth(false);
       }
@@ -462,7 +470,13 @@ export default function ClientProfileView({
               </div>
             )}
 
-            {authError && (
+            {authMode === 'login' && loginLockoutSeconds > 0 && (
+              <div role="status" aria-live="polite" style={{ color: 'var(--r)', fontSize: '13px', margin: '12px 0 6px', fontWeight: 600 }}>
+                Connexion temporairement bloquée. Réessayez dans {formatLockoutTime(loginLockoutSeconds)} ou utilisez « Code oublié ? ».
+              </div>
+            )}
+
+            {authError && !(authMode === 'login' && loginLockoutSeconds > 0) && (
               <div style={{ color: 'var(--r)', fontSize: '13px', margin: '12px 0 6px', fontWeight: 600 }}>
                 {authError}
               </div>
@@ -472,10 +486,12 @@ export default function ClientProfileView({
               type="submit"
               className="client-btn w100"
               style={{ marginTop: '20px', padding: '14px', fontSize: '15px' }}
-              disabled={isSubmittingAuth}
+              disabled={isSubmittingAuth || (authMode === 'login' && loginLockoutSeconds > 0)}
             >
               {isSubmittingAuth
                 ? 'Traitement en cours...'
+                : authMode === 'login' && loginLockoutSeconds > 0
+                ? `Réessayez dans ${formatLockoutTime(loginLockoutSeconds)}`
                 : authMode === 'login'
                 ? 'Se connecter'
                 : 'Créer mon compte'}
@@ -531,6 +547,7 @@ export default function ClientProfileView({
           initialIdentifiant={loginId}
           onSuccess={(resetId, successMsg) => {
             setShowForgotPinModal(false);
+            clearLockout();
             setAuthMode('login');
             if (resetId) {
               setLoginId(resetId);
@@ -1996,6 +2013,7 @@ export default function ClientProfileView({
         initialIdentifiant={loginId || user?.telephone || user?.email || ''}
         onSuccess={(resetId, successMsg) => {
           setShowForgotPinModal(false);
+          clearLockout();
           if (onLogout) {
             onLogout();
           }

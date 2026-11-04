@@ -14,7 +14,7 @@ export default function ClientCatalogView({
   onSearchChange,
 }) {
   const [categoriesList, setCategoriesList] = useState(() => {
-    return CATEGORIES.length > 0 ? [...CATEGORIES] : [{ id: 'Tous', name: 'Toutes', icon: '✨' }];
+    return CATEGORIES.length > 0 ? [...CATEGORIES] : [{ id: 'Tous', name: 'Toutes' }];
   });
   const [subcategoriesMap, setSubcategoriesMap] = useState(() => ({ ...SUBCATEGORIES_MAP }));
   const [liveProducts, setLiveProducts] = useState(() => {
@@ -74,7 +74,6 @@ export default function ClientCatalogView({
         category: 'Offres spéciales',
         image: liveProducts.find((p) => p.o)?.im || '',
         count: promoCount,
-        icon: '🏷️',
       },
     ];
   } else if (selectedCategory === 'Tous') {
@@ -98,8 +97,6 @@ export default function ClientCatalogView({
             subImg = matchProducts[0].im;
           } else if (cat.image) {
             subImg = cat.image;
-          } else {
-            subImg = '/assets/logo-icon.png';
           }
 
           allSubs.push({
@@ -107,7 +104,6 @@ export default function ClientCatalogView({
             category: cat.name,
             image: subImg,
             count: matchProducts.length,
-            icon: cat.icon || '🛍️',
             isMacro: false,
           });
         });
@@ -121,9 +117,8 @@ export default function ClientCatalogView({
         .map((cat) => ({
           name: cat.name,
           category: 'Catégorie',
-          image: cat.image || '/assets/logo-icon.png',
+          image: cat.image || '',
           count: liveProducts.filter((p) => matchCat(p.c, cat.name)).length,
-          icon: cat.icon || '🛍️',
           isMacro: true,
         }));
     }
@@ -147,8 +142,6 @@ export default function ClientCatalogView({
         subImg = matchProducts[0].im;
       } else if (currentCatObj?.image) {
         subImg = currentCatObj.image;
-      } else {
-        subImg = '/assets/logo-icon.png';
       }
 
       return {
@@ -156,7 +149,6 @@ export default function ClientCatalogView({
         category: selectedCategory,
         image: subImg,
         count: matchProducts.length,
-        icon: currentCatObj?.icon || '🛍️',
         isMacro: false,
       };
     });
@@ -210,7 +202,7 @@ export default function ClientCatalogView({
             className={`chip ${!isPromoOnly && (selectedCategory === cat.id || selectedCategory === cat.name) ? 'on' : ''}`}
             onClick={() => onSelectCategory(cat.id === 'Tous' ? 'Tous' : cat.name)}
           >
-            {cat.icon || '🛍️'} {cat.name}
+            {cat.name}
           </button>
         ))}
 
@@ -271,23 +263,25 @@ export default function ClientCatalogView({
                   }
                 }}
               >
-                <span className="subcategory-image">
-                  <img
-                    src={sub.image}
-                    alt={sub.name}
-                    loading="lazy"
-                    onError={(e) => {
-                      e.target.src = '/assets/logo-icon.png';
-                    }}
-                  />
-                  <span className="subcategory-count">
-                    {sub.count} article{sub.count === 1 ? '' : 's'}
+                {sub.image && (
+                  <span className="subcategory-image">
+                    <img
+                      src={sub.image}
+                      alt={sub.name}
+                      loading="lazy"
+                      onError={(event) => {
+                        event.currentTarget.parentElement.style.display = 'none';
+                      }}
+                    />
+                    <span className="subcategory-count">
+                      {sub.count} article{sub.count === 1 ? '' : 's'}
+                    </span>
                   </span>
-                </span>
+                )}
 
                 <span className="subcategory-copy">
                   <small>{sub.category}</small>
-                  <b>{sub.icon} {sub.name}</b>
+                  <b>{sub.name}</b>
                   <span>Explorer →</span>
                 </span>
               </button>

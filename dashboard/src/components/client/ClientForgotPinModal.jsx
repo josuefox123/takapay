@@ -207,7 +207,7 @@ export default function ClientForgotPinModal({
                 {step === 'success' && 'Réinitialisation réussie !'}
               </h3>
               <p style={{ margin: '2px 0 0', fontSize: '12px', opacity: 0.9 }}>
-                {step === 'request' && 'Envoi automatique par Email ou SMS'}
+                {step === 'request' && 'Envoi du code par e-mail'}
                 {step === 'verify_code' && 'Entrez le code reçu'}
                 {step === 'new_pin' && 'Créez votre code secret à 6 chiffres'}
                 {step === 'success' && 'Redirection vers la connexion...'}
@@ -279,7 +279,7 @@ export default function ClientForgotPinModal({
           {step === 'request' && (
             <form onSubmit={handleSendCode}>
               <p style={{ margin: '0 0 16px', fontSize: '13.5px', color: '#4b5563', lineHeight: 1.45 }}>
-                Entrez votre <strong>adresse email</strong> (pour recevoir le code par email) ou votre <strong>numéro de téléphone</strong> (pour recevoir le code par SMS) :
+                Saisissez l’adresse e-mail ou le numéro de téléphone de votre compte. Le code sera envoyé à l’adresse e-mail enregistrée sur ce compte.
               </p>
 
               <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#1f2937', marginBottom: '6px' }}>

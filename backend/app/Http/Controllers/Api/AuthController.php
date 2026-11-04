@@ -10,14 +10,15 @@ use App\Mail\PinChangedMail;
 use App\Mail\ResetPinMail;
 use App\Models\Notification;
 use App\Models\User;
+use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
@@ -28,6 +29,8 @@ class AuthController extends Controller
      * afin d'égaler le temps de réponse et d'éviter l'énumération de comptes.
      */
     private const DUMMY_HASH = '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi';
+
+    private const PIN_RESET_MAX_ATTEMPTS = 4;
 
     /**
      * Inscription d'un nouvel utilisateur avec code PIN
@@ -122,6 +125,76 @@ class AuthController extends Controller
         ]);
     }
 
+    private function loginAttemptKey(Request $request, string $identifiant, ?User $user = null): string
+    {
+        $principal = $user
+            ? 'user:'.$user->getKey()
+            : 'identifier:'.hash('sha256', mb_strtolower(trim($identifiant)));
+        $ip = $request->ip() ?: 'unknown';
+
+        return 'auth-login:'.hash_hmac('sha256', $principal.'|'.$ip, (string) config('app.key'));
+    }
+
+    private function loginLockoutResponse(array $state): JsonResponse
+    {
+        $retryAfter = max(1, (int) ($state['locked_until'] ?? 0) - now()->timestamp);
+
+        return response()->json([
+            'message' => 'Trop de tentatives incorrectes. Réessayez après le décompte ou utilisez « Code oublié ? ».',
+            'locked' => true,
+            'retry_after' => $retryAfter,
+            'locked_until' => now()->addSeconds($retryAfter)->toIso8601String(),
+        ], 429)->header('Retry-After', (string) $retryAfter);
+    }
+
+    private function recordFailedLogin(string $key, bool $knownUser): JsonResponse
+    {
+        return Cache::lock($key.':mutex', 10)->block(5, function () use ($key, $knownUser) {
+            $state = Cache::get($key, [
+                'failures' => 0,
+                'lockouts' => 0,
+                'locked_until' => 0,
+            ]);
+
+            if (($state['locked_until'] ?? 0) > now()->timestamp) {
+                return $this->loginLockoutResponse($state);
+            }
+
+            $state['locked_until'] = 0;
+            $state['failures'] = (int) ($state['failures'] ?? 0) + 1;
+
+            if ($state['failures'] >= 3) {
+                $state['lockouts'] = (int) ($state['lockouts'] ?? 0) + 1;
+                $lockoutMinutes = $state['lockouts'] >= 3 ? 45 : 15;
+                $state['failures'] = 0;
+                $state['locked_until'] = now()->addMinutes($lockoutMinutes)->timestamp;
+                if ($knownUser) {
+                    Cache::forever($key, $state);
+                } else {
+                    Cache::put($key, $state, now()->addDay());
+                }
+
+                return $this->loginLockoutResponse($state);
+            }
+
+            if ($knownUser) {
+                Cache::forever($key, $state);
+            } else {
+                Cache::put($key, $state, now()->addDay());
+            }
+
+            return response()->json([
+                'message' => 'Les identifiants ou le code PIN fournis sont incorrects.',
+                'attempts_remaining' => 3 - $state['failures'],
+            ], 422);
+        });
+    }
+
+    private function clearLoginAttempts(string $key): void
+    {
+        Cache::lock($key.':mutex', 10)->block(5, fn () => Cache::forget($key));
+    }
+
     /**
      * Connexion d'un utilisateur existant (par identifiant et mot de passe ou code PIN)
      */
@@ -130,7 +203,7 @@ class AuthController extends Controller
         $identifiant = trim($request->identifiant);
         $cleanPhone = preg_replace('/[^\d+]/', '', $identifiant);
 
-        $user = User::where('email', $identifiant)
+        $user = User::where('email', mb_strtolower($identifiant))
             ->orWhere('telephone', $identifiant)
             ->when(! empty($cleanPhone), function ($query) use ($cleanPhone) {
                 $query->orWhere('telephone', $cleanPhone)
@@ -138,13 +211,19 @@ class AuthController extends Controller
             })
             ->first();
 
+        $loginAttemptKey = $this->loginAttemptKey($request, $identifiant, $user);
+        $loginState = Cache::get($loginAttemptKey, []);
+        if (($loginState['locked_until'] ?? 0) > now()->timestamp) {
+            return $this->loginLockoutResponse($loginState);
+        }
+
         $passwordValid = Hash::check($request->password, $user?->password ?? self::DUMMY_HASH);
 
         if (! $user || ! $passwordValid) {
-            throw ValidationException::withMessages([
-                'identifiant' => ['Les identifiants ou le code PIN fournis sont incorrects.'],
-            ]);
+            return $this->recordFailedLogin($loginAttemptKey, $user !== null);
         }
+
+        $this->clearLoginAttempts($loginAttemptKey);
 
         if ($user->statut_compte !== 'actif') {
             return response()->json([
@@ -301,39 +380,6 @@ class AuthController extends Controller
     }
 
     /**
-     * Envoie un SMS OTP au numéro de l'utilisateur (Termii, passerelle générique ou journal local)
-     */
-    private function sendOtpSms(string $telephone, string $code): bool
-    {
-        $message = "Votre code de réinitialisation PIN TakaPay est : {$code}. Valide 15 minutes. Ne le partagez avec personne.";
-
-        // Journalisation systématique
-        Log::info("Code OTP SMS pour {$telephone} : {$code}");
-
-        // Si une clé d'API SMS (Termii / Generic) est renseignée dans .env
-        $smsApiKey = env('SMS_API_KEY') ?: env('TERMII_API_KEY');
-        if (! empty($smsApiKey)) {
-            try {
-                $senderId = env('SMS_SENDER_ID', 'TakaPay');
-                $response = Http::timeout(8)->post('https://api.ng.termii.com/api/sms/send', [
-                    'to' => $telephone,
-                    'from' => $senderId,
-                    'sms' => $message,
-                    'type' => 'plain',
-                    'channel' => 'generic',
-                    'api_key' => $smsApiKey,
-                ]);
-
-                return $response->successful();
-            } catch (\Throwable $e) {
-                Log::warning('Erreur envoi SMS externe : '.$e->getMessage());
-            }
-        }
-
-        return true;
-    }
-
-    /**
      * Résout un utilisateur selon l'identifiant fourni (Email strict ou Téléphone strict).
      * Refuse strictement les numéros de téléphone contenant des lettres.
      */
@@ -346,12 +392,14 @@ class AuthController extends Controller
 
             if (! filter_var($identifiant, FILTER_VALIDATE_EMAIL)) {
                 $error = 'L\'adresse email saisie est invalide.';
+
                 return null;
             }
 
             $user = User::where('email', strtolower($identifiant))->first();
             if (! $user) {
                 $error = 'Aucun compte TakaPay n\'a été trouvé avec cette adresse email.';
+
                 return null;
             }
 
@@ -363,6 +411,7 @@ class AuthController extends Controller
 
         if (preg_match('/[a-zA-Z]/', $identifiant)) {
             $error = 'Le numéro de téléphone ne doit pas comporter de lettres. Veuillez saisir uniquement des chiffres.';
+
             return null;
         }
 
@@ -371,6 +420,7 @@ class AuthController extends Controller
 
         if (strlen($digitsOnly) < 8) {
             $error = 'Le numéro de téléphone doit comporter au moins 8 chiffres.';
+
             return null;
         }
 
@@ -381,14 +431,68 @@ class AuthController extends Controller
 
         if (! $user) {
             $error = 'Aucun compte TakaPay n\'a été trouvé avec ce numéro de téléphone.';
+
             return null;
         }
 
         return $user;
     }
 
+    private function pinResetAttemptKey(Request $request, string $identifiant, ?User $user, string $purpose): string
+    {
+        $principal = $user
+            ? 'user:'.$user->getKey()
+            : 'identifier:'.hash('sha256', mb_strtolower(trim($identifiant)));
+        $ip = $request->ip() ?: 'unknown';
+
+        return 'pin-reset-'.$purpose.':'.hash_hmac('sha256', $principal.'|'.$ip, (string) config('app.key'));
+    }
+
+    private function pinResetLimitResponse(string $key): JsonResponse
+    {
+        $retryAfter = max(1, RateLimiter::availableIn($key));
+
+        return response()->json([
+            'message' => 'Trop de tentatives. Réessayez plus tard.',
+            'retry_after' => $retryAfter,
+        ], 429)->header('Retry-After', (string) $retryAfter);
+    }
+
+    private function pinResetCodeValid(User $user, string $code): bool
+    {
+        $tokenRecord = DB::table('password_reset_tokens')
+            ->where('email', $user->email)
+            ->first();
+
+        if (! $tokenRecord || ! $tokenRecord->created_at) {
+            return false;
+        }
+
+        return Carbon::parse($tokenRecord->created_at)
+            ->addMinutes(15)
+            ->isFuture()
+            && Hash::check($code, $tokenRecord->token);
+    }
+
+    private function invalidPinResetCode(string $key, ?User $user): JsonResponse
+    {
+        RateLimiter::hit($key, 15 * 60);
+
+        if (RateLimiter::tooManyAttempts($key, self::PIN_RESET_MAX_ATTEMPTS)) {
+            if ($user) {
+                DB::table('password_reset_tokens')->where('email', $user->email)->delete();
+            }
+
+            return $this->pinResetLimitResponse($key);
+        }
+
+        return response()->json([
+            'message' => 'Le code de vérification saisi est incorrect ou a expiré.',
+        ], 422);
+    }
+
     /**
-     * Demande d'envoi d'un code de réinitialisation de PIN (Email automatique si email, SMS si téléphone)
+     * Demande d'envoi d'un code de réinitialisation de PIN.
      */
     public function forgotPin(Request $request): JsonResponse
     {
@@ -396,77 +500,59 @@ class AuthController extends Controller
             'identifiant' => ['required', 'string'],
         ]);
 
-        $error = null;
-        $channel = null;
-        $user = $this->resolveUserByIdentifiant($request->identifiant, $error, $channel);
+        $identifiant = trim($request->identifiant);
 
-        if (! $user) {
+        if (! app()->environment('testing')
+            && in_array(config('mail.default'), ['log', 'array'], true)) {
             return response()->json([
-                'message' => $error ?: 'Aucun compte TakaPay n\'a été trouvé avec cet identifiant.',
+                'message' => 'L’envoi des e-mails de réinitialisation n’est pas configuré. Contactez l’assistance.',
+            ], 503);
+        }
+
+        $error = null;
+        $user = $this->resolveUserByIdentifiant($identifiant, $error);
+        $limitKey = $this->pinResetAttemptKey($request, $identifiant, $user, 'send');
+
+        if (RateLimiter::tooManyAttempts($limitKey, 3)) {
+            return $this->pinResetLimitResponse($limitKey);
+        }
+        RateLimiter::hit($limitKey, 60 * 60);
+
+        $genericMessage = 'Si un compte correspond à cet identifiant, un code de vérification a été envoyé.';
+        if (! $user) {
+            return response()->json(['message' => $genericMessage], 202);
+        }
+
+        $hasRealEmail = filter_var($user->email, FILTER_VALIDATE_EMAIL)
+            && ! str_ends_with(strtolower($user->email), '@client.takapay.bj');
+        if (! $hasRealEmail) {
+            return response()->json([
+                'message' => 'Aucune adresse e-mail personnelle n’est associée à ce compte. Contactez l’assistance pour récupérer votre accès.',
             ], 422);
         }
 
-        // Génération d'un code OTP aléatoire à 6 chiffres
-        $code = str_pad((string) mt_rand(100000, 999999), 6, '0', STR_PAD_LEFT);
-
-        // Sauvegarde dans le cache pendant 15 minutes
-        Cache::put('pin_reset_'.$user->id, [
-            'code' => $code,
-            'user_id' => $user->id,
-            'channel' => $channel,
-            'created_at' => now(),
-        ], now()->addMinutes(15));
-
-        // Sauvegarde dans la table password_reset_tokens
+        $code = str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
         DB::table('password_reset_tokens')->updateOrInsert(
             ['email' => $user->email],
-            [
-                'token' => Hash::make($code),
-                'created_at' => now(),
-            ]
+            ['token' => Hash::make($code), 'created_at' => now()]
         );
 
-        if ($channel === 'sms') {
-            $cleanPhone = preg_replace('/[^\d+]/', '', $request->identifiant);
-            $destPhone = ! empty($user->telephone) ? $user->telephone : $cleanPhone;
-            $this->sendOtpSms($destPhone, $code);
-
-            $len = strlen($destPhone);
-            $masked = $len > 6
-                ? substr($destPhone, 0, 4).'****'.substr($destPhone, -2)
-                : $destPhone;
-
-            return response()->json([
-                'message' => "Un code de vérification à 6 chiffres a été envoyé par SMS au {$masked}.",
-                'channel' => 'sms',
-                'destination' => $masked,
-                'user_id' => $user->id,
-            ]);
-        }
-
-        // Envoi par email
         try {
             Mail::to($user->email)->send(new ResetPinMail($user, $code));
-        } catch (\Throwable $e) {
-            Log::error("Erreur lors de l'envoi d'email de réinitialisation : ".$e->getMessage());
+        } catch (\Throwable $exception) {
+            DB::table('password_reset_tokens')->where('email', $user->email)->delete();
+            Log::warning('Échec de livraison du code de réinitialisation PIN.');
+
+            return response()->json([
+                'message' => 'Le code ne peut pas être envoyé pour le moment. Réessayez plus tard ou contactez l’assistance.',
+            ], 503);
         }
 
-        $parts = explode('@', $user->email);
-        $namePart = $parts[0];
-        $domainPart = $parts[1] ?? '';
-        $maskedName = strlen($namePart) > 2 ? substr($namePart, 0, 2).'***' : $namePart.'***';
-        $destination = $maskedName.'@'.$domainPart;
-
-        return response()->json([
-            'message' => "Un code de vérification à 6 chiffres a été envoyé à l'adresse email {$destination}.",
-            'channel' => 'email',
-            'destination' => $destination,
-            'user_id' => $user->id,
-        ]);
+        return response()->json(['message' => $genericMessage], 202);
     }
 
     /**
-     * Vérification préalable du code secret reçu avant la saisie du nouveau PIN
+     * Vérification préalable du code secret reçu avant la saisie du nouveau PIN.
      */
     public function verifyPinCode(Request $request): JsonResponse
     {
@@ -478,32 +564,20 @@ class AuthController extends Controller
         $error = null;
         $channel = null;
         $user = $this->resolveUserByIdentifiant($request->identifiant, $error, $channel);
+        $key = $this->pinResetAttemptKey($request, $request->identifiant, $user, 'verify');
+
+        if (RateLimiter::tooManyAttempts($key, self::PIN_RESET_MAX_ATTEMPTS)) {
+            return $this->pinResetLimitResponse($key);
+        }
 
         if (! $user) {
-            return response()->json([
-                'message' => $error ?: 'Utilisateur introuvable.',
-            ], 422);
+            Hash::check($request->code, self::DUMMY_HASH);
+
+            return $this->invalidPinResetCode($key, null);
         }
 
-        $cacheData = Cache::get('pin_reset_'.$user->id);
-        $codeValid = false;
-
-        if ($cacheData && isset($cacheData['code']) && $cacheData['code'] === $request->code) {
-            $codeValid = true;
-        } else {
-            $tokenRecord = DB::table('password_reset_tokens')->where('email', $user->email)->first();
-            if ($tokenRecord && Hash::check($request->code, $tokenRecord->token)) {
-                $createdAt = \Carbon\Carbon::parse($tokenRecord->created_at);
-                if ($createdAt->addMinutes(15)->isFuture()) {
-                    $codeValid = true;
-                }
-            }
-        }
-
-        if (! $codeValid) {
-            return response()->json([
-                'message' => 'Le code de vérification saisi est incorrect ou a expiré.',
-            ], 422);
+        if (! $this->pinResetCodeValid($user, $request->code)) {
+            return $this->invalidPinResetCode($key, $user);
         }
 
         return response()->json([
@@ -513,59 +587,62 @@ class AuthController extends Controller
     }
 
     /**
-     * Validation du code et enregistrement du nouveau code PIN
+     * Validation atomique du code et enregistrement du nouveau code PIN.
      */
     public function resetPin(Request $request): JsonResponse
     {
         $request->validate([
             'identifiant' => ['required', 'string'],
             'code' => ['required', 'string', 'size:6'],
-            'new_pin' => ['required', 'string', 'size:6'],
+            'new_pin' => ['required', 'string', 'size:6', 'regex:/^\d{6}$/'],
             'confirm_pin' => ['required', 'string', 'same:new_pin'],
         ]);
 
         $error = null;
         $channel = null;
         $user = $this->resolveUserByIdentifiant($request->identifiant, $error, $channel);
+        $key = $this->pinResetAttemptKey($request, $request->identifiant, $user, 'verify');
+
+        if (RateLimiter::tooManyAttempts($key, self::PIN_RESET_MAX_ATTEMPTS)) {
+            return $this->pinResetLimitResponse($key);
+        }
 
         if (! $user) {
-            return response()->json([
-                'message' => $error ?: 'Utilisateur introuvable.',
-            ], 422);
+            Hash::check($request->code, self::DUMMY_HASH);
+
+            return $this->invalidPinResetCode($key, null);
         }
 
-        $cacheData = Cache::get('pin_reset_'.$user->id);
-        $codeValid = false;
+        $resetSucceeded = DB::transaction(function () use ($request, $user) {
+            $tokenRecord = DB::table('password_reset_tokens')
+                ->where('email', $user->email)
+                ->lockForUpdate()
+                ->first();
 
-        if ($cacheData && isset($cacheData['code']) && $cacheData['code'] === $request->code) {
-            $codeValid = true;
-        } else {
-            $tokenRecord = DB::table('password_reset_tokens')->where('email', $user->email)->first();
-            if ($tokenRecord && Hash::check($request->code, $tokenRecord->token)) {
-                $createdAt = \Carbon\Carbon::parse($tokenRecord->created_at);
-                if ($createdAt->addMinutes(15)->isFuture()) {
-                    $codeValid = true;
-                }
+            if (! $tokenRecord
+                || ! $tokenRecord->created_at
+                || ! Carbon::parse($tokenRecord->created_at)->addMinutes(15)->isFuture()
+                || ! Hash::check($request->code, $tokenRecord->token)) {
+                return false;
             }
-        }
 
-        if (! $codeValid) {
-            return response()->json([
-                'message' => 'Le code de vérification saisi est incorrect ou a expiré.',
-            ], 422);
-        }
+            $user->password = $request->new_pin;
+            $user->save();
+            DB::table('password_reset_tokens')->where('email', $user->email)->delete();
+            $user->tokens()->delete();
 
-        // Mise à jour du code PIN
-        $user->password = $request->new_pin;
-        $user->save();
+            return true;
+        });
+
+        if (! $resetSucceeded) {
+            return $this->invalidPinResetCode($key, $user);
+        }
 
         Cache::forget('pin_reset_'.$user->id);
-        DB::table('password_reset_tokens')->where('email', $user->email)->delete();
+        RateLimiter::clear($key);
+        RateLimiter::clear($this->pinResetAttemptKey($request, $request->identifiant, $user, 'send'));
+        $this->clearLoginAttempts($this->loginAttemptKey($request, $request->identifiant, $user));
 
-        // Révoquer les anciens jetons pour sécurité (la connexion ne sera pas automatique)
-        $user->tokens()->delete();
-
-        // Notification in-app et email si renseigné
         $this->notifyPinChanged($user);
 
         return response()->json([
@@ -590,7 +667,7 @@ class AuthController extends Controller
                 'statut' => 'non_lu',
             ]);
         } catch (\Throwable $e) {
-            Log::warning('Impossible d\'enregistrer la notification in-app de code PIN modifié : ' . $e->getMessage());
+            Log::warning('Impossible d\'enregistrer la notification in-app de code PIN modifié : '.$e->getMessage());
         }
 
         // 2. Envoi d'un e-mail si l'utilisateur a renseigné un véritable e-mail
@@ -603,7 +680,7 @@ class AuthController extends Controller
             try {
                 Mail::to($email)->send(new PinChangedMail($user));
             } catch (\Throwable $e) {
-                Log::warning("Impossible d'envoyer l'e-mail de confirmation de PIN modifié à {$email} : " . $e->getMessage());
+                Log::warning("Impossible d'envoyer l'e-mail de confirmation de PIN modifié à {$email} : ".$e->getMessage());
             }
         }
     }

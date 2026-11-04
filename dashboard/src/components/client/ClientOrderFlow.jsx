@@ -4,6 +4,7 @@ import '@feexpay/react-sdk/style.css';
 import { formatFCFA } from '../../data/clientStore';
 import { adminService, registerFeexpayWatchdog, cancelFeexpayPayment } from '../../services/adminService';
 import ClientForgotPinModal from './ClientForgotPinModal';
+import useLoginLockout, { formatLockoutTime } from './useLoginLockout';
 
 export default function ClientOrderFlow({
   product,
@@ -17,6 +18,7 @@ export default function ClientOrderFlow({
   onBack,
 }) {
   const [showForgotPinModal, setShowForgotPinModal] = useState(false);
+  const { startLockout, clearLockout, remainingFor } = useLoginLockout();
   const [activeUser, setActiveUser] = useState(() => {
     if (user) return user;
     try {
@@ -47,6 +49,7 @@ export default function ClientOrderFlow({
   // Formulaire connexion
   const [loginId, setLoginId] = useState('');
   const [loginPin, setLoginPin] = useState('');
+  const loginLockoutSeconds = remainingFor(loginId);
 
   // PIN
   const [newPin, setNewPin] = useState('');
@@ -189,7 +192,12 @@ export default function ClientOrderFlow({
         }
         setStep('payment');
       } catch (err) {
-        setError(err.message || 'Identifiant ou code PIN incorrect.');
+        if (err.locked) {
+          startLockout(loginId, err.retryAfter);
+          setError('');
+        } else {
+          setError(err.message || 'Identifiant ou code PIN incorrect.');
+        }
       } finally {
         setSubmitting(false);
       }
@@ -721,7 +729,13 @@ export default function ClientOrderFlow({
                 </div>
               )}
 
-              {error && (
+              {authMode === 'login' && loginLockoutSeconds > 0 && (
+                <div role="status" aria-live="polite" style={{ color: 'var(--r)', fontSize: '13px', margin: '8px 0', fontWeight: 600 }}>
+                  Connexion temporairement bloquée. Réessayez dans {formatLockoutTime(loginLockoutSeconds)} ou utilisez « Code oublié ? ».
+                </div>
+              )}
+
+              {error && !(authMode === 'login' && loginLockoutSeconds > 0) && (
                 <div style={{ color: 'var(--r)', fontSize: '13px', margin: '8px 0', fontWeight: 600 }}>
                   {error}
                 </div>
@@ -731,10 +745,12 @@ export default function ClientOrderFlow({
                 type="submit"
                 className="client-btn w100"
                 style={{ marginTop: '16px' }}
-                disabled={submitting}
+                disabled={submitting || (authMode === 'login' && loginLockoutSeconds > 0)}
               >
                 {submitting
                   ? 'Vérification...'
+                  : authMode === 'login' && loginLockoutSeconds > 0
+                    ? `Réessayez dans ${formatLockoutTime(loginLockoutSeconds)}`
                   : authMode === 'signup'
                     ? 'Continuer'
                     : 'Se connecter'}
@@ -1152,6 +1168,7 @@ export default function ClientOrderFlow({
         initialIdentifiant={loginId}
         onSuccess={(resetId, successMsg) => {
           setShowForgotPinModal(false);
+          clearLockout();
           setStep('auth');
           setAuthMode('login');
           if (resetId) {

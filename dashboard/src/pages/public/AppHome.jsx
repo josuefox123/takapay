@@ -111,22 +111,40 @@ export default function AppHome({ initialTab = 'home' }) {
 
   // N'afficher le modal que lorsqu'une vraie promotion est disponible.
   useEffect(() => {
+    let alreadyShown = false;
     try {
-      const searchParams = new URLSearchParams(location.search);
-      const forceWelcome = searchParams.get('welcome') === '1' || searchParams.get('promo') === '1';
-      const seen = sessionStorage.getItem('takapay-welcome-seen');
-      const hasPromotions = productsList.some((product) => discountPercentage(product) > 0);
-      if (hasPromotions && (!seen || forceWelcome)) {
-        const timer = setTimeout(() => {
-          setShowWelcome(true);
-          sessionStorage.setItem('takapay-welcome-seen', 'true');
-        }, 500);
-        return () => clearTimeout(timer);
-      }
+      alreadyShown = localStorage.getItem('takapay-welcome-seen') === 'true';
     } catch {
-      // Ignorer
+      // Le stockage local peut être indisponible dans certains navigateurs.
     }
-  }, [location.search, productsList]);
+    if (!alreadyShown) {
+      try {
+        alreadyShown = sessionStorage.getItem('takapay-welcome-seen') === 'true';
+      } catch {
+        // Le stockage de session peut également être désactivé.
+      }
+    }
+
+    const hasPromotions = productsList.some((product) => discountPercentage(product) > 0);
+    if (hasPromotions && !alreadyShown) {
+      const timer = setTimeout(() => {
+        setShowWelcome(true);
+        try {
+          localStorage.setItem('takapay-welcome-seen', 'true');
+        } catch {
+          // La session évite au minimum de rouvrir le modal dans cet onglet.
+        }
+        try {
+          sessionStorage.setItem('takapay-welcome-seen', 'true');
+        } catch {
+          // L'affichage du modal ne dépend pas du stockage de session.
+        }
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+
+    return undefined;
+  }, [productsList]);
 
   // Synchronisation bidirectionnelle avec les routes URL
   useEffect(() => {
@@ -334,9 +352,6 @@ export default function AppHome({ initialTab = 'home' }) {
     loadLiveProducts();
 
     const handleProductsUpdated = () => {
-      try {
-        sessionStorage.removeItem('takapay-welcome-seen');
-      } catch { /* ignore */ }
       refreshProductsFromStore();
       loadLiveProducts();
     };
