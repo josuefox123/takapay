@@ -204,7 +204,6 @@ export default function ClientProfileView({
         prenom: prenom.trim(),
         telephone: phone.trim(),
         email: email.trim() || null,
-        user_id: user?.id,
       };
 
       const result = await adminService.updateProfile(payload);
@@ -238,8 +237,12 @@ export default function ClientProfileView({
     e.preventDefault();
     setPinError('');
 
+    if (currentPin.length !== 6) {
+      setPinError('Veuillez saisir votre code PIN actuel à 6 chiffres.');
+      return;
+    }
     if (newPin.length !== 6 || confirmPin.length !== 6) {
-      setPinError('Le code PIN doit comporter exactement 6 chiffres.');
+      setPinError('Le nouveau code PIN doit comporter exactement 6 chiffres.');
       return;
     }
     if (newPin !== confirmPin) {
@@ -250,10 +253,9 @@ export default function ClientProfileView({
     setIsSavingPin(true);
     try {
       const payload = {
-        current_pin: currentPin || null,
+        current_pin: currentPin,
         new_pin: newPin,
         confirm_pin: confirmPin,
-        user_id: user?.id,
       };
 
       const res = await adminService.updatePin(payload);
@@ -1786,11 +1788,12 @@ export default function ClientProfileView({
 
               <div style={{ marginBottom: '12px' }}>
                 <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, marginBottom: '5px' }}>
-                  Code PIN actuel
+                  Code PIN actuel (6 chiffres) *
                 </label>
                 <input
                   type="password"
                   maxLength={6}
+                  required
                   placeholder="••••••"
                   value={currentPin}
                   onChange={(e) => setCurrentPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
@@ -1854,17 +1857,17 @@ export default function ClientProfileView({
 
               <button
                 type="submit"
-                disabled={isSavingPin || newPin.length !== 6 || confirmPin.length !== 6}
+                disabled={isSavingPin || currentPin.length !== 6 || newPin.length !== 6 || confirmPin.length !== 6}
                 style={{
                   width: '100%',
                   padding: '13px',
-                  background: !isSavingPin && newPin.length === 6 && confirmPin.length === 6 ? '#dc2626' : '#ded6ce',
+                  background: !isSavingPin && currentPin.length === 6 && newPin.length === 6 && confirmPin.length === 6 ? '#dc2626' : '#ded6ce',
                   color: '#ffffff',
                   borderRadius: '12px',
                   border: 'none',
                   fontSize: '14.5px',
                   fontWeight: 800,
-                  cursor: !isSavingPin && newPin.length === 6 && confirmPin.length === 6 ? 'pointer' : 'not-allowed',
+                  cursor: !isSavingPin && currentPin.length === 6 && newPin.length === 6 && confirmPin.length === 6 ? 'pointer' : 'not-allowed',
                 }}
               >
                 {isSavingPin ? 'Modification en cours...' : 'Mettre à jour mon PIN'}

@@ -54,7 +54,7 @@ class SupportChatController extends Controller
             ?: $request->input('session_token');
 
         $user = auth('sanctum')->user();
-        $userId = $user?->id ?: $request->input('user_id');
+        $userId = $user?->id;
 
         $conversation = null;
 
@@ -68,7 +68,10 @@ class SupportChatController extends Controller
 
         // 2. Sinon chercher par le token de session
         if (!$conversation && $token) {
-            $conversation = SupportConversation::where('session_token', $token)->first();
+            $conversation = SupportConversation::where('session_token', $token)
+                ->when($userId, fn ($q) => $q->where(fn ($sub) => $sub->whereNull('user_id')->orWhere('user_id', $userId)))
+                ->when(!$userId, fn ($q) => $q->whereNull('user_id'))
+                ->first();
         }
 
         // 3. Rattacher le compte utilisateur si trouvé par token
@@ -129,7 +132,7 @@ class SupportChatController extends Controller
             ?: $request->input('session_token');
 
         $user = auth('sanctum')->user();
-        $userId = $user?->id ?: $request->input('user_id');
+        $userId = $user?->id;
 
         $conversation = null;
         $isNewConversation = false;
@@ -144,7 +147,10 @@ class SupportChatController extends Controller
 
         // 2. Sinon chercher par token
         if (!$conversation && $token) {
-            $conversation = SupportConversation::where('session_token', $token)->first();
+            $conversation = SupportConversation::where('session_token', $token)
+                ->when($userId, fn ($q) => $q->where(fn ($sub) => $sub->whereNull('user_id')->orWhere('user_id', $userId)))
+                ->when(!$userId, fn ($q) => $q->whereNull('user_id'))
+                ->first();
         }
 
         $assignedAdminId = $this->resolveAssignedAdminId($userId ? (int) $userId : null);
