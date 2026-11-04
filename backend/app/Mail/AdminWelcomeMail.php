@@ -17,7 +17,8 @@ class AdminWelcomeMail extends Mailable
 
     public function __construct(
         public User $user,
-        public string $temporaryPassword
+        public ?string $temporaryPassword = null,
+        public bool $isUpdate = false
     ) {
         $frontendBase = rtrim(env('FRONTEND_URL', 'http://localhost:5173'), '/');
         $this->loginUrl = $frontendBase . '/admin/connexion';
@@ -26,7 +27,9 @@ class AdminWelcomeMail extends Mailable
     public function envelope(): Envelope
     {
         return new Envelope(
-            subject: 'Vos accès Administrateur - TakaPay',
+            subject: $this->isUpdate
+                ? 'Mise à jour de votre compte - TakaPay'
+                : 'Vos accès Administrateur - TakaPay',
         );
     }
 
