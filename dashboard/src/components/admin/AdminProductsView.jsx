@@ -2632,12 +2632,15 @@ export default function AdminProductsView({ onShowToast }) {
       <div className="admin-panel" style={{ marginBottom: '20px', padding: '16px 20px', display: 'flex', gap: '14px', alignItems: 'center', flexWrap: 'wrap' }}>
         <input
           type="text"
-          placeholder="Rechercher par nom, référence..."
+          placeholder="Rechercher..."
           value={search}
           onChange={(e) => {
             setSearch(e.target.value);
             setPage(1);
           }}
+          autoComplete="off"
+          autoCorrect="off"
+          spellCheck={false}
           style={{
             flex: 1,
             minWidth: '220px',

@@ -227,12 +227,15 @@ export default function AdminCagnottesView() {
       <div className="admin-panel" style={{ marginBottom: '20px', padding: '16px 20px', display: 'flex', gap: '14px', flexWrap: 'wrap' }}>
         <input
           type="text"
-          placeholder="Rechercher par client, article, code, téléphone..."
+          placeholder="Rechercher..."
           value={search}
           onChange={(e) => {
             setSearch(e.target.value);
             setPage(1);
           }}
+          autoComplete="off"
+          autoCorrect="off"
+          spellCheck={false}
           style={{
             flex: 1,
             minWidth: '220px',

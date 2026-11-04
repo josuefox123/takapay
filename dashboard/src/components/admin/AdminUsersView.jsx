@@ -319,9 +319,12 @@ export default function AdminUsersView({ onShowToast, currentUser }) {
       <div className="admin-panel" style={{ marginBottom: '24px', padding: '18px 24px', display: 'flex', gap: '14px', flexWrap: 'wrap', alignItems: 'center' }}>
         <input
           type="text"
-          placeholder="Rechercher par nom, email, téléphone..."
+          placeholder="Rechercher..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
+          autoComplete="off"
+          autoCorrect="off"
+          spellCheck={false}
           style={{
             flex: 1,
             minWidth: '220px',
