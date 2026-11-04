@@ -525,8 +525,7 @@
     display: none;
   }
 
-  .client-slide.client-slide-panoramic .client-slide-full-bg,
-  .client-slide.client-slide-panoramic.is-pure-image .client-slide-full-bg {
+  .client-slide.client-slide-panoramic .client-slide-full-bg {
     position: absolute;
     inset: 0;
     width: 100%;
@@ -539,6 +538,10 @@
     display: block;
     animation: none;
     border-radius: 0;
+  }
+
+  .client-slide.client-slide-panoramic.is-pure-image .client-slide-full-bg {
+    object-fit: contain;
   }
 
   .client-slide.client-slide-panoramic .client-slide-panoramic-scrim {
@@ -729,6 +732,59 @@
   z-index: 1;
   pointer-events: none;
   animation: heroImgEntrance 0.75s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.client-slide.is-pure-image .client-slide-full-bg {
+  object-fit: contain;
+}
+
+/* Boutons de navigation carrousel précédent / suivant */
+.client-carousel-nav-btn {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.16);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 26px;
+  line-height: 1;
+  color: #1f2937;
+  cursor: pointer;
+  z-index: 10;
+  transition: all 0.2s ease;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  opacity: 0;
+}
+
+.client-carousel:hover .client-carousel-nav-btn {
+  opacity: 1;
+}
+
+.client-carousel-nav-btn:hover {
+  background: #ffffff;
+  transform: translateY(-50%) scale(1.08);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.22);
+}
+
+.client-carousel-nav-btn.prev {
+  left: 20px;
+}
+
+.client-carousel-nav-btn.next {
+  right: 20px;
+}
+
+@media (max-width: 860px) {
+  .client-carousel-nav-btn {
+    display: none;
+  }
 }
 
 .client-slide-panoramic-scrim {
