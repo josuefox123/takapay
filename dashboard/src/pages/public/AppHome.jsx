@@ -97,9 +97,9 @@ export default function AppHome({ initialTab = 'home' }) {
   const [currentCagnotte, setCurrentCagnotte] = useState(null);
   const [unreadNotifCount, setUnreadNotifCount] = useState(0);
 
-  // Modal de bienvenue (Popup promotionnel configuré depuis le back-office)
+  // Modal de bienvenue (Affiches & popups configurés depuis le back-office)
   const [showWelcome, setShowWelcome] = useState(false);
-  const [activePopupPromo, setActivePopupPromo] = useState(null);
+  const [activePopupPromos, setActivePopupPromos] = useState([]);
   const [toastMessage, setToastMessage] = useState('');
 
   // Notification Toast
@@ -110,14 +110,27 @@ export default function AppHome({ initialTab = 'home' }) {
     }, 3200);
   };
 
-  // Charger le popup promotionnel actif depuis le back-office (dans Promotions)
+  // Fermeture du popup avec mémorisation de session
+  const handleCloseWelcome = () => {
+    setShowWelcome(false);
+    if (activePopupPromos.length > 0) {
+      try {
+        const sessionSeenKey = `takapay-popups-seen-${activePopupPromos.map((p) => p.id).join('-')}`;
+        sessionStorage.setItem(sessionSeenKey, 'true');
+      } catch {
+        // Stockage de session inaccessible
+      }
+    }
+  };
+
+  // Charger les promotions et affiches actives depuis le back-office
   useEffect(() => {
     let isMounted = true;
     let timer;
     adminService.getPromotions().then((promos) => {
       if (!isMounted || !Array.isArray(promos)) return;
       const now = new Date();
-      const activePopup = promos.find((p) => {
+      const validPopupPromos = promos.filter((p) => {
         if (!p || p.statut === 'inactif' || !p.afficher_popup) return false;
         if (!p.image_popup_url && !p.image_popup) return false;
         const debut = p.date_debut ? new Date(p.date_debut) : null;
@@ -127,45 +140,28 @@ export default function AppHome({ initialTab = 'home' }) {
         return true;
       });
 
-      if (!activePopup) {
-        setActivePopupPromo(null);
+      if (validPopupPromos.length === 0) {
+        setActivePopupPromos([]);
         setShowWelcome(false);
         return;
       }
 
-      setActivePopupPromo(activePopup);
-      const seenKey = `takapay-welcome-seen-${activePopup.id}`;
+      // Toutes les affiches actives vont dans le carrousel de la modale
+      setActivePopupPromos(validPopupPromos);
+
+      const sessionSeenKey = `takapay-popups-seen-${validPopupPromos.map((p) => p.id).join('-')}`;
       let alreadySeen = false;
       try {
-        alreadySeen = localStorage.getItem('takapay-welcome-seen') === 'true'
-          || localStorage.getItem(seenKey) === 'true';
+        alreadySeen = sessionStorage.getItem(sessionSeenKey) === 'true';
       } catch {
-        // Le stockage local peut être indisponible dans certains navigateurs.
-      }
-      if (!alreadySeen) {
-        try {
-          alreadySeen = sessionStorage.getItem(seenKey) === 'true';
-        } catch {
-          // Le stockage de session peut également être désactivé.
-        }
+        // Le stockage de session peut être désactivé
       }
 
       if (!alreadySeen) {
         timer = setTimeout(() => {
           if (!isMounted) return;
           setShowWelcome(true);
-          try {
-            localStorage.setItem('takapay-welcome-seen', 'true');
-            localStorage.setItem(seenKey, 'true');
-          } catch {
-            // Le stockage local n'est pas nécessaire pour afficher le popup.
-          }
-          try {
-            sessionStorage.setItem(seenKey, 'true');
-          } catch {
-            // La fermeture du popup reste disponible si le stockage est désactivé.
-          }
-        }, 500);
+        }, 600);
       }
     }).catch(() => {});
 
@@ -792,11 +788,11 @@ export default function AppHome({ initialTab = 'home' }) {
         </div>
       </main>
 
-      {/* Modal Popup des promotions du moment (envoyé depuis le back-office) */}
+      {/* Modal Popup des affiches & promotions (envoyé depuis le back-office) */}
       <ClientWelcomeModal
         isOpen={showWelcome}
-        popupPromo={activePopupPromo}
-        onClose={() => setShowWelcome(false)}
+        popupPromos={activePopupPromos}
+        onClose={handleCloseWelcome}
         onSelectProduct={handleOpenProduct}
         onShowAllPromos={handleSelectPromo}
       />
