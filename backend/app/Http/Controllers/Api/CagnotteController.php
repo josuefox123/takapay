@@ -39,20 +39,26 @@ class CagnotteController extends Controller
             })
             ->latest();
 
+        $requestedUserId = $request->query('user_id');
+
+        // 1. Consultation des cagnottes d'un utilisateur spécifique (ex: espace client)
+        if ($requestedUserId) {
+            $query->where('utilisateur_id', $requestedUserId);
+
+            return CagnotteResource::collection($query->get());
+        }
+
         if (! $user) {
             return CagnotteResource::collection(collect());
         }
 
-        // 1. Administrateurs / super_admin : accès aux cagnottes (filtré par admin_id pour un admin simple)
+        // 2. Administrateurs / super_admin : accès aux cagnottes de leurs produits
         if ($user->isAdmin()) {
             if ($user->role === 'admin') {
                 $query->whereHas('produit', fn ($q) => $q->where('admin_id', $user->id));
             }
-            if ($request->filled('user_id')) {
-                $query->where('utilisateur_id', $request->query('user_id'));
-            }
         } else {
-            // 2. Client authentifié : uniquement ses propres cagnottes (user_id ignoré)
+            // 3. Client authentifié : uniquement ses propres cagnottes
             $query->where('utilisateur_id', $user->id);
         }
 

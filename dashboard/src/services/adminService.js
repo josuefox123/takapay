@@ -1297,7 +1297,7 @@ export const adminService = {
 
   // 2. GESTION DES CAGNOTTES
   async getCagnottes(userId = null) {
-    const token = this.getToken();
+    const token = this.getClientToken() || this.getToken();
     try {
       const url = userId ? `${API_BASE}/cagnottes?user_id=${encodeURIComponent(userId)}` : `${API_BASE}/cagnottes`;
       const res = await fetch(url, {
