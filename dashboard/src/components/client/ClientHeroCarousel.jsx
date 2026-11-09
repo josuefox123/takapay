@@ -9,7 +9,7 @@ export default function ClientHeroCarousel({
   onGoCatalog,
   onSelectPromo,
 }) {
-  const [currentIndex, setCurrentIndex] = useState(0);
+  const [currentIndex, setCurrentIndex] = useState(1);
   const [isTransitioning, setIsTransitioning] = useState(true);
   const [isPaused, setIsPaused] = useState(false);
   const [dbCarousels, setDbCarousels] = useState(() => {
@@ -147,76 +147,104 @@ export default function ClientHeroCarousel({
   }, [dbCarousels, products, onGoCatalog, onSelectPromo, onSelectProduct]);
 
   // Diapositives étendues pour une boucle infinie continue (clone de la première slide en fin de piste)
+  // Diapositives étendues avec clones aux deux extrémités pour une boucle infinie continue et fluide
   const extendedSlides = useMemo(() => {
     if (slides.length <= 1) return slides;
     return [
+      {
+        ...slides[slides.length - 1],
+        id: `${slides[slides.length - 1].id}-clone-start`,
+      },
       ...slides,
       {
         ...slides[0],
-        id: `${slides[0].id}-loop-clone`,
+        id: `${slides[0].id}-clone-end`,
       },
     ];
   }, [slides]);
 
+  // Réajuster l'index si la liste des diapositives change
+  useEffect(() => {
+    if (slides.length > 1) {
+      setCurrentIndex((prev) => (prev < 1 || prev > slides.length ? 1 : prev));
+    } else {
+      setCurrentIndex(0);
+    }
+  }, [slides.length]);
+
   const touchStartX = useRef(0);
 
-  // Défilement automatique continu toutes les 6 secondes (mis en pause au survol et si l'onglet est masqué)
+  // Défilement automatique continu toutes les 5.5 secondes
   useEffect(() => {
     if (slides.length <= 1 || isPaused) return;
     const timer = setInterval(() => {
       if (typeof document !== 'undefined' && document.hidden) return;
 
       setIsTransitioning(true);
-      setCurrentIndex((prev) => {
-        if (prev >= slides.length) return 0;
-        return prev + 1;
-      });
-    }, 6000);
+      setCurrentIndex((prev) => prev + 1);
+    }, 5500);
 
     return () => clearInterval(timer);
   }, [slides.length, isPaused]);
 
-  // Si l'utilisateur revient sur l'onglet, réinitialiser proprement l'index s'il a dépassé
+  // Si l'utilisateur revient sur l'onglet, réaligner proprement
   useEffect(() => {
     const handleVisibility = () => {
       if (document.hidden) return;
-      if (currentIndex >= slides.length) {
+      if (currentIndex > slides.length || currentIndex < 1) {
         setIsTransitioning(false);
-        setCurrentIndex(0);
+        setCurrentIndex(1);
       }
     };
     document.addEventListener('visibilitychange', handleVisibility);
     return () => document.removeEventListener('visibilitychange', handleVisibility);
   }, [currentIndex, slides.length]);
 
-  // Réinitialisation instantanée et invisible à la première slide une fois la transition du clone terminée
+  // Réinitialisation instantanée et invisible lorsqu'on atteint l'un des deux clones
   const handleTransitionEnd = (e) => {
     if (e.target !== e.currentTarget || e.propertyName !== 'transform') return;
 
-    if (currentIndex >= slides.length) {
-      setIsTransitioning(false);
-      setCurrentIndex(0);
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          setIsTransitioning(true);
-        });
-      });
+    if (slides.length > 1) {
+      if (currentIndex >= slides.length + 1) {
+        // Fin de piste -> saut instantané vers la première vraie slide (index 1)
+        setIsTransitioning(false);
+        setCurrentIndex(1);
+      } else if (currentIndex <= 0) {
+        // Début de piste -> saut instantané vers la dernière vraie slide (index slides.length)
+        setIsTransitioning(false);
+        setCurrentIndex(slides.length);
+      }
     }
   };
 
+  // Réactivation de la transition CSS après le repositionnement sans transition
+  useEffect(() => {
+    if (!isTransitioning) {
+      const r1 = requestAnimationFrame(() => {
+        const r2 = requestAnimationFrame(() => {
+          setIsTransitioning(true);
+        });
+        return () => cancelAnimationFrame(r2);
+      });
+      return () => cancelAnimationFrame(r1);
+    }
+  }, [isTransitioning]);
+
   const handleDotClick = (dotIdx) => {
     setIsTransitioning(true);
-    setCurrentIndex(dotIdx);
+    setCurrentIndex(dotIdx + 1);
   };
 
   const handlePrev = () => {
+    if (!isTransitioning) return;
     setIsTransitioning(true);
-    setCurrentIndex((prev) => (prev <= 0 ? slides.length - 1 : prev - 1));
+    setCurrentIndex((prev) => prev - 1);
   };
 
   const handleNext = () => {
+    if (!isTransitioning) return;
     setIsTransitioning(true);
-    setCurrentIndex((prev) => (prev >= slides.length - 1 ? 0 : prev + 1));
+    setCurrentIndex((prev) => prev + 1);
   };
 
   const handleTouchStart = (e) => {
@@ -239,7 +267,7 @@ export default function ClientHeroCarousel({
 
   if (slides.length === 0) return null;
 
-  const activeDot = currentIndex % slides.length;
+  const activeDot = slides.length <= 1 ? 0 : (currentIndex - 1 + slides.length) % slides.length;
 
   return (
     <div
@@ -254,39 +282,31 @@ export default function ClientHeroCarousel({
       <div
         className="client-carousel-track"
         style={{
-          transform: `translateX(-${currentIndex * 100}%)`,
+          transform: slides.length <= 1 ? 'none' : `translateX(-${currentIndex * 100}%)`,
           transition: isTransitioning
-            ? 'transform 0.65s cubic-bezier(0.22, 1, 0.36, 1)'
+            ? 'transform 0.55s cubic-bezier(0.25, 1, 0.5, 1)'
             : 'none',
         }}
         onTransitionEnd={handleTransitionEnd}
       >
         {extendedSlides.map((s, idx) => {
           const hasContent = Boolean(s.kicker || s.title || s.description || s.btnText);
-          const isCurrentActive = (idx % slides.length) === activeDot;
+          const isCurrentActive = slides.length <= 1 ? true : ((idx - 1 + slides.length) % slides.length === activeDot);
           const isClickable = Boolean(s.action);
 
           return (
             <article
-              key={s.id}
+              key={`${s.id}-${idx}`}
               className={`client-slide client-slide-panoramic ${isCurrentActive ? 'active' : ''} ${!hasContent ? 'is-pure-image' : ''}`}
               onClick={isClickable && (!hasContent || !s.btnText) ? s.action : undefined}
               style={{ cursor: isClickable && (!hasContent || !s.btnText) ? 'pointer' : 'default' }}
             >
-              {/* Arrière-plan flouté en couleur (remplit harmonieusement l'espace à gauche et à droite) */}
-              <img
-                src={s.image}
-                alt=""
-                aria-hidden="true"
-                className="client-slide-backdrop-blur"
-              />
-
-              {/* Image adaptée aux dimensions naturelles */}
+              {/* Image prenant 100% de la largeur et de la hauteur de l'écran */}
               <img
                 src={s.image}
                 alt={s.title || 'Bannière TakaPay'}
                 className="client-slide-full-bg"
-                loading={idx === 0 ? 'eager' : 'lazy'}
+                loading={idx <= 2 ? 'eager' : 'lazy'}
                 onError={(e) => {
                   e.target.style.display = 'none';
                 }}
