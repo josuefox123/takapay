@@ -317,7 +317,7 @@ export default function ClientProductDetail({
 
   const deposit10 = Math.max(1, Math.floor((currentPrice * 10) / 100));
   const deposit15 = Math.max(1, Math.floor((currentPrice * 15) / 100));
-  const minAllowedDeposit = Math.min(100, deposit10);
+  const minAllowedDeposit = 1;
   const parsedCustomAmount = Number(customCagnotteAmount) > 0 ? Number(customCagnotteAmount) : 0;
   const effectiveFirstDeposit = cagnotteOption === 'offer_10'
     ? deposit10
@@ -1175,7 +1175,7 @@ export default function ClientProductDetail({
                       <span style={{ fontSize: '12px', fontWeight: 800, color: 'var(--mu)' }}>FCFA</span>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px', fontSize: '11px', color: 'var(--mu)' }}>
-                      <span>Minimum : {formatFCFA(minAllowedDeposit)}</span>
+                      <span>Montant libre</span>
                       {parsedCustomAmount > 0 && (
                         <span>
                           Solde restant : <strong style={{ color: 'var(--tx)' }}>{formatFCFA(Math.max(0, currentPrice - parsedCustomAmount))}</strong>

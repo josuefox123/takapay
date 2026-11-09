@@ -79,6 +79,7 @@ Route::get('videos/{filename}', function ($filename) {
 })->name('videos.stream');
 Route::get('cagnottes', [CagnotteController::class, 'index'])->name('cagnottes.index');
 Route::get('commandes', [CommandeController::class, 'index'])->name('commandes.index');
+Route::get('transactions', [TransactionController::class, 'index'])->name('transactions.index');
 Route::get('carousels', [CarouselController::class, 'index'])->name('carousels.index');
 Route::get('partenaires', [PartenaireController::class, 'index'])->name('partenaires.index');
 Route::get('notifications', [NotificationController::class, 'index'])->name('notifications.index');
@@ -191,7 +192,7 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
         Route::apiResource('parametre-produits', ParametreProduitController::class);
         Route::apiResource('cagnottes', CagnotteController::class)->except(['index']);
         Route::apiResource('echeances', EcheanceController::class);
-        Route::apiResource('transactions', TransactionController::class);
+        Route::apiResource('transactions', TransactionController::class)->except(['index']);
         Route::apiResource('livraisons', LivraisonController::class);
     });
 

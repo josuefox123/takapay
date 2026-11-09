@@ -1654,3 +1654,9 @@ div.fixed.inset-0.z-50 img[alt="Logo"],
   width: auto !important;
   object-fit: contain !important;
 }
+
+/* Masquer le texte MARCHAND et ID */
+div.fixed.inset-0.z-50 div.border-b div.text-right,
+.feexpay-modal div.border-b div.text-right {
+  display: none !important;
+}

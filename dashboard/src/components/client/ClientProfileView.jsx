@@ -37,6 +37,8 @@ export default function ClientProfileView({
   const [activeModal, setActiveModal] = useState(null); // 'edit_profile' | 'notifications' | 'help' | 'settings' | 'terms' | 'privacy'
   const [viewMode, setViewMode] = useState('menu'); // 'menu' | 'history'
   const [clientOrders, setClientOrders] = useState([]);
+  const [clientTransactions, setClientTransactions] = useState([]);
+  const [historyTab, setHistoryTab] = useState('orders'); // 'orders' | 'transactions'
   const [loadingOrders, setLoadingOrders] = useState(false);
 
   // Formulaire d'édition de profil
@@ -66,8 +68,12 @@ export default function ClientProfileView({
   const loadOrders = async () => {
     setLoadingOrders(true);
     try {
-      const orders = await adminService.getClientOrders(user?.id);
-      setClientOrders(orders);
+      const [orders, txs] = await Promise.all([
+        adminService.getClientOrders(user?.id),
+        adminService.getClientTransactions(user?.id),
+      ]);
+      setClientOrders(Array.isArray(orders) ? orders : []);
+      setClientTransactions(Array.isArray(txs) ? txs : []);
     } catch (_e) {
       void _e;
     } finally {
@@ -681,11 +687,11 @@ export default function ClientProfileView({
 
         <div>
           <h1 style={{ fontSize: '26px', fontWeight: 800, color: '#1b1716', margin: 0, letterSpacing: '-0.5px' }}>
-            {viewMode === 'history' ? 'Historique des commandes' : 'Profil'}
+            {viewMode === 'history' ? 'Historique' : 'Profil'}
           </h1>
           <p style={{ margin: '4px 0 0', color: '#706966', fontSize: '13.5px' }}>
             {viewMode === 'history'
-              ? 'Consultez le statut et les détails de vos commandes cash et cagnottes.'
+              ? 'Consultez le statut de vos commandes et le détail de vos transactions.'
               : 'Gérez vos coordonnées, vos options de sécurité et vos préférences.'}
           </p>
         </div>
@@ -693,318 +699,486 @@ export default function ClientProfileView({
 
       {viewMode === 'history' ? (
         <div style={{ display: 'grid', gap: '16px' }}>
+          {/* Sélecteur d'onglets Commandes / Transactions */}
+          <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              onClick={() => setHistoryTab('orders')}
+              style={{
+                padding: '8px 18px',
+                borderRadius: '99px',
+                border: historyTab === 'orders' ? 'none' : '1px solid #e8e0d6',
+                background: historyTab === 'orders' ? '#dc2626' : '#ffffff',
+                color: historyTab === 'orders' ? '#ffffff' : '#2b2624',
+                fontSize: '13px',
+                fontWeight: 700,
+                cursor: 'pointer',
+                boxShadow: historyTab === 'orders' ? '0 2px 8px rgba(220, 38, 38, 0.25)' : 'none',
+                transition: 'all .15s',
+              }}
+            >
+              📦 Commandes ({clientOrders.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setHistoryTab('transactions')}
+              style={{
+                padding: '8px 18px',
+                borderRadius: '99px',
+                border: historyTab === 'transactions' ? 'none' : '1px solid #e8e0d6',
+                background: historyTab === 'transactions' ? '#dc2626' : '#ffffff',
+                color: historyTab === 'transactions' ? '#ffffff' : '#2b2624',
+                fontSize: '13px',
+                fontWeight: 700,
+                cursor: 'pointer',
+                boxShadow: historyTab === 'transactions' ? '0 2px 8px rgba(220, 38, 38, 0.25)' : 'none',
+                transition: 'all .15s',
+              }}
+            >
+              💳 Transactions ({clientTransactions.length})
+            </button>
+          </div>
+
           {loadingOrders ? (
             <div style={{ textAlign: 'center', padding: '48px 20px', color: '#706966', background: '#fff', borderRadius: '22px', border: '1px solid #eee7e0' }}>
-              <p style={{ fontSize: '15px', fontWeight: 600, margin: 0 }}>Chargement de vos commandes...</p>
+              <p style={{ fontSize: '15px', fontWeight: 600, margin: 0 }}>Chargement de votre historique...</p>
             </div>
-          ) : clientOrders.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '54px 20px', background: '#fff', borderRadius: '24px', border: '1px solid #eee7e0' }}>
-              <div style={{ width: '64px', height: '64px', borderRadius: '50%', background: '#fee2e2', color: '#dc2626', display: 'grid', placeItems: 'center', margin: '0 auto 16px', fontSize: '28px' }}>
-                📦
+          ) : historyTab === 'orders' ? (
+            clientOrders.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '54px 20px', background: '#fff', borderRadius: '24px', border: '1px solid #eee7e0' }}>
+                <div style={{ width: '64px', height: '64px', borderRadius: '50%', background: '#fee2e2', color: '#dc2626', display: 'grid', placeItems: 'center', margin: '0 auto 16px', fontSize: '28px' }}>
+                  📦
+                </div>
+                <h3 style={{ fontSize: '18px', fontWeight: 800, color: '#1b1716', margin: '0 0 8px' }}>
+                  Aucune commande trouvée
+                </h3>
+                <p style={{ color: '#706966', fontSize: '14px', margin: '0 0 20px' }}>
+                  Vous n'avez pas encore passé de commande ou de cotisation.
+                </p>
+                {onBack && (
+                  <button
+                    type="button"
+                    onClick={onBack}
+                    style={{
+                      padding: '11px 22px',
+                      borderRadius: '12px',
+                      background: '#dc2626',
+                      color: '#ffffff',
+                      border: 'none',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      fontSize: '14px',
+                    }}
+                  >
+                    Découvrir nos produits
+                  </button>
+                )}
               </div>
-              <h3 style={{ fontSize: '18px', fontWeight: 800, color: '#1b1716', margin: '0 0 8px' }}>
-                Aucune commande trouvée
-              </h3>
-              <p style={{ color: '#706966', fontSize: '14px', margin: '0 0 20px' }}>
-                Vous n'avez pas encore passé de commande ou de cotisation.
-              </p>
-              {onBack && (
-                <button
-                  type="button"
-                  onClick={onBack}
-                  style={{
-                    padding: '11px 22px',
-                    borderRadius: '12px',
-                    background: '#dc2626',
-                    color: '#ffffff',
-                    border: 'none',
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                    fontSize: '14px',
-                  }}
-                >
-                  Découvrir nos produits
-                </button>
-              )}
-            </div>
-          ) : (
-            <>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 4px' }}>
-                <span style={{ fontSize: '13.5px', fontWeight: 700, color: '#706966' }}>
-                  {clientOrders.length} commande{clientOrders.length > 1 ? 's' : ''} enregistrée{clientOrders.length > 1 ? 's' : ''}
-                </span>
-                <button
-                  type="button"
-                  onClick={loadOrders}
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    color: '#dc2626',
-                    fontWeight: 700,
-                    fontSize: '13px',
-                    cursor: 'pointer',
-                  }}
-                >
-                  Actualiser
-                </button>
-              </div>
+            ) : (
+              <>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 4px' }}>
+                  <span style={{ fontSize: '13.5px', fontWeight: 700, color: '#706966' }}>
+                    {clientOrders.length} commande{clientOrders.length > 1 ? 's' : ''} enregistrée{clientOrders.length > 1 ? 's' : ''}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={loadOrders}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: '#dc2626',
+                      fontWeight: 700,
+                      fontSize: '13px',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Actualiser
+                  </button>
+                </div>
 
-              <div style={{ display: 'grid', gap: '14px' }}>
-                {clientOrders.map((cmd) => {
-                  const isCash =
-                    cmd.type_commande === 'cash' ||
-                    cmd.mode_paiement === 'livraison' ||
-                    String(cmd.reference || '').startsWith('CMD_COD_') ||
-                    String(cmd.reference || '').startsWith('CMD_CASH_');
+                <div style={{ display: 'grid', gap: '14px' }}>
+                  {clientOrders.map((cmd) => {
+                    const isCash =
+                      cmd.type_commande === 'cash' ||
+                      cmd.mode_paiement === 'livraison' ||
+                      String(cmd.reference || '').startsWith('CMD_COD_') ||
+                      String(cmd.reference || '').startsWith('CMD_CASH_');
 
-                  const articles = cmd.articles || [];
-                  const cag = cmd.cagnotte;
-                  const dateFormatted = cmd.created_at
-                    ? new Date(cmd.created_at).toLocaleDateString('fr-FR', {
-                        day: '2-digit',
-                        month: 'short',
-                        year: 'numeric',
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })
-                    : '—';
+                    const articles = cmd.articles || [];
+                    const cag = cmd.cagnotte;
+                    const dateFormatted = cmd.created_at
+                      ? new Date(cmd.created_at).toLocaleDateString('fr-FR', {
+                          day: '2-digit',
+                          month: 'short',
+                          year: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })
+                      : '—';
 
-                  const statutLabel =
-                    cmd.statut === 'terminee'
-                      ? 'Terminée'
-                      : cmd.statut === 'en_cours'
-                      ? 'En cours'
-                      : 'Annulée';
+                    const statutLabel =
+                      cmd.statut === 'terminee'
+                        ? 'Terminée'
+                        : cmd.statut === 'payee'
+                        ? 'Payée'
+                        : cmd.statut === 'livree'
+                        ? 'Livrée'
+                        : cmd.statut === 'en_cours'
+                        ? 'En cours'
+                        : cmd.statut === 'en_attente'
+                        ? 'En attente'
+                        : cmd.statut === 'annulee'
+                        ? 'Annulée'
+                        : (cmd.statut || 'En cours');
 
-                  const statutBadgeBg =
-                    cmd.statut === 'terminee'
-                      ? '#dcfce7'
-                      : cmd.statut === 'en_cours'
-                      ? '#fef3c7'
-                      : '#fee2e2';
+                    const isSuccess = ['terminee', 'payee', 'livree'].includes(cmd.statut);
+                    const isPending = ['en_cours', 'en_attente'].includes(cmd.statut);
 
-                  const statutBadgeColor =
-                    cmd.statut === 'terminee'
-                      ? '#15803d'
-                      : cmd.statut === 'en_cours'
-                      ? '#b45309'
-                      : '#dc2626';
+                    const statutBadgeBg = isSuccess ? '#dcfce7' : isPending ? '#fef3c7' : '#fee2e2';
+                    const statutBadgeColor = isSuccess ? '#15803d' : isPending ? '#b45309' : '#dc2626';
 
-                  return (
-                    <div
-                      key={cmd.id}
-                      style={{
-                        background: '#ffffff',
-                        borderRadius: '20px',
-                        border: '1px solid #eee7e0',
-                        padding: '18px 22px',
-                        boxShadow: '0 2px 10px rgba(0,0,0,0.03)',
-                      }}
-                    >
-                      {/* Entête */}
+                    return (
                       <div
+                        key={cmd.id}
                         style={{
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          alignItems: 'flex-start',
-                          flexWrap: 'wrap',
-                          gap: '10px',
-                          marginBottom: '14px',
+                          background: '#ffffff',
+                          borderRadius: '20px',
+                          border: '1px solid #eee7e0',
+                          padding: '18px 22px',
+                          boxShadow: '0 2px 10px rgba(0,0,0,0.03)',
                         }}
                       >
-                        <div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                            <span style={{ fontSize: '15px', fontWeight: 800, color: '#1b1716' }}>
-                              {cmd.reference}
-                            </span>
-                            <span
-                              style={{
-                                fontSize: '11px',
-                                fontWeight: 700,
-                                padding: '3px 8px',
-                                borderRadius: '6px',
-                                background: isCash ? '#f0fdf4' : '#eff6ff',
-                                color: isCash ? '#166534' : '#1d4ed8',
-                                border: `1px solid ${isCash ? '#bbf7d0' : '#bfdbfe'}`,
-                              }}
-                            >
-                              {isCash ? '💵 Cash / Paiement à livraison' : '🎯 Cagnotte TakaPay'}
-                            </span>
-                          </div>
-                          <span style={{ fontSize: '12px', color: '#706966', marginTop: '3px', display: 'block' }}>
-                            Passée le {dateFormatted}
-                          </span>
-                        </div>
-
-                        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                          <span
-                            style={{
-                              fontSize: '12px',
-                              fontWeight: 700,
-                              padding: '3px 10px',
-                              borderRadius: '99px',
-                              background: statutBadgeBg,
-                              color: statutBadgeColor,
-                            }}
-                          >
-                            {statutLabel}
-                          </span>
-                          {cmd.statut_reception === 'recu' ? (
-                            <span
-                              style={{
-                                fontSize: '11.5px',
-                                fontWeight: 700,
-                                padding: '3px 9px',
-                                borderRadius: '99px',
-                                background: '#dcfce7',
-                                color: '#15803d',
-                              }}
-                            >
-                              ✓ Article reçu
-                            </span>
-                          ) : (
-                            <span
-                              style={{
-                                fontSize: '11.5px',
-                                fontWeight: 700,
-                                padding: '3px 9px',
-                                borderRadius: '99px',
-                                background: '#f3f4f6',
-                                color: '#4b5563',
-                              }}
-                            >
-                              En attente réception
-                            </span>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Liste des articles */}
-                      <div style={{ borderTop: '1px solid #f4ede6', paddingTop: '12px', marginBottom: '14px' }}>
-                        {articles.length > 0 ? (
-                          articles.map((art, idx) => (
-                            <div
-                              key={idx}
-                              style={{
-                                display: 'flex',
-                                justifyContent: 'space-between',
-                                fontSize: '14px',
-                                marginBottom: '6px',
-                              }}
-                            >
-                              <span style={{ fontWeight: 600, color: '#2b2624' }}>
-                                {art.quantite}x {art.produit}
-                              </span>
-                              <span style={{ fontWeight: 700, color: '#1b1716' }}>
-                                {(art.total || art.prix_unitaire * art.quantite).toLocaleString('fr-FR')} F
-                              </span>
-                            </div>
-                          ))
-                        ) : (
-                          <div style={{ fontSize: '13px', color: '#706966' }}>Article commandé</div>
-                        )}
-                      </div>
-
-                      {/* Si cagnotte liée : progression */}
-                      {cag && !isCash && (
+                        {/* Entête */}
                         <div
                           style={{
-                            background: '#faf6f3',
-                            borderRadius: '12px',
-                            padding: '10px 14px',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'flex-start',
+                            flexWrap: 'wrap',
+                            gap: '10px',
                             marginBottom: '14px',
                           }}
                         >
-                          <div
-                            style={{
-                              display: 'flex',
-                              justifyContent: 'space-between',
-                              fontSize: '12px',
-                              marginBottom: '6px',
-                            }}
-                          >
-                            <span style={{ color: '#706966' }}>
-                              Cotisé : <b style={{ color: '#dc2626' }}>{Number(cag.montant_verse || 0).toLocaleString('fr-FR')} F</b>
+                          <div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                              <span style={{ fontSize: '15px', fontWeight: 800, color: '#1b1716' }}>
+                                {cmd.reference}
+                              </span>
+                              <span
+                                style={{
+                                  fontSize: '11px',
+                                  fontWeight: 700,
+                                  padding: '3px 8px',
+                                  borderRadius: '6px',
+                                  background: isCash ? '#f0fdf4' : '#eff6ff',
+                                  color: isCash ? '#166534' : '#1d4ed8',
+                                  border: `1px solid ${isCash ? '#bbf7d0' : '#bfdbfe'}`,
+                                }}
+                              >
+                                {isCash ? '💵 Cash / Paiement à livraison' : '🎯 Cagnotte TakaPay'}
+                              </span>
+                            </div>
+                            <span style={{ fontSize: '12px', color: '#706966', marginTop: '3px', display: 'block' }}>
+                              Passée le {dateFormatted}
                             </span>
-                            <span style={{ color: '#706966' }}>
-                              Objectif : <b>{Number(cag.objectif || 0).toLocaleString('fr-FR')} F</b>
-                            </span>
-                            <span style={{ fontWeight: 800, color: '#15803d' }}>{cag.progression || 0}%</span>
                           </div>
+
+                          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                            <span
+                              style={{
+                                fontSize: '12px',
+                                fontWeight: 700,
+                                padding: '3px 10px',
+                                borderRadius: '99px',
+                                background: statutBadgeBg,
+                                color: statutBadgeColor,
+                              }}
+                            >
+                              {statutLabel}
+                            </span>
+                            {cmd.statut_reception === 'recu' ? (
+                              <span
+                                style={{
+                                  fontSize: '11.5px',
+                                  fontWeight: 700,
+                                  padding: '3px 9px',
+                                  borderRadius: '99px',
+                                  background: '#dcfce7',
+                                  color: '#15803d',
+                                }}
+                              >
+                                ✓ Article reçu
+                              </span>
+                            ) : (
+                              <span
+                                style={{
+                                  fontSize: '11.5px',
+                                  fontWeight: 700,
+                                  padding: '3px 9px',
+                                  borderRadius: '99px',
+                                  background: '#f3f4f6',
+                                  color: '#4b5563',
+                                }}
+                              >
+                                En attente réception
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Liste des articles */}
+                        <div style={{ borderTop: '1px solid #f4ede6', paddingTop: '12px', marginBottom: '14px' }}>
+                          {articles.length > 0 ? (
+                            articles.map((art, idx) => (
+                              <div
+                                key={idx}
+                                style={{
+                                  display: 'flex',
+                                  justifyContent: 'space-between',
+                                  fontSize: '14px',
+                                  marginBottom: '6px',
+                                }}
+                              >
+                                <span style={{ fontWeight: 600, color: '#2b2624' }}>
+                                  {art.quantite}x {art.produit}
+                                </span>
+                                <span style={{ fontWeight: 700, color: '#1b1716' }}>
+                                  {(art.total || art.prix_unitaire * art.quantite).toLocaleString('fr-FR')} F
+                                </span>
+                              </div>
+                            ))
+                          ) : (
+                            <div style={{ fontSize: '13px', color: '#706966' }}>Article commandé</div>
+                          )}
+                        </div>
+
+                        {/* Si cagnotte liée : progression */}
+                        {cag && !isCash && (
                           <div
                             style={{
-                              width: '100%',
-                              height: '6px',
-                              background: '#e5ded6',
-                              borderRadius: '99px',
-                              overflow: 'hidden',
+                              background: '#faf6f3',
+                              borderRadius: '12px',
+                              padding: '10px 14px',
+                              marginBottom: '14px',
                             }}
                           >
                             <div
                               style={{
-                                width: `${Math.min(100, cag.progression || 0)}%`,
-                                height: '100%',
-                                background: (cag.progression || 0) >= 100 ? '#15803d' : '#dc2626',
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                fontSize: '12px',
+                                marginBottom: '6px',
                               }}
-                            />
+                            >
+                              <span style={{ color: '#706966' }}>
+                                Cotisé : <b style={{ color: '#dc2626' }}>{Number(cag.montant_verse || 0).toLocaleString('fr-FR')} F</b>
+                              </span>
+                              <span style={{ color: '#706966' }}>
+                                Objectif : <b>{Number(cag.objectif || 0).toLocaleString('fr-FR')} F</b>
+                              </span>
+                              <span style={{ fontWeight: 800, color: '#15803d' }}>{cag.progression || 0}%</span>
+                            </div>
+                            <div
+                              style={{
+                                width: '100%',
+                                height: '6px',
+                                background: '#e5ded6',
+                                borderRadius: '99px',
+                                overflow: 'hidden',
+                              }}
+                            >
+                              <div
+                                style={{
+                                  width: `${Math.min(100, cag.progression || 0)}%`,
+                                  height: '100%',
+                                  background: (cag.progression || 0) >= 100 ? '#15803d' : '#dc2626',
+                                }}
+                              />
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Pied de carte */}
+                        <div
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            flexWrap: 'wrap',
+                            gap: '10px',
+                            borderTop: '1px solid #f4ede6',
+                            paddingTop: '12px',
+                          }}
+                        >
+                          <div style={{ fontSize: '12.5px', color: '#706966' }}>
+                            <span>
+                              Mode de paiement : <b>{cmd.mode_paiement || 'Mobile Money'}</b>
+                            </span>
+                            {cmd.adresse_livraison && (
+                              <span style={{ display: 'block', color: '#0369a1', marginTop: '3px' }}>
+                                📍 {cmd.adresse_livraison}
+                              </span>
+                            )}
+                          </div>
+                          <div style={{ textAlign: 'right' }}>
+                            <span style={{ fontSize: '11px', color: '#706966', display: 'block' }}>Montant total</span>
+                            <strong style={{ fontSize: '17px', color: '#dc2626' }}>
+                              {Number(cmd.prix_total || 0).toLocaleString('fr-FR')} F
+                            </strong>
                           </div>
                         </div>
-                      )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )
+          ) : (
+            /* Onglet TRANSACTIONS */
+            clientTransactions.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '54px 20px', background: '#fff', borderRadius: '24px', border: '1px solid #eee7e0' }}>
+                <div style={{ width: '64px', height: '64px', borderRadius: '50%', background: '#fee2e2', color: '#dc2626', display: 'grid', placeItems: 'center', margin: '0 auto 16px', fontSize: '28px' }}>
+                  💳
+                </div>
+                <h3 style={{ fontSize: '18px', fontWeight: 800, color: '#1b1716', margin: '0 0 8px' }}>
+                  Aucune transaction enregistrée
+                </h3>
+                <p style={{ color: '#706966', fontSize: '14px', margin: '0 0 20px' }}>
+                  Vos versements, cotisations et paiements s'afficheront ici en temps réel.
+                </p>
+              </div>
+            ) : (
+              <>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 4px' }}>
+                  <span style={{ fontSize: '13.5px', fontWeight: 700, color: '#706966' }}>
+                    {clientTransactions.length} transaction{clientTransactions.length > 1 ? 's' : ''} enregistrée{clientTransactions.length > 1 ? 's' : ''}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={loadOrders}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: '#dc2626',
+                      fontWeight: 700,
+                      fontSize: '13px',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Actualiser
+                  </button>
+                </div>
 
-                      {/* Pied de carte */}
+                <div style={{ display: 'grid', gap: '12px' }}>
+                  {clientTransactions.map((tx) => {
+                    const isRefund = tx.is_refund || tx.type === 'remboursement';
+                    const txDateFormatted = tx.date
+                      ? new Date(tx.date).toLocaleDateString('fr-FR', {
+                          day: '2-digit',
+                          month: 'short',
+                          year: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })
+                      : '—';
+
+                    return (
                       <div
+                        key={tx.id}
                         style={{
+                          background: isRefund ? '#fffcf9' : '#ffffff',
+                          borderRadius: '16px',
+                          border: isRefund ? '1.5px solid #fed7aa' : '1px solid #ece5df',
+                          padding: '14px 18px',
                           display: 'flex',
-                          justifyContent: 'space-between',
                           alignItems: 'center',
-                          flexWrap: 'wrap',
-                          gap: '10px',
-                          borderTop: '1px solid #f4ede6',
-                          paddingTop: '12px',
+                          gap: '14px',
+                          boxShadow: '0 1px 4px rgba(0,0,0,0.02)',
                         }}
                       >
-                        <div style={{ fontSize: '12.5px', color: '#706966' }}>
-                          <span>
-                            Mode de paiement : <b>{cmd.mode_paiement || 'Mobile Money'}</b>
-                          </span>
-                          {cmd.adresse_livraison && (
-                            <span style={{ display: 'block', color: '#0369a1', marginTop: '3px' }}>
-                              📍 {cmd.adresse_livraison}
-                            </span>
-                          )}
+                        <div
+                          style={{
+                            width: '42px',
+                            height: '42px',
+                            borderRadius: '50%',
+                            background: isRefund ? '#ffedd5' : '#f0fdf4',
+                            color: isRefund ? '#c2410c' : '#15803d',
+                            display: 'grid',
+                            placeItems: 'center',
+                            fontSize: '18px',
+                            flexShrink: 0,
+                          }}
+                        >
+                          {isRefund ? '↩️' : '💳'}
                         </div>
+
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                            <strong style={{ fontSize: '14.5px', color: '#1b1716' }}>
+                              {tx.type_label || (isRefund ? 'Remboursement' : 'Versement TakaPay')}
+                            </strong>
+                            <small style={{ fontSize: '11px', color: '#8c8580' }}>
+                              {tx.reference_externe || tx.commande_reference || `TX-${tx.id}`}
+                            </small>
+                          </div>
+                          <span style={{ fontSize: '12px', color: '#706966', display: 'block', marginTop: '2px' }}>
+                            {tx.article && tx.article !== '—' ? `${tx.article} • ` : ''}
+                            {tx.moyen_paiement || 'Mobile Money'}
+                          </span>
+                          <span style={{ fontSize: '11px', color: '#9e958f' }}>{txDateFormatted}</span>
+                        </div>
+
                         <div style={{ textAlign: 'right' }}>
-                          <span style={{ fontSize: '11px', color: '#706966', display: 'block' }}>Montant total</span>
-                          <strong style={{ fontSize: '17px', color: '#dc2626' }}>
-                            {Number(cmd.prix_total || 0).toLocaleString('fr-FR')} F
+                          <strong
+                            style={{
+                              fontSize: '15.5px',
+                              color: isRefund ? '#c2410c' : '#15803d',
+                              display: 'block',
+                            }}
+                          >
+                            {isRefund ? '-' : '+'} {Number(tx.montant || 0).toLocaleString('fr-FR')} F
                           </strong>
+                          <span
+                            style={{
+                              display: 'inline-block',
+                              fontSize: '11px',
+                              fontWeight: 700,
+                              color: isRefund ? '#c2410c' : '#15803d',
+                              background: isRefund ? '#ffedd5' : '#dcfce7',
+                              padding: '2px 8px',
+                              borderRadius: '99px',
+                              marginTop: '3px',
+                            }}
+                          >
+                            {tx.statut_label || (tx.statut === 'succes' ? 'Validé' : tx.statut || 'Réussi')}
+                          </span>
                         </div>
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              <div style={{ marginTop: '16px', textAlign: 'center' }}>
-                <button
-                  type="button"
-                  onClick={() => setViewMode('menu')}
-                  style={{
-                    padding: '11px 20px',
-                    borderRadius: '12px',
-                    border: '1px solid #ded6ce',
-                    background: '#ffffff',
-                    color: '#1b1716',
-                    fontSize: '13.5px',
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                  }}
-                >
-                  ← Revenir à mon profil
-                </button>
-              </div>
-            </>
+                    );
+                  })}
+                </div>
+              </>
+            )
           )}
+
+          <div style={{ marginTop: '16px', textAlign: 'center' }}>
+            <button
+              type="button"
+              onClick={() => setViewMode('menu')}
+              style={{
+                padding: '11px 20px',
+                borderRadius: '12px',
+                border: '1px solid #ded6ce',
+                background: '#ffffff',
+                color: '#1b1716',
+                fontSize: '13.5px',
+                fontWeight: 700,
+                cursor: 'pointer',
+              }}
+            >
+              ← Revenir à mon profil
+            </button>
+          </div>
         </div>
       ) : (
         <>

@@ -59,6 +59,7 @@ class CommandeResource extends JsonResource
                 'progression'    => $progression,
                 'moyen_paiement' => $cagnotte->moyen_paiement,
             ] : null,
+            'transactions'      => TransactionResource::collection($this->whenLoaded('transactions')),
             'created_at'        => $this->created_at?->toIso8601String(),
             'updated_at'        => $this->updated_at?->toIso8601String(),
         ];

@@ -18,7 +18,14 @@ class TransactionController extends Controller
 {
     public function index(Request $request): AnonymousResourceCollection
     {
-        $user = $request->user();
+        $user = $request->user('sanctum') ?? $request->user();
+        if (! $user && $request->bearerToken()) {
+            $accessToken = \Laravel\Sanctum\PersonalAccessToken::findToken($request->bearerToken());
+            if ($accessToken && $accessToken->tokenable) {
+                $user = $accessToken->tokenable;
+            }
+        }
+
         $query = Transaction::with([
             'cagnotte.produit',
             'cagnotte.utilisateur',
@@ -30,10 +37,25 @@ class TransactionController extends Controller
             ->orderByDesc('date')
             ->orderByDesc('id');
 
+        $requestedUserId = $request->query('user_id');
+        if ($requestedUserId) {
+            $query->where(function ($q) use ($requestedUserId) {
+                $q->whereHas('cagnotte', fn ($c) => $c->where('utilisateur_id', $requestedUserId))
+                    ->orWhereHas('commande', fn ($cmd) => $cmd->where('utilisateur_id', $requestedUserId));
+            });
+
+            return TransactionResource::collection($query->get());
+        }
+
         if ($user && $user->role === 'admin') {
             $query->where(function ($q) use ($user) {
                 $q->whereHas('cagnotte.produit', fn ($p) => $p->where('admin_id', $user->id))
                     ->orWhereHas('commande.commandeProduits.produit', fn ($p) => $p->where('admin_id', $user->id));
+            });
+        } elseif ($user && ! $user->isAdmin()) {
+            $query->where(function ($q) use ($user) {
+                $q->whereHas('cagnotte', fn ($c) => $c->where('utilisateur_id', $user->id))
+                    ->orWhereHas('commande', fn ($cmd) => $cmd->where('utilisateur_id', $user->id));
             });
         }
 

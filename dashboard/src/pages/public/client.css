@@ -6216,6 +6216,13 @@ div.fixed.inset-0.z-50 div.border-b.border-gray-200 {
   opacity: 1 !important;
 }
 
+/* Masquer le texte MARCHAND et ID pour ne voir que le logo Takapay en entête */
+.feexpay-modal-overlay-custom div.border-b.border-gray-200 div.text-right,
+div.fixed.inset-0.z-50:has(img[src*="feexpay"]) div.border-b.border-gray-200 div.text-right,
+div.fixed.inset-0.z-50 div.border-b div.text-right {
+  display: none !important;
+}
+
 /* Bouton fermer de l'en-tête FeexPay */
 .feexpay-modal-overlay-custom div.border-b.border-gray-200 button,
 div.fixed.inset-0.z-50 div.border-b.border-gray-200 button {

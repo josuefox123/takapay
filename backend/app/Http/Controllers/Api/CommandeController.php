@@ -27,11 +27,21 @@ class CommandeController extends Controller
             }
         }
 
+        $query = Commande::with(['utilisateur', 'commandeProduits.produit', 'transactions.cagnotte'])->latest();
+
+        $requestedUserId = $request->query('user_id');
+
+        // 1. Consultation des commandes d'un utilisateur spécifique (ex: espace client / historique)
+        if ($requestedUserId) {
+            $query->where('utilisateur_id', $requestedUserId);
+            $perPage = (int) $request->query('per_page', 50);
+
+            return CommandeResource::collection($query->paginate($perPage));
+        }
+
         if (! $user) {
             return CommandeResource::collection(collect());
         }
-
-        $query = Commande::with(['utilisateur', 'commandeProduits.produit', 'transactions.cagnotte'])->latest();
 
         if ($user->isAdmin()) {
             if ($user->role === 'admin') {
@@ -39,9 +49,6 @@ class CommandeController extends Controller
                     $q->whereHas('commandeProduits.produit', fn ($p) => $p->where('admin_id', $user->id))
                         ->orWhereHas('transactions.cagnotte.produit', fn ($p) => $p->where('admin_id', $user->id));
                 });
-            }
-            if ($request->filled('user_id')) {
-                $query->where('utilisateur_id', $request->query('user_id'));
             }
         } else {
             $query->where('utilisateur_id', $user->id);

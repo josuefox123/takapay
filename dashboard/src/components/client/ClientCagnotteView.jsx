@@ -87,6 +87,8 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
 
   const [activeFilter, setActiveFilter] = useState('Tous');
   const [showDepositModal, setShowDepositModal] = useState(false);
+  const [isOpeningDeposit, setIsOpeningDeposit] = useState(false);
+  const [autoOpenDepositFeexpay, setAutoOpenDepositFeexpay] = useState(false);
   const [depositAmount, setDepositAmount] = useState('');
   const [depositProvider, setDepositProvider] = useState('MTN');
   const [depositPhone, setDepositPhone] = useState(user?.telephone || user?.phone || '');
@@ -350,29 +352,131 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
 
   const transactions = cagnotte.transactions || [];
   const filteredTransactions = transactions.filter((t) => {
-    if (activeFilter === "Aujourd'hui") return t.periode === 'aujourdhui';
-    if (activeFilter === 'Il y a 7 jours') return t.periode === 'aujourdhui' || t.periode === '7_jours';
+    if (activeFilter === "Aujourd'hui") {
+      if (t.rawDate) {
+        const diffDays = (Date.now() - new Date(t.rawDate).getTime()) / (1000 * 60 * 60 * 24);
+        return diffDays <= 1;
+      }
+      return t.periode === 'aujourdhui';
+    }
+    if (activeFilter === 'Il y a 7 jours') {
+      if (t.rawDate) {
+        const diffDays = (Date.now() - new Date(t.rawDate).getTime()) / (1000 * 60 * 60 * 24);
+        return diffDays <= 7;
+      }
+      return t.periode === 'aujourdhui' || t.periode === '7_jours';
+    }
     if (activeFilter === 'Il y a 30 jours') {
+      if (t.rawDate) {
+        const diffDays = (Date.now() - new Date(t.rawDate).getTime()) / (1000 * 60 * 60 * 24);
+        return diffDays <= 30;
+      }
       return t.periode === 'aujourdhui' || t.periode === '7_jours' || t.periode === '30_jours';
     }
     return true;
   });
 
   // ---------- Actions ----------
-  const openDeposit = (cagnotteId) => {
-    const target = cagnottesList.find((c) => String(c.id) === String(cagnotteId)) || {};
+  const openDeposit = async (cagnotteId) => {
+    if (isOpeningDeposit) return;
+    const target = cagnottesList.find((c) => String(c.id) === String(cagnotteId) || String(c.backendId) === String(cagnotteId)) || cagnotte || {};
     const remaining = Number(target.resteAPayer) || 0;
-    setDepositTargetId(cagnotteId);
-    setDepositAmount(String(remaining > 0 ? Math.min(50000, remaining) : ''));
-    setDepositError('');
+    const defaultAmount = remaining > 0 ? Math.min(50000, remaining) : 10000;
+
+    const rawCagId = target.backendId || target.id || cagnotteId;
+    let cagnotteNumericId = undefined;
+    if (typeof rawCagId === 'number' && !isNaN(rawCagId)) {
+      cagnotteNumericId = rawCagId;
+    } else if (typeof rawCagId === 'string') {
+      const parsed = parseInt(rawCagId.replace(/^cag-/, ''), 10);
+      if (!isNaN(parsed)) {
+        cagnotteNumericId = parsed;
+      }
+    }
+
     setPaymentData(null);
-    setShowDepositModal(true);
+    setDepositTargetId(target.id || cagnotteId);
+    setDepositAmount(String(defaultAmount));
+    window.__takapayCurrentDepositAmount = defaultAmount;
+    setDepositError('');
+    setPaymentFailed(false);
+    setIsOpeningDeposit(true);
+
+    try {
+      const cleanPhone = (user?.telephone || user?.phone || depositPhone || '').replace(/\D/g, '').replace(/^229/, '');
+      const userFullName = `${user?.prenom || ''} ${user?.nom || ''}`.trim() || user?.nom || 'Client';
+      const userEmail = (user?.email && !user.email.endsWith('@client.takapay.bj')) ? user.email : '';
+
+      window.__takapayPrefillUser = {
+        fullName: userFullName,
+        phoneDigits: cleanPhone,
+        email: userEmail,
+      };
+
+      const initRes = await adminService.initiatePayment({
+        amount: defaultAmount,
+        produit_id: target.product?.id ? Number(target.product.id) : undefined,
+        cagnotte_id: cagnotteNumericId,
+        type_paiement: 'cagnotte',
+        moyen_paiement: 'FEEXPAY',
+        user_id: user?.id,
+        telephone: user?.telephone || user?.phone || depositPhone.trim() || '',
+      });
+
+      if (initRes) {
+        setPaymentData(initRes);
+        setAutoOpenDepositFeexpay(true);
+      }
+    } catch (err) {
+      console.warn('initiatePayment error:', err);
+      if (onShowToast) {
+        onShowToast(err?.message || "Erreur lors de l'ouverture du paiement FeexPay.");
+      }
+    } finally {
+      setIsOpeningDeposit(false);
+    }
   };
+
+  // Déclenchement automatique de la modale FeexPay pour le versement
+  useEffect(() => {
+    if (paymentData && autoOpenDepositFeexpay) {
+      const tryOpen = () => {
+        const wrapper = document.querySelector('#feexpay-deposit-container > div');
+        if (wrapper) {
+          wrapper.dispatchEvent(new Event('feexpay:trigger'));
+          setAutoOpenDepositFeexpay(false);
+          return true;
+        }
+        const btn = document.querySelector('#feexpay-deposit-container button');
+        if (btn) {
+          btn.click();
+          setAutoOpenDepositFeexpay(false);
+          return true;
+        }
+        return false;
+      };
+
+      if (!tryOpen()) {
+        const interval = setInterval(() => {
+          if (tryOpen()) clearInterval(interval);
+        }, 50);
+        const timeout = setTimeout(() => {
+          clearInterval(interval);
+          setAutoOpenDepositFeexpay(false);
+        }, 3000);
+        return () => {
+          clearInterval(interval);
+          clearTimeout(timeout);
+        };
+      }
+    }
+  }, [paymentData, autoOpenDepositFeexpay]);
 
   const closeDeposit = () => {
     setShowDepositModal(false);
     setDepositTargetId(null);
     setPaymentData(null);
+    setAutoOpenDepositFeexpay(false);
     setDepositError('');
     setIsProcessingPayment(false);
     setPaymentCountdown(120);
@@ -624,10 +728,19 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
         email: userEmail,
       };
 
+      const rawCagId = targetCagnotte.backendId || targetCagnotte.id;
+      let cagnotteNumericId = undefined;
+      if (typeof rawCagId === 'number' && !isNaN(rawCagId)) {
+        cagnotteNumericId = rawCagId;
+      } else if (typeof rawCagId === 'string') {
+        const parsed = parseInt(rawCagId.replace(/^cag-/, ''), 10);
+        if (!isNaN(parsed)) cagnotteNumericId = parsed;
+      }
+
       const initRes = await adminService.initiatePayment({
         amount: amountNum,
         produit_id: targetCagnotte.product?.id ? Number(targetCagnotte.product.id) : undefined,
-        cagnotte_id: typeof targetCagnotte.id === 'number' ? targetCagnotte.id : undefined,
+        cagnotte_id: cagnotteNumericId,
         type_paiement: 'cagnotte',
         moyen_paiement: 'FEEXPAY',
         user_id: user?.id,
@@ -937,33 +1050,33 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                             background: isItemCancelled
                               ? '#fee2e2'
                               : isItemPaymentFailed
-                              ? '#fee2e2'
-                              : hasNoConfirmedPayment
-                              ? '#fff7ed'
-                              : isItemReceived
-                              ? '#dcfce7'
-                              : isItemCod
-                              ? '#fef3c7'
-                              : isItemCash
-                              ? '#f0fdf4'
-                              : isItemFinished
-                              ? '#dcfce7'
-                              : '#fef3c7',
+                                ? '#fee2e2'
+                                : hasNoConfirmedPayment
+                                  ? '#fff7ed'
+                                  : isItemReceived
+                                    ? '#dcfce7'
+                                    : isItemCod
+                                      ? '#fef3c7'
+                                      : isItemCash
+                                        ? '#f0fdf4'
+                                        : isItemFinished
+                                          ? '#dcfce7'
+                                          : '#fef3c7',
                             color: isItemCancelled
                               ? '#b91c1c'
                               : isItemPaymentFailed
-                              ? '#b91c1c'
-                              : hasNoConfirmedPayment
-                              ? '#c2410c'
-                              : isItemReceived
-                              ? '#15803d'
-                              : isItemCod
-                              ? '#b45309'
-                              : isItemCash
-                              ? '#166534'
-                              : isItemFinished
-                              ? '#15803d'
-                              : '#b45309',
+                                ? '#b91c1c'
+                                : hasNoConfirmedPayment
+                                  ? '#c2410c'
+                                  : isItemReceived
+                                    ? '#15803d'
+                                    : isItemCod
+                                      ? '#b45309'
+                                      : isItemCash
+                                        ? '#166534'
+                                        : isItemFinished
+                                          ? '#15803d'
+                                          : '#b45309',
                             fontSize: '11.5px',
                             fontWeight: 800,
                           }}
@@ -971,18 +1084,18 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                           {isItemCancelled
                             ? '✕ Annulée'
                             : isItemPaymentFailed
-                            ? '✕ Paiement échoué'
-                            : hasNoConfirmedPayment
-                            ? '⚠ Aucun paiement confirmé'
-                            : isItemReceived
-                            ? '✔ Article reçu'
-                            : isItemCod
-                            ? '🚚 Paiement à la livraison'
-                            : isItemCash
-                            ? '💵 Achat comptant'
-                            : isItemFinished
-                            ? '🎉 Complétée'
-                            : `● En cours (${itemPct}%)`}
+                              ? '✕ Paiement échoué'
+                              : hasNoConfirmedPayment
+                                ? '⚠ Aucun paiement confirmé'
+                                : isItemReceived
+                                  ? '✔ Article reçu'
+                                  : isItemCod
+                                    ? '🚚 Paiement à la livraison'
+                                    : isItemCash
+                                      ? '💵 Achat comptant'
+                                      : isItemFinished
+                                        ? '🎉 Terminée'
+                                        : `● En cours (${itemPct}%)`}
                         </span>
                         <span style={{ fontSize: '11.5px', color: '#8c8580' }}>{item.dateCommande}</span>
                       </div>
@@ -1053,8 +1166,8 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                                 {isItemCod
                                   ? '0 FCFA (Sans frais)'
                                   : Number(item.montantVerse) > 0
-                                  ? `${formatFCFA(item.montantVerse)} (${isItemRefundCompleted ? 'Argent renvoyé' : 'Remboursement sous 24H'})`
-                                  : '0 FCFA'}
+                                    ? `${formatFCFA(item.montantVerse)} (${isItemRefundCompleted ? 'Argent renvoyé' : 'Remboursement sous 24H'})`
+                                    : '0 FCFA'}
                               </b>
                             </div>
                           </div>
@@ -1066,12 +1179,12 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                                 {isItemPaymentFailed
                                   ? 'Paiement échoué'
                                   : hasNoConfirmedPayment
-                                  ? 'Aucun paiement confirmé'
-                                  : isItemReceived
-                                  ? 'Colis livré & réceptionné'
-                                  : isItemCod
-                                  ? 'À régler au livreur'
-                                  : 'Payé au comptant'}
+                                    ? 'Aucun paiement confirmé'
+                                    : isItemReceived
+                                      ? 'Colis livré & réceptionné'
+                                      : isItemCod
+                                        ? 'À régler au livreur'
+                                        : 'Payé au comptant'}
                               </b>
                             </div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
@@ -1128,17 +1241,25 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                         {isItemCancelled
                           ? 'Voir l’annulation →'
                           : isItemCash
-                          ? 'Détails & Suivi →'
-                          : 'Détails & Versements →'}
+                            ? 'Détails & Suivi →'
+                            : 'Détails & Versements →'}
                       </button>
 
                       {!isItemCash && !isItemFinished && !isItemCancelled && (
                         <button
                           type="button"
                           onClick={() => openDeposit(item.id)}
-                          style={{ ...primaryButtonStyle, padding: '11px 16px', borderRadius: '12px', fontSize: '13px' }}
+                          disabled={isOpeningDeposit && depositTargetId === item.id}
+                          style={{
+                            ...primaryButtonStyle,
+                            padding: '11px 16px',
+                            borderRadius: '12px',
+                            fontSize: '13px',
+                            opacity: (isOpeningDeposit && depositTargetId === item.id) ? 0.75 : 1,
+                            cursor: (isOpeningDeposit && depositTargetId === item.id) ? 'wait' : 'pointer',
+                          }}
                         >
-                          Verser
+                          {isOpeningDeposit && depositTargetId === item.id ? 'Ouverture...' : 'Verser'}
                         </button>
                       )}
                       {item.canDelete && (
@@ -1209,33 +1330,33 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                       background: isCancelled
                         ? '#fee2e2'
                         : isPaymentFailed
-                        ? '#fee2e2'
-                        : cagnotte.canDelete
-                        ? '#fff7ed'
-                        : isArticleReceived
-                        ? '#dcfce7'
-                        : isCod
-                        ? '#fef3c7'
-                        : isCash
-                        ? '#f0fdf4'
-                        : isFinished
-                        ? '#dcfce7'
-                        : '#fee2e2',
+                          ? '#fee2e2'
+                          : cagnotte.canDelete
+                            ? '#fff7ed'
+                            : isArticleReceived
+                              ? '#dcfce7'
+                              : isCod
+                                ? '#fef3c7'
+                                : isCash
+                                  ? '#f0fdf4'
+                                  : isFinished
+                                    ? '#dcfce7'
+                                    : '#fee2e2',
                       color: isCancelled
                         ? '#b91c1c'
                         : isPaymentFailed
-                        ? '#b91c1c'
-                        : cagnotte.canDelete
-                        ? '#c2410c'
-                        : isArticleReceived
-                        ? '#15803d'
-                        : isCod
-                        ? '#b45309'
-                        : isCash
-                        ? '#166534'
-                        : isFinished
-                        ? '#15803d'
-                        : '#b91c1c',
+                          ? '#b91c1c'
+                          : cagnotte.canDelete
+                            ? '#c2410c'
+                            : isArticleReceived
+                              ? '#15803d'
+                              : isCod
+                                ? '#b45309'
+                                : isCash
+                                  ? '#166534'
+                                  : isFinished
+                                    ? '#15803d'
+                                    : '#b91c1c',
                       fontSize: '12px',
                       fontWeight: 800,
                     }}
@@ -1247,20 +1368,20 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                           ? '✕ Annulation demandée · Remboursement sous 24H'
                           : '✕ Cagnotte annulée'))
                       : isPaymentFailed
-                      ? '✕ Paiement échoué'
-                      : cagnotte.canDelete
-                      ? '⚠ Aucun paiement confirmé'
-                      : isArticleReceived
-                      ? '✔ Article reçu'
-                      : isCod
-                      ? '🚚 Paiement à la livraison'
-                      : isCash
-                      ? '💵 Achat comptant'
-                      : isFinished
-                      ? '🎉 Financement complété'
-                      : isLibre
-                      ? `● Cotisation libre (${pct}%)`
-                      : `● Échéance en cours (${pct}%)`}
+                        ? '✕ Paiement échoué'
+                        : cagnotte.canDelete
+                          ? '⚠ Aucun paiement confirmé'
+                          : isArticleReceived
+                            ? '✔ Article reçu'
+                            : isCod
+                              ? '🚚 Paiement à la livraison'
+                              : isCash
+                                ? '💵 Achat comptant'
+                                : isFinished
+                                  ? '🎉 Financement terminée'
+                                  : isLibre
+                                    ? `● Cotisation libre (${pct}%)`
+                                    : `● Échéance en cours (${pct}%)`}
                   </span>
                 </div>
                 <p style={{ margin: '4px 0 0', color: '#706966', fontSize: '13.5px' }}>
@@ -1287,7 +1408,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                 ← Toutes mes cagnottes ({cagnottesList.length})
               </button>
 
-              {isCash && !isArticleReceived && (isCod || cagnotte.hasConfirmedPayment) && (
+              {!isArticleReceived && (isCash ? (isCod || cagnotte.hasConfirmedPayment) : isFinished) && (
                 <button
                   type="button"
                   onClick={() => {
@@ -1461,8 +1582,8 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                     {isReactivating
                       ? 'Rétablissement...'
                       : isCash
-                      ? 'Rétablir ma commande'
-                      : 'Rétablir ma cagnotte'}
+                        ? 'Rétablir ma commande'
+                        : 'Rétablir ma cagnotte'}
                   </span>
                 </button>
               </div>
@@ -1537,7 +1658,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                     }}
                   >
                     <CheckCircle2 size={13} />
-                    {isArticleReceived ? 'Livraison effectuée' : 'Financement complété'}
+                    {isArticleReceived ? 'Livraison effectuée' : 'Financement terminée'}
                   </span>
                 </div>
                 <h3 style={{ margin: '0 0 6px', fontSize: '19px', fontWeight: 800, letterSpacing: '-0.2px' }}>
@@ -1545,11 +1666,30 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                     ? `Félicitations${firstName ? ` ${firstName}` : ''} ! Votre article a bien été réceptionné`
                     : `Félicitations${firstName ? ` ${firstName}` : ''} ! Votre ${p.n || 'article'} est entièrement financé !`}
                 </h3>
-                <p style={{ margin: 0, fontSize: '13.5px', opacity: 0.92, lineHeight: 1.5 }}>
+                <p style={{ margin: 0, fontSize: '13.5px', opacity: 0.95, lineHeight: 1.5 }}>
                   {isArticleReceived
                     ? 'La réception en main propre a été confirmée et la commande est désormais clôturée avec succès. Merci pour votre confiance !'
-                    : `L'intégralité des ${formatFCFA(cagnotte.prixTotal)} a été versée. Notre équipe prépare votre commande pour la remise en main propre.`}
+                    : `L'intégralité des ${formatFCFA(cagnotte.prixTotal)} est versée. Notre équipe vous contacte dans quelques instants pour confirmer votre adresse et organiser la remise en toute sécurité.`}
                 </p>
+                {!isArticleReceived && (
+                  <div
+                    style={{
+                      marginTop: '10px',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      fontSize: '12px',
+                      fontWeight: 700,
+                      background: 'rgba(255, 255, 255, 0.16)',
+                      padding: '4px 10px',
+                      borderRadius: '8px',
+                      border: '1px solid rgba(255, 255, 255, 0.2)',
+                    }}
+                  >
+                    <span>📞</span>
+                    <span>Prochaine étape : Contact & confirmation dans quelques instants</span>
+                  </div>
+                )}
               </div>
               <div
                 style={{
@@ -1693,8 +1833,8 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                       {isCancelled
                         ? 'Cette commande a été annulée. Aucun règlement ne sera perçu et le livreur ne sera pas déployé.'
                         : isArticleReceived
-                        ? 'Le règlement a été effectué en totalité auprès du coursier.'
-                        : 'Aucun paiement en ligne requis. Vous réglerez cette somme directement au coursier à la réception.'}
+                          ? 'Le règlement a été effectué en totalité auprès du coursier.'
+                          : 'Aucun paiement en ligne requis. Vous réglerez cette somme directement au coursier à la réception.'}
                     </p>
                   </div>
 
@@ -2096,239 +2236,195 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
             /* Grille à 2 colonnes classique pour les cagnottes */
             <div
               style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 340px), 1fr))',
-              gap: '24px',
-              alignItems: 'start',
-            }}
-          >
-            {/* COLONNE GAUCHE */}
-            <div style={{ display: 'grid', gap: '16px' }}>
-              {/* Résumé produit */}
-              <div
-                style={{
-                  background: '#ffffff',
-                  borderRadius: '20px',
-                  border: '1px solid #eee7e0',
-                  padding: '18px 20px',
-                  display: 'flex',
-                  gap: '18px',
-                  alignItems: 'center',
-                  boxShadow: '0 2px 10px rgba(0,0,0,0.03)',
-                }}
-              >
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 340px), 1fr))',
+                gap: '24px',
+                alignItems: 'start',
+              }}
+            >
+              {/* COLONNE GAUCHE */}
+              <div style={{ display: 'grid', gap: '16px' }}>
+                {/* Résumé produit */}
                 <div
                   style={{
-                    width: '94px',
-                    height: '94px',
-                    borderRadius: '16px',
-                    overflow: 'hidden',
-                    background: '#f7f2ed',
-                    flexShrink: 0,
-                    display: 'grid',
-                    placeItems: 'center',
+                    background: '#ffffff',
+                    borderRadius: '20px',
+                    border: '1px solid #eee7e0',
+                    padding: '18px 20px',
+                    display: 'flex',
+                    gap: '18px',
+                    alignItems: 'center',
+                    boxShadow: '0 2px 10px rgba(0,0,0,0.03)',
                   }}
                 >
-                  <img
-                    src={p.im || ''}
-                    alt={p.n || 'Article'}
-                    style={{ width: '100%', height: '100%', objectFit: 'contain' }}
-                    onError={(e) => {
-                      e.target.onerror = null;
-                      e.target.style.opacity = '0';
+                  <div
+                    style={{
+                      width: '94px',
+                      height: '94px',
+                      borderRadius: '16px',
+                      overflow: 'hidden',
+                      background: '#f7f2ed',
+                      flexShrink: 0,
+                      display: 'grid',
+                      placeItems: 'center',
                     }}
-                  />
+                  >
+                    <img
+                      src={p.im || ''}
+                      alt={p.n || 'Article'}
+                      style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                      onError={(e) => {
+                        e.target.onerror = null;
+                        e.target.style.opacity = '0';
+                      }}
+                    />
+                  </div>
+
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <h2 style={{ fontSize: '19px', fontWeight: 800, color: '#1b1716', margin: '0 0 3px' }}>{p.n}</h2>
+                    <div style={{ fontSize: '12.5px', color: '#706966', marginBottom: '6px' }}>
+                      {cleanVariantDisplay(p.variant)}
+                    </div>
+                    <div style={{ fontSize: '20px', fontWeight: 800, color: '#1b1716', marginBottom: '4px' }}>
+                      {formatFCFA(cagnotte.prixTotal)}
+                    </div>
+                    <div style={{ fontSize: '12px', color: '#8c8580', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                      <span>📅</span>
+                      <span>Débuté le {cagnotte.dateCommande}</span>
+                    </div>
+                  </div>
                 </div>
 
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <h2 style={{ fontSize: '19px', fontWeight: 800, color: '#1b1716', margin: '0 0 3px' }}>{p.n}</h2>
-                  <div style={{ fontSize: '12.5px', color: '#706966', marginBottom: '6px' }}>
-                    {cleanVariantDisplay(p.variant)}
+                {/* Progression active OU Bilan d'annulation */}
+                <div
+                  style={{
+                    background: isCancelled ? '#fffaf5' : '#faf6f3',
+                    borderRadius: '20px',
+                    padding: '20px',
+                    border: isCancelled ? '1.5px solid #fed7aa' : '1px solid #f0e8e0',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                    <span style={{ fontSize: '14px', fontWeight: 800, color: isCancelled ? '#9a3412' : '#2b2624' }}>
+                      {isCancelled
+                        ? 'Bilan financier de l’annulation'
+                        : isLibre
+                          ? 'Progression de la cagnotte (Objectif 100%)'
+                          : 'Progression du financement'}
+                    </span>
+                    {!isCancelled && <span style={{ fontSize: '16px', fontWeight: 800, color: '#dc2626' }}>{pct}%</span>}
                   </div>
-                  <div style={{ fontSize: '20px', fontWeight: 800, color: '#1b1716', marginBottom: '4px' }}>
-                    {formatFCFA(cagnotte.prixTotal)}
-                  </div>
-                  <div style={{ fontSize: '12px', color: '#8c8580', display: 'flex', alignItems: 'center', gap: '5px' }}>
-                    <span>📅</span>
-                    <span>Débuté le {cagnotte.dateCommande}</span>
-                  </div>
-                </div>
-              </div>
 
-              {/* Progression active OU Bilan d'annulation */}
-              <div
-                style={{
-                  background: isCancelled ? '#fffaf5' : '#faf6f3',
-                  borderRadius: '20px',
-                  padding: '20px',
-                  border: isCancelled ? '1.5px solid #fed7aa' : '1px solid #f0e8e0',
-                }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                  <span style={{ fontSize: '14px', fontWeight: 800, color: isCancelled ? '#9a3412' : '#2b2624' }}>
-                    {isCancelled
-                      ? 'Bilan financier de l’annulation'
-                      : isLibre
-                      ? 'Progression de la cagnotte (Objectif 100%)'
-                      : 'Progression du financement'}
-                  </span>
-                  {!isCancelled && <span style={{ fontSize: '16px', fontWeight: 800, color: '#dc2626' }}>{pct}%</span>}
-                </div>
+                  {!isCancelled ? (
+                    <>
+                      <div style={{ height: '9px', background: '#ece5dc', borderRadius: '99px', overflow: 'hidden', marginBottom: '18px' }}>
+                        <div
+                          style={{
+                            width: `${Math.min(100, pct)}%`,
+                            height: '100%',
+                            background: '#dc2626',
+                            borderRadius: '99px',
+                            transition: 'width .5s ease',
+                          }}
+                        />
+                      </div>
 
-                {!isCancelled ? (
-                  <>
-                    <div style={{ height: '9px', background: '#ece5dc', borderRadius: '99px', overflow: 'hidden', marginBottom: '18px' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center' }}>
+                        <div>
+                          <small style={{ color: '#8c8580', fontSize: '11px', display: 'block', marginBottom: '4px' }}>
+                            Versement cagnotte (Total cotisé)
+                          </small>
+                          <b style={{ fontSize: '17px', fontWeight: 800, color: '#1b1716' }}>{formatFCFA(cagnotte.montantVerse)}</b>
+                        </div>
+
+                        <div style={{ width: '1px', height: '38px', background: '#ded6cd', margin: '0 16px' }} />
+
+                        <div style={{ textAlign: 'right' }}>
+                          <small style={{ color: '#8c8580', fontSize: '11px', display: 'block', marginBottom: '4px' }}>
+                            Reste à verser
+                          </small>
+                          <b style={{ fontSize: '17px', fontWeight: 800, color: '#1b1716' }}>{formatFCFA(cagnotte.resteAPayer)}</b>
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <div style={{ display: 'grid', gap: '12px', fontSize: '13px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ color: '#706966' }}>1. Versement cagnotte (Total cotisé) :</span>
+                        <b style={{ color: '#1b1716', fontSize: '14.5px' }}>{formatFCFA(cagnotte.montantVerse || 0)}</b>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ color: '#b91c1c' }}>2. Frais de retenue gestion (5%) :</span>
+                        <b style={{ color: '#b91c1c' }}>
+                          - {formatFCFA(cagnotte.fraisAnnulation || Math.round(((cagnotte.montantVerse || 0) * 5) / 100))}
+                        </b>
+                      </div>
                       <div
                         style={{
-                          width: `${Math.min(100, pct)}%`,
-                          height: '100%',
-                          background: '#dc2626',
-                          borderRadius: '99px',
-                          transition: 'width .5s ease',
+                          borderTop: '1px solid #fed7aa',
+                          paddingTop: '10px',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
                         }}
-                      />
-                    </div>
-
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center' }}>
-                      <div>
-                        <small style={{ color: '#8c8580', fontSize: '11px', display: 'block', marginBottom: '4px' }}>
-                          Versement cagnotte (Total cotisé)
-                        </small>
-                        <b style={{ fontSize: '17px', fontWeight: 800, color: '#1b1716' }}>{formatFCFA(cagnotte.montantVerse)}</b>
-                      </div>
-
-                      <div style={{ width: '1px', height: '38px', background: '#ded6cd', margin: '0 16px' }} />
-
-                      <div style={{ textAlign: 'right' }}>
-                        <small style={{ color: '#8c8580', fontSize: '11px', display: 'block', marginBottom: '4px' }}>
-                          Reste à verser
-                        </small>
-                        <b style={{ fontSize: '17px', fontWeight: 800, color: '#1b1716' }}>{formatFCFA(cagnotte.resteAPayer)}</b>
-                      </div>
-                    </div>
-                  </>
-                ) : (
-                  <div style={{ display: 'grid', gap: '12px', fontSize: '13px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ color: '#706966' }}>1. Versement cagnotte (Total cotisé) :</span>
-                      <b style={{ color: '#1b1716', fontSize: '14.5px' }}>{formatFCFA(cagnotte.montantVerse || 0)}</b>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ color: '#b91c1c' }}>2. Frais de retenue gestion (5%) :</span>
-                      <b style={{ color: '#b91c1c' }}>
-                        - {formatFCFA(cagnotte.fraisAnnulation || Math.round(((cagnotte.montantVerse || 0) * 5) / 100))}
-                      </b>
-                    </div>
-                    <div
-                      style={{
-                        borderTop: '1px solid #fed7aa',
-                        paddingTop: '10px',
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                      }}
-                    >
-                      <div>
-                        <b style={{ color: '#c2410c', fontSize: '14px', display: 'block' }}>
-                          {isRefundCompleted
-                            ? '3. Argent renvoyé au client (95%) :'
-                            : '3. Argent à renvoyer sous 24H (95%) :'}
-                        </b>
-                        <small style={{ color: '#706966', fontSize: '11.5px' }}>
-                          {isRefundCompleted
-                            ? `Viré sur le compte Mobile Money : ${cagnotte.telephoneRemboursement || user?.telephone || user?.phone || 'renseigné'}`
-                            : `Sera reversé sous 24H sur le compte Mobile Money : ${cagnotte.telephoneRemboursement || user?.telephone || user?.phone || 'renseigné'}`}
-                        </small>
-                      </div>
-                      <b style={{ color: '#c2410c', fontSize: '17px', fontWeight: 900 }}>
-                        {formatFCFA(
-                          cagnotte.montantRemboursement ||
+                      >
+                        <div>
+                          <b style={{ color: '#c2410c', fontSize: '14px', display: 'block' }}>
+                            {isRefundCompleted
+                              ? '3. Argent renvoyé au client (95%) :'
+                              : '3. Argent à renvoyer sous 24H (95%) :'}
+                          </b>
+                          <small style={{ color: '#706966', fontSize: '11.5px' }}>
+                            {isRefundCompleted
+                              ? `Viré sur le compte Mobile Money : ${cagnotte.telephoneRemboursement || user?.telephone || user?.phone || 'renseigné'}`
+                              : `Sera reversé sous 24H sur le compte Mobile Money : ${cagnotte.telephoneRemboursement || user?.telephone || user?.phone || 'renseigné'}`}
+                          </small>
+                        </div>
+                        <b style={{ color: '#c2410c', fontSize: '17px', fontWeight: 900 }}>
+                          {formatFCFA(
+                            cagnotte.montantRemboursement ||
                             Math.max(
                               0,
                               (cagnotte.montantVerse || 0) -
-                                Math.round(((cagnotte.montantVerse || 0) * 5) / 100)
+                              Math.round(((cagnotte.montantVerse || 0) * 5) / 100)
                             )
-                        )}
-                      </b>
+                          )}
+                        </b>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Information Cagnotte : cotisations au rythme du client */}
+                {!isFinished && !isCash && !isCancelled && (
+                  <div
+                    style={{
+                      background: '#fef2f2',
+                      border: '1.5px solid #fecaca',
+                      borderRadius: '16px',
+                      padding: '14px 16px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '12px',
+                      marginTop: '12px',
+                    }}
+                  >
+                    <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '24px', color: '#dc2626' }}>savings</span>
+                    <div style={{ fontSize: '12.5px', color: '#991b1b', lineHeight: 1.4 }}>
+                      <b>Cotisation à votre rythme :</b> Vous cotisez librement et à votre propre rythme. Votre article est débloqué et expédié dès que votre jauge atteint <b>100%</b> ({formatFCFA(cagnotte.montantTotal || cagnotte.product?.p)}).
                     </div>
                   </div>
                 )}
-              </div>
-
-              {/* Information Cagnotte : cotisations au rythme du client */}
-              {!isFinished && !isCash && !isCancelled && (
-                <div
-                  style={{
-                    background: '#fef2f2',
-                    border: '1.5px solid #fecaca',
-                    borderRadius: '16px',
-                    padding: '14px 16px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '12px',
-                    marginTop: '12px',
-                  }}
-                >
-                  <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '24px', color: '#dc2626' }}>savings</span>
-                  <div style={{ fontSize: '12.5px', color: '#991b1b', lineHeight: 1.4 }}>
-                    <b>Cotisation à votre rythme :</b> Vous cotisez librement et à votre propre rythme. Votre article est débloqué et expédié dès que votre jauge atteint <b>100%</b> ({formatFCFA(cagnotte.montantTotal || cagnotte.product?.p)}).
-                  </div>
-                </div>
-              )}
-
-              {/* Coordonnées de livraison si commande cash / livraison */}
-              {isCash && (
-                <div
-                  style={{
-                    background: '#faf6f3',
-                    borderRadius: '16px',
-                    padding: '16px',
-                    border: '1px solid #f0e8e0',
-                    marginTop: '16px',
-                  }}
-                >
-                  <h4 style={{ fontSize: '13.5px', fontWeight: 800, color: '#1b1716', margin: '0 0 10px' }}>
-                    📦 Coordonnées de livraison
-                  </h4>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '12.5px' }}>
-                    <div>
-                      <span style={{ color: '#706966' }}>Adresse : </span>
-                      <b>{cagnotte.deliveryAddress || user?.adresse || 'À convenir avec le livreur'}</b>
-                    </div>
-                    <div>
-                      <span style={{ color: '#706966' }}>Contact livreur : </span>
-                      <b>{cagnotte.deliveryPhone || user?.telephone || user?.phone || 'Numéro du profil'}</b>
-                    </div>
-                    {cagnotte.deliveryNote && (
-                      <div>
-                        <span style={{ color: '#706966' }}>Note : </span>
-                        <span>{cagnotte.deliveryNote}</span>
-                      </div>
-                    )}
-                    <div>
-                      <span style={{ color: '#706966' }}>Statut réception : </span>
-                      <b style={{ color: isArticleReceived ? '#15803d' : '#b45309' }}>
-                        {isArticleReceived ? (
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                            <CheckCircle2 size={13} /> Article remis & reçu
-                          </span>
-                        ) : (
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                            <Truck size={13} /> En attente de livraison
-                          </span>
-                        )}
-                      </b>
-                    </div>
-                  </div>
-                </div>
-              )}
 
 
-              {/* Bouton principal si Cagnotte : Effectuer un versement */}
+
+
+              {/* Bouton principal si Cagnotte en cours : Effectuer un versement */}
               {!isCash && !isFinished && !isCancelled && (
                 <button
                   type="button"
                   onClick={() => openDeposit(cagnotte.id)}
+                  disabled={isOpeningDeposit}
                   style={{
                     ...primaryButtonStyle,
                     width: '100%',
@@ -2337,6 +2433,8 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                     fontSize: '15.5px',
                     boxShadow: '0 6px 20px rgba(220, 38, 38, 0.28)',
                     transition: 'background .15s',
+                    opacity: isOpeningDeposit ? 0.75 : 1,
+                    cursor: isOpeningDeposit ? 'wait' : 'pointer',
                   }}
                   onMouseEnter={(e) => {
                     e.currentTarget.style.background = '#b91c1c';
@@ -2345,515 +2443,345 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                     e.currentTarget.style.background = '#dc2626';
                   }}
                 >
-                  Effectuer un versement
+                  {isOpeningDeposit ? 'Ouverture du paiement...' : 'Effectuer un versement'}
                 </button>
               )}
-            </div>
 
-            {/* COLONNE DROITE : historique */}
-            <div
-              style={{
-                background: '#ffffff',
-                borderRadius: '24px',
-                border: '1px solid #eee7e0',
-                padding: '24px',
-                boxShadow: '0 2px 12px rgba(0,0,0,0.03)',
-              }}
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '8px' }}>
-                <div>
-                  <h3 style={{ fontSize: '18px', fontWeight: 800, color: '#1b1716', margin: 0 }}>
-                    Historique de transactions
-                  </h3>
-                  <small style={{ color: '#706966', fontSize: '12px' }}>
-                    Versements rattachés à {p.n || 'cette cagnotte'}
-                  </small>
-                </div>
-
-                <span
-                  style={{
-                    fontSize: '11.5px',
-                    fontWeight: 700,
-                    color: '#706966',
-                    background: '#faf6f3',
-                    padding: '4px 10px',
-                    borderRadius: '99px',
-                    border: '1px solid #eee7e0',
-                  }}
-                >
-                  {filteredTransactions.length} transaction{filteredTransactions.length > 1 ? 's' : ''}
-                </span>
-              </div>
-
-              {/* Filtres */}
-              <div style={{ display: 'flex', gap: '8px', marginBottom: '20px', overflowX: 'auto', paddingBottom: '4px' }}>
-                {FILTERS.map((filtre) => {
-                  const isActive = activeFilter === filtre;
-                  return (
-                    <button
-                      key={filtre}
-                      type="button"
-                      onClick={() => setActiveFilter(filtre)}
-                      style={{
-                        padding: '7px 16px',
-                        borderRadius: '99px',
-                        border: isActive ? 'none' : '1px solid #e8e0d6',
-                        background: isActive ? '#dc2626' : '#ffffff',
-                        color: isActive ? '#ffffff' : '#2b2624',
-                        fontSize: '12.5px',
-                        fontWeight: 700,
-                        cursor: 'pointer',
-                        whiteSpace: 'nowrap',
-                        boxShadow: isActive ? '0 2px 8px rgba(220, 38, 38, 0.25)' : 'none',
-                        transition: 'all .15s',
-                      }}
-                    >
-                      {filtre}
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* Liste des versements */}
-              <div style={{ display: 'grid', gap: '12px', marginBottom: '20px' }}>
-                {filteredTransactions.map((tx, idx) => {
-                  const isRefund =
-                    tx.type === 'annulation' ||
-                    tx.type === 'remboursement' ||
-                    tx.titre?.toLowerCase().includes('annulation') ||
-                    tx.titre?.toLowerCase().includes('remboursement') ||
-                    tx.titre?.toLowerCase().includes('renvoyé') ||
-                    tx.reference?.startsWith('REM-') ||
-                    tx.reference?.includes('ANNUL');
-
-                  const isRefundExecuted =
-                    isRefund &&
-                    (isRefundCompleted ||
-                      tx.statut === 'succes' ||
-                      tx.statut === 'reussi' ||
-                      tx.statut === 'Argent renvoyé');
-
-                  const isReactivate = tx.type === 'reactivation' || tx.titre?.toLowerCase().includes('rétablie');
-
-                  let displayTitle = 'Versement cagnotte (Cotisation)';
-                  if (isRefund) {
-                    displayTitle = isRefundExecuted
-                      ? 'Argent renvoyé (Remboursement)'
-                      : 'Remboursement programmé (sous 24H)';
-                  } else if (isReactivate) {
-                    displayTitle = 'Cagnotte rétablie';
-                  } else if (
-                    tx.titre &&
-                    tx.titre !== 'Versement cagnotte' &&
-                    !tx.titre.toLowerCase().includes('demande d’annulation')
-                  ) {
-                    displayTitle = tx.titre;
-                  } else {
-                    displayTitle = 'Versement cagnotte (Cotisation)';
-                  }
-
-                  return (
-                    <div
-                      key={tx.id}
-                      onClick={() => setSelectedReceipt(tx)}
-                      style={{
-                        background: isRefund ? '#fffcf9' : '#ffffff',
-                        border: isRefund ? '1.5px solid #fed7aa' : '1px solid #ece5df',
-                        borderRadius: '16px',
-                        padding: '14px 16px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '14px',
-                        boxShadow: '0 1px 4px rgba(0,0,0,0.02)',
-                        cursor: 'pointer',
-                        transition: 'transform .15s, border-color .15s',
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.transform = 'translateY(-1px)';
-                        e.currentTarget.style.borderColor = isRefund ? '#f97316' : '#d9d0c7';
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.transform = 'none';
-                        e.currentTarget.style.borderColor = isRefund ? '#fed7aa' : '#ece5df';
-                      }}
-                    >
-                      <div
-                        style={{
-                          width: '42px',
-                          height: '42px',
-                          borderRadius: '50%',
-                          background: isRefund ? (isRefundExecuted ? '#ffedd5' : '#fef3c7') : isReactivate ? '#fef3c7' : '#f3ece6',
-                          display: 'grid',
-                          placeItems: 'center',
-                          fontSize: '18px',
-                          color: isRefund ? (isRefundExecuted ? '#c2410c' : '#b45309') : isReactivate ? '#b45309' : '#4b443f',
-                          flexShrink: 0,
-                        }}
-                      >
-                        {isRefund ? (isRefundExecuted ? '↩️' : '⏳') : isReactivate ? '🔄' : '💳'}
-                      </div>
-
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                          <b style={{ fontSize: '14.5px', color: isRefund ? (isRefundExecuted ? '#c2410c' : '#b45309') : '#1b1716' }}>
-                            {displayTitle}
-                          </b>
-                          <small style={{ fontSize: '11px', color: '#8c8580' }}>{tx.reference || tx.id}</small>
-                        </div>
-                        <span style={{ fontSize: '12px', color: '#706966', display: 'block', marginTop: '2px' }}>
-                          {isRefund
-                            ? (isRefundExecuted ? 'Virement Mobile Money sortant (Remboursement)' : 'Remboursement Mobile Money programmé sous 24H')
-                            : tx.methode}
-                        </span>
-                        <span style={{ fontSize: '11px', color: '#9e958f' }}>{tx.date}</span>
-                      </div>
-
-                      <div style={{ textAlign: 'right', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        <div>
-                          <b style={{ fontSize: '15px', color: isRefund ? (isRefundExecuted ? '#c2410c' : '#b45309') : '#1b1716', display: 'block' }}>
-                            {isRefund
-                              ? `- ${formatFCFA(tx.montant)}`
-                              : isReactivate
-                              ? '—'
-                              : `+ ${formatFCFA(tx.montant)}`}
-                          </b>
-                          <span
-                            style={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '4px',
-                              fontSize: '11px',
-                              fontWeight: 700,
-                              color: isRefund ? (isRefundExecuted ? '#c2410c' : '#b45309') : isReactivate ? '#b45309' : '#15803d',
-                              background: isRefund ? (isRefundExecuted ? '#ffedd5' : '#fef3c7') : isReactivate ? '#fef3c7' : '#dcfce7',
-                              padding: '2px 8px',
-                              borderRadius: '99px',
-                              marginTop: '3px',
-                            }}
-                          >
-                            {isRefund
-                              ? (isRefundExecuted ? '↩ Argent renvoyé' : '⏳ En attente sous 24H')
-                              : isReactivate
-                              ? '✔ Rétablie'
-                              : '✔ Validé'}
-                          </span>
-                        </div>
-                        <span style={{ color: '#a09895', fontSize: '18px', fontWeight: 600 }}>›</span>
-                      </div>
-                    </div>
-                  );
-                })}
-
-                {filteredTransactions.length === 0 && (
-                  <div style={{ textAlign: 'center', padding: '36px 16px', color: '#8c8580', fontSize: '13.5px' }}>
-                    Aucun versement enregistré pour cette période.
-                  </div>
-                )}
-              </div>
-
-              {/* Synthèse des règlements */}
-              <div
-                style={{
-                  background: '#faf6f3',
-                  borderRadius: '16px',
-                  padding: '16px 18px',
-                  border: '1px solid #f0e8e0',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  flexWrap: 'wrap',
-                  gap: '12px',
-                }}
-              >
-                <div>
-                  <small style={{ color: '#706966', fontSize: '11.5px', display: 'block' }}>
-                    Mode de prélèvement privilégié
-                  </small>
-                  <b style={{ fontSize: '13.5px', color: '#1b1716' }}>
-                    {cagnotte.moyenPaiement || 'MTN Mobile Money'}
-                    {(user?.telephone || user?.phone || depositPhone) &&
-                      ` (${user?.telephone || user?.phone || depositPhone})`}
-                  </b>
-                </div>
-
-                {!isFinished && !isCancelled && (
-                  <button
-                    type="button"
-                    onClick={() => openDeposit(cagnotte.id)}
-                    style={{
-                      background: 'none',
-                      border: 'none',
-                      color: '#dc2626',
-                      fontWeight: 800,
-                      fontSize: '13px',
-                      cursor: 'pointer',
-                      textDecoration: 'underline',
-                    }}
-                  >
-                    + Ajouter un acompte
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-        </>
-      )}
-
-      {/* Modal 1 : Nouveau versement */}
-      {showDepositModal && (
-        <div
-          style={overlayStyle}
-          onClick={(e) => {
-            if (e.target === e.currentTarget) closeDeposit();
-          }}
-        >
-          <div
-            style={{
-              background: '#ffffff',
-              borderRadius: '24px',
-              maxWidth: '460px',
-              width: '100%',
-              maxHeight: 'calc(100vh - 32px)',
-              overflowY: 'auto',
-              padding: 'clamp(18px, 4vw, 26px)',
-              boxShadow: '0 20px 60px rgba(0,0,0,0.25)',
-              color: '#1b1716',
-            }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px' }}>
-              <div>
-                <h3 style={{ fontSize: '18px', fontWeight: 800, margin: 0 }}>Nouveau versement</h3>
-                <small style={{ color: '#706966', fontSize: '12px' }}>
-                  Rattaché à {targetName} · reste {formatFCFA(targetRemaining)}
-                </small>
-              </div>
-              <button
-                type="button"
-                onClick={closeDeposit}
-                aria-label="Fermer"
-                style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#706966' }}
-              >
-                ✕
-              </button>
-            </div>
-
-            {depositError && (
-              <div style={{ color: '#dc2626', background: 'rgba(220,38,38,0.08)', padding: '10px 12px', borderRadius: '10px', fontSize: '13px', fontWeight: 600, marginBottom: '16px', textAlign: 'center' }}>
-                {depositError}
-              </div>
-            )}
-
-            {paymentFailed ? (
-              <div style={{
-                padding: '32px 20px',
-                textAlign: 'center',
-                background: '#ffffff',
-                borderRadius: '16px',
-                border: '1.5px solid #fecaca',
-                boxShadow: '0 8px 24px rgba(220, 38, 38, 0.08)',
-                marginBottom: '16px'
-              }}>
-                <div style={{
-                  width: '56px',
-                  height: '56px',
-                  margin: '0 auto 14px',
-                  background: '#fee2e2',
-                  color: '#dc2626',
-                  borderRadius: '50%',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: '28px',
-                  fontWeight: 'bold'
-                }}>
-                  ✕
-                </div>
-                <h3 style={{ fontSize: '18px', fontWeight: 800, color: '#991b1b', marginBottom: '8px' }}>
-                  Versement non finalisé
-                </h3>
-                <p style={{ fontSize: '13.5px', color: '#4b5563', lineHeight: 1.5, maxWidth: '380px', margin: '0 auto 20px' }}>
-                  La transaction n'a pas pu être validée dans le délai imparti. Si votre compte a été débité, votre cagnotte est enregistrée et sera actualisée sur votre espace. Vous pouvez également relancer le versement.
-                </p>
+              {/* Bouton principal si Cagnotte terminée et article en attente : Confirmer la réception */}
+              {!isCash && isFinished && !isArticleReceived && (
                 <button
                   type="button"
+                  onClick={() => {
+                    setConfirmReceiptStep(1);
+                    setReceiptCheckbox(false);
+                    setShowConfirmReceiptModal(true);
+                  }}
                   style={{
                     ...primaryButtonStyle,
                     width: '100%',
-                    padding: '14px',
-                    borderRadius: '14px',
+                    padding: '16px',
+                    borderRadius: '16px',
                     fontSize: '15px',
+                    background: '#16a34a',
+                    color: '#ffffff',
+                    boxShadow: '0 6px 20px rgba(22, 163, 74, 0.28)',
+                    transition: 'background .15s',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    fontWeight: 800,
                   }}
-                  onClick={() => {
-                    setPaymentFailed(false);
-                    setIsProcessingPayment(false);
-                    setPaymentCountdown(0);
-                    setPaymentData(null);
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = '#15803d';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = '#16a34a';
                   }}
                 >
-                  🔄 Relancer le versement
+                  <CheckCircle2 size={18} />
+                  Confirmer la réception de l'article
                 </button>
-              </div>
-            ) : (
-              <form onSubmit={handleMakeDeposit}>
-                <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 700, marginBottom: '6px' }}>
-                  Montant du versement (FCFA) *
-                </label>
+              )}
 
-                {quickAmounts.length > 0 && (
-                  <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
-                    {quickAmounts.map(({ label, value }) => {
-                      const selected = depositAmount === String(value);
-                      return (
-                        <button
-                          key={label}
-                          type="button"
-                          onClick={() => {
-                            setDepositAmount(String(value));
-                            setPaymentData(null);
-                          }}
-                          style={{
-                            flex: 1,
-                            padding: '8px 4px',
-                            borderRadius: '8px',
-                            border: selected ? '2px solid #dc2626' : '1px solid #ded6ce',
-                            background: selected ? 'rgba(220,38,38,0.06)' : '#faf6f3',
-                            fontSize: '11.5px',
-                            fontWeight: 700,
-                            cursor: 'pointer',
-                          }}
-                        >
-                          {label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-
-                <input
-                  type="number"
-                  min="1"
-                  max={targetRemaining || undefined}
-                  step="1"
-                  required
-                  value={depositAmount}
-                  onChange={(e) => {
-                    setDepositAmount(e.target.value);
-                    setPaymentData(null);
-                  }}
+              {/* Message de clôture si l'article est déjà reçu */}
+              {!isCash && isFinished && isArticleReceived && (
+                <div
                   style={{
-                    width: '100%',
-                    padding: '12px 14px',
-                    borderRadius: '12px',
-                    border: '1.5px solid #ded6ce',
-                    fontSize: '16px',
+                    background: '#f0fdf4',
+                    border: '1.5px solid #bbf7d0',
+                    borderRadius: '16px',
+                    padding: '14px 16px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    color: '#166534',
+                    fontSize: '13px',
                     fontWeight: 700,
-                    marginBottom: '16px',
-                    outline: 'none',
-                    boxSizing: 'border-box',
                   }}
-                />
-
-                <div style={{ marginBottom: '16px' }}>
-                  <div style={{ fontSize: '12.5px', fontWeight: 700, color: '#1b1716', marginBottom: '8px' }}>
-                    Moyens de paiement acceptés par FeexPay :
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '8px' }}>
-                    {/* MTN */}
-                    <div style={{ padding: '8px 10px', background: '#ffffff', border: '1.5px solid #e2e8f0', borderRadius: '10px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', fontWeight: 700, color: '#1e293b', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
-                      <svg width="36" height="24" viewBox="0 0 60 40" fill="none" style={{ borderRadius: '4px', flexShrink: 0 }}>
-                        <rect width="60" height="40" rx="6" fill="#FFCC00"/>
-                        <ellipse cx="30" cy="20" rx="22" ry="13" stroke="#000000" strokeWidth="2.5" fill="none"/>
-                        <text x="30" y="24.5" textAnchor="middle" fill="#000000" fontFamily="Arial, sans-serif" fontWeight="900" fontSize="13" letterSpacing="0.5">MTN</text>
-                      </svg>
-                      <span>MTN MoMo</span>
-                    </div>
-
-                    {/* Moov Money */}
-                    <div style={{ padding: '8px 10px', background: '#ffffff', border: '1.5px solid #e2e8f0', borderRadius: '10px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', fontWeight: 700, color: '#1e293b', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
-                      <svg width="36" height="24" viewBox="0 0 60 40" fill="none" style={{ borderRadius: '4px', flexShrink: 0 }}>
-                        <rect width="60" height="40" rx="6" fill="#005CA9"/>
-                        <path d="M6 34C18 34 22 18 32 18C42 18 46 34 54 34" stroke="#F37023" strokeWidth="3" strokeLinecap="round" fill="none"/>
-                        <text x="30" y="17" textAnchor="middle" fill="#FFFFFF" fontFamily="Arial, sans-serif" fontWeight="900" fontSize="10" letterSpacing="-0.3">moov</text>
-                        <text x="30" y="29" textAnchor="middle" fill="#F37023" fontFamily="Arial, sans-serif" fontWeight="800" fontSize="7.5" letterSpacing="0.8">MONEY</text>
-                      </svg>
-                      <span>Moov Money</span>
-                    </div>
-
-                    {/* Celtiis Cash */}
-                    <div style={{ padding: '8px 10px', background: '#ffffff', border: '1.5px solid #e2e8f0', borderRadius: '10px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', fontWeight: 700, color: '#1e293b', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
-                      <svg width="36" height="24" viewBox="0 0 60 40" fill="none" style={{ borderRadius: '4px', flexShrink: 0 }}>
-                        <rect width="60" height="40" rx="6" fill="#082A4D"/>
-                        <circle cx="16" cy="18" r="7" fill="#00A859"/>
-                        <path d="M16 13L21 21H11L16 13Z" fill="#FFFFFF"/>
-                        <text x="38" y="17" textAnchor="middle" fill="#00A859" fontFamily="Arial, sans-serif" fontWeight="900" fontSize="9" letterSpacing="-0.2">celtiis</text>
-                        <text x="38" y="27" textAnchor="middle" fill="#FFFFFF" fontFamily="Arial, sans-serif" fontWeight="800" fontSize="7.5" letterSpacing="0.5">cash</text>
-                      </svg>
-                      <span>Celtis Cash</span>
-                    </div>
-
-                    {/* Carte Bancaire */}
-                    <div style={{ padding: '8px 10px', background: '#ffffff', border: '1.5px solid #e2e8f0', borderRadius: '10px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', fontWeight: 700, color: '#1e293b', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
-                      <svg width="42" height="24" viewBox="0 0 70 40" fill="none" style={{ borderRadius: '4px', flexShrink: 0, border: '1px solid #e2e8f0' }}>
-                        <rect width="70" height="40" rx="6" fill="#F8FAFC"/>
-                        <text x="18" y="24" textAnchor="middle" fill="#1A1F71" fontFamily="Arial, sans-serif" fontWeight="900" fontSize="12" fontStyle="italic" letterSpacing="-0.5">VISA</text>
-                        <circle cx="46" cy="20" r="9" fill="#EB001B"/>
-                        <circle cx="56" cy="20" r="9" fill="#F79E1B" fillOpacity="0.88"/>
-                      </svg>
-                      <span>Carte Bancaire</span>
-                    </div>
-                  </div>
+                >
+                  <CheckCircle2 size={18} color="#16a34a" />
+                  Commande finalisée : article remis en main propre.
                 </div>
+              )}
+            </div>
 
-                <div style={{ marginBottom: '18px', padding: '10px 12px', background: '#f8fafc', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '12px', color: '#475569', lineHeight: 1.45 }}>
-                  🔒 Le paiement sécurisé s'effectue sur le module officiel FeexPay. Vous pourrez y choisir librement votre méthode : <b>MTN MoMo</b>, <b>Moov Money</b>, <b>Celtis Cash</b> ou <b>Carte Bancaire (Visa / Mastercard)</b>.
-                </div>
+              {/* COLONNE DROITE : historique */}
+              <div
+                style={{
+                  background: '#ffffff',
+                  borderRadius: '24px',
+                  border: '1px solid #eee7e0',
+                  padding: '24px',
+                  boxShadow: '0 2px 12px rgba(0,0,0,0.03)',
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '8px' }}>
+                  <div>
+                    <h3 style={{ fontSize: '18px', fontWeight: 800, color: '#1b1716', margin: 0 }}>
+                      Historique de transactions
+                    </h3>
+                    <small style={{ color: '#706966', fontSize: '12px' }}>
+                      Versements rattachés à {p.n || 'cette cagnotte'}
+                    </small>
+                  </div>
 
-                {paymentData && Number(paymentData.amount) === Number(depositAmount) ? (
-                  <FeexPayProvider>
-                    <FeexPayButton
-                      id={paymentData.shop_id}
-                      token={paymentData.api_key}
-                      amount={paymentData.amount}
-                      description={`Takapay - Versement ${targetName}`}
-                      mode={paymentData.mode || 'SANDBOX'}
-                      currency="XOF"
-                      customId={paymentData.reference}
-                      callback_info={{
-                        fullname: `${user?.prenom || ''} ${user?.nom || ''}`.trim() || user?.nom || 'Client',
-                        first_name: user?.prenom || user?.nom || 'Client',
-                        last_name: user?.nom || '',
-                        email: (user?.email && !user.email.endsWith('@client.takapay.bj')) ? user.email : '',
-                        phone: (user?.telephone || user?.phone || depositPhone || '').replace(/\D/g, '').replace(/^229/, ''),
-                        phoneNumber: (user?.telephone || user?.phone || depositPhone || '').replace(/\D/g, '').replace(/^229/, ''),
-                      }}
-                      callback={handleFeexpayCallback}
-                      buttonText={`Payer ${formatFCFA(Number(paymentData.amount))} avec FeexPay`}
-                      buttonClass="client-btn w100"
-                    />
-                  </FeexPayProvider>
-                ) : (
-                  <button
-                    type="submit"
-                    disabled={isSubmitting}
+                  <span
                     style={{
-                      ...primaryButtonStyle,
-                      width: '100%',
-                      padding: '14px',
-                      borderRadius: '14px',
-                      fontSize: '15px',
-                      opacity: isSubmitting ? 0.8 : 1,
-                      cursor: isSubmitting ? 'wait' : 'pointer',
+                      fontSize: '11.5px',
+                      fontWeight: 700,
+                      color: '#706966',
+                      background: '#faf6f3',
+                      padding: '4px 10px',
+                      borderRadius: '99px',
+                      border: '1px solid #eee7e0',
                     }}
                   >
-                    {isSubmitting
-                      ? 'Préparation FeexPay...'
-                      : `Payer ${formatFCFA(Number(depositAmount) || 0)} avec FeexPay`}
-                  </button>
-                )}
-              </form>
-            )}
-          </div>
+                    {filteredTransactions.length} transaction{filteredTransactions.length > 1 ? 's' : ''}
+                  </span>
+                </div>
+
+                {/* Filtres */}
+                <div style={{ display: 'flex', gap: '8px', marginBottom: '20px', overflowX: 'auto', paddingBottom: '4px' }}>
+                  {FILTERS.map((filtre) => {
+                    const isActive = activeFilter === filtre;
+                    return (
+                      <button
+                        key={filtre}
+                        type="button"
+                        onClick={() => setActiveFilter(filtre)}
+                        style={{
+                          padding: '7px 16px',
+                          borderRadius: '99px',
+                          border: isActive ? 'none' : '1px solid #e8e0d6',
+                          background: isActive ? '#dc2626' : '#ffffff',
+                          color: isActive ? '#ffffff' : '#2b2624',
+                          fontSize: '12.5px',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          whiteSpace: 'nowrap',
+                          boxShadow: isActive ? '0 2px 8px rgba(220, 38, 38, 0.25)' : 'none',
+                          transition: 'all .15s',
+                        }}
+                      >
+                        {filtre}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Liste des versements */}
+                <div style={{ display: 'grid', gap: '12px', marginBottom: '20px' }}>
+                  {filteredTransactions.map((tx, idx) => {
+                    const isRefund =
+                      tx.type === 'annulation' ||
+                      tx.type === 'remboursement' ||
+                      tx.titre?.toLowerCase().includes('annulation') ||
+                      tx.titre?.toLowerCase().includes('remboursement') ||
+                      tx.titre?.toLowerCase().includes('renvoyé') ||
+                      tx.reference?.startsWith('REM-') ||
+                      tx.reference?.includes('ANNUL');
+
+                    const isRefundExecuted =
+                      isRefund &&
+                      (isRefundCompleted ||
+                        tx.statut === 'succes' ||
+                        tx.statut === 'reussi' ||
+                        tx.statut === 'Argent renvoyé');
+
+                    const isReactivate = tx.type === 'reactivation' || tx.titre?.toLowerCase().includes('rétablie');
+
+                    let displayTitle = 'Versement cagnotte (Cotisation)';
+                    if (isRefund) {
+                      displayTitle = isRefundExecuted
+                        ? 'Argent renvoyé (Remboursement)'
+                        : 'Remboursement programmé (sous 24H)';
+                    } else if (isReactivate) {
+                      displayTitle = 'Cagnotte rétablie';
+                    } else if (
+                      tx.titre &&
+                      tx.titre !== 'Versement cagnotte' &&
+                      !tx.titre.toLowerCase().includes('demande d’annulation')
+                    ) {
+                      displayTitle = tx.titre;
+                    } else {
+                      displayTitle = 'Versement cagnotte (Cotisation)';
+                    }
+
+                    return (
+                      <div
+                        key={tx.id}
+                        onClick={() => setSelectedReceipt(tx)}
+                        style={{
+                          background: isRefund ? '#fffcf9' : '#ffffff',
+                          border: isRefund ? '1.5px solid #fed7aa' : '1px solid #ece5df',
+                          borderRadius: '16px',
+                          padding: '14px 16px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '14px',
+                          boxShadow: '0 1px 4px rgba(0,0,0,0.02)',
+                          cursor: 'pointer',
+                          transition: 'transform .15s, border-color .15s',
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.transform = 'translateY(-1px)';
+                          e.currentTarget.style.borderColor = isRefund ? '#f97316' : '#d9d0c7';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.transform = 'none';
+                          e.currentTarget.style.borderColor = isRefund ? '#fed7aa' : '#ece5df';
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: '42px',
+                            height: '42px',
+                            borderRadius: '50%',
+                            background: isRefund ? (isRefundExecuted ? '#ffedd5' : '#fef3c7') : isReactivate ? '#fef3c7' : '#f3ece6',
+                            display: 'grid',
+                            placeItems: 'center',
+                            fontSize: '18px',
+                            color: isRefund ? (isRefundExecuted ? '#c2410c' : '#b45309') : isReactivate ? '#b45309' : '#4b443f',
+                            flexShrink: 0,
+                          }}
+                        >
+                          {isRefund ? (isRefundExecuted ? '↩️' : '⏳') : isReactivate ? '🔄' : '💳'}
+                        </div>
+
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                            <b style={{ fontSize: '14.5px', color: isRefund ? (isRefundExecuted ? '#c2410c' : '#b45309') : '#1b1716' }}>
+                              {displayTitle}
+                            </b>
+                            <small style={{ fontSize: '11px', color: '#8c8580' }}>{tx.reference || tx.id}</small>
+                          </div>
+                          <span style={{ fontSize: '12px', color: '#706966', display: 'block', marginTop: '2px' }}>
+                            {isRefund
+                              ? (isRefundExecuted ? 'Virement Mobile Money sortant (Remboursement)' : 'Remboursement Mobile Money programmé sous 24H')
+                              : tx.methode}
+                          </span>
+                          <span style={{ fontSize: '11px', color: '#9e958f' }}>{tx.date}</span>
+                        </div>
+
+                        <div style={{ textAlign: 'right', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <div>
+                            <b style={{ fontSize: '15px', color: isRefund ? (isRefundExecuted ? '#c2410c' : '#b45309') : '#1b1716', display: 'block' }}>
+                              {isRefund
+                                ? `- ${formatFCFA(tx.montant)}`
+                                : isReactivate
+                                  ? '—'
+                                  : `+ ${formatFCFA(tx.montant)}`}
+                            </b>
+                            <span
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                fontSize: '11px',
+                                fontWeight: 700,
+                                color: isRefund ? (isRefundExecuted ? '#c2410c' : '#b45309') : isReactivate ? '#b45309' : '#15803d',
+                                background: isRefund ? (isRefundExecuted ? '#ffedd5' : '#fef3c7') : isReactivate ? '#fef3c7' : '#dcfce7',
+                                padding: '2px 8px',
+                                borderRadius: '99px',
+                                marginTop: '3px',
+                              }}
+                            >
+                              {isRefund
+                                ? (isRefundExecuted ? '↩ Argent renvoyé' : '⏳ En attente sous 24H')
+                                : isReactivate
+                                  ? '✔ Rétablie'
+                                  : '✔ Validé'}
+                            </span>
+                          </div>
+                          <span style={{ color: '#a09895', fontSize: '18px', fontWeight: 600 }}>›</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  {filteredTransactions.length === 0 && (
+                    <div style={{ textAlign: 'center', padding: '36px 16px', color: '#8c8580', fontSize: '13.5px' }}>
+                      Aucun versement enregistré pour cette période.
+                    </div>
+                  )}
+                </div>
+
+                {/* Synthèse des règlements */}
+                <div
+                  style={{
+                    background: '#faf6f3',
+                    borderRadius: '16px',
+                    padding: '16px 18px',
+                    border: '1px solid #f0e8e0',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    flexWrap: 'wrap',
+                    gap: '12px',
+                  }}
+                >
+                  <div>
+                    <small style={{ color: '#706966', fontSize: '11.5px', display: 'block' }}>
+                      Mode de prélèvement privilégié
+                    </small>
+                    <b style={{ fontSize: '13.5px', color: '#1b1716' }}>
+                      {cagnotte.moyenPaiement || 'MTN Mobile Money'}
+                      {(user?.telephone || user?.phone || depositPhone) &&
+                        ` (${user?.telephone || user?.phone || depositPhone})`}
+                    </b>
+                  </div>
+
+                  {!isFinished && !isCancelled && (
+                    <button
+                      type="button"
+                      onClick={() => openDeposit(cagnotte.id)}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: '#dc2626',
+                        fontWeight: 800,
+                        fontSize: '13px',
+                        cursor: 'pointer',
+                        textDecoration: 'underline',
+                      }}
+                    >
+                      + Ajouter un acompte
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Déclencheur FeexPay direct sans modal intermédiaire "Nouveau versement" */}
+      {paymentData && (
+        <div id="feexpay-deposit-container">
+          <style>{`#feexpay-deposit-container > div > button { display: none !important; }`}</style>
+          <FeexPayProvider>
+            <FeexPayButton
+              id={paymentData.shop_id}
+              token={paymentData.api_key}
+              amount={paymentData.amount}
+              description={`Takapay - Versement ${targetName}`}
+              mode={paymentData.mode || 'SANDBOX'}
+              currency="XOF"
+              customId={paymentData.reference}
+              callback_info={{
+                fullname: `${user?.prenom || ''} ${user?.nom || ''}`.trim() || user?.nom || 'Client',
+                first_name: user?.prenom || user?.nom || 'Client',
+                last_name: user?.nom || '',
+                email: (user?.email && !user.email.endsWith('@client.takapay.bj')) ? user.email : '',
+                phone: (user?.telephone || user?.phone || depositPhone || '').replace(/\D/g, '').replace(/^229/, ''),
+                phoneNumber: (user?.telephone || user?.phone || depositPhone || '').replace(/\D/g, '').replace(/^229/, ''),
+              }}
+              callback={handleFeexpayCallback}
+              buttonText="FeexPay"
+            />
+          </FeexPayProvider>
         </div>
       )}
 
@@ -2878,87 +2806,87 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
               color: '#1b1716',
             }}
           >
-          {(() => {
-            const isReceiptRefund =
-              selectedReceipt.type === 'annulation' ||
-              selectedReceipt.type === 'remboursement' ||
-              selectedReceipt.titre?.toLowerCase().includes('annulation') ||
-              selectedReceipt.titre?.toLowerCase().includes('remboursement') ||
-              selectedReceipt.titre?.toLowerCase().includes('renvoyé') ||
-              selectedReceipt.reference?.startsWith('REM-') ||
-              selectedReceipt.reference?.includes('ANNUL');
+            {(() => {
+              const isReceiptRefund =
+                selectedReceipt.type === 'annulation' ||
+                selectedReceipt.type === 'remboursement' ||
+                selectedReceipt.titre?.toLowerCase().includes('annulation') ||
+                selectedReceipt.titre?.toLowerCase().includes('remboursement') ||
+                selectedReceipt.titre?.toLowerCase().includes('renvoyé') ||
+                selectedReceipt.reference?.startsWith('REM-') ||
+                selectedReceipt.reference?.includes('ANNUL');
 
-            const isReceiptExecuted =
-              isReceiptRefund &&
-              (isRefundCompleted ||
-                selectedReceipt.statut === 'succes' ||
-                selectedReceipt.statut === 'reussi' ||
-                selectedReceipt.statut === 'Argent renvoyé');
+              const isReceiptExecuted =
+                isReceiptRefund &&
+                (isRefundCompleted ||
+                  selectedReceipt.statut === 'succes' ||
+                  selectedReceipt.statut === 'reussi' ||
+                  selectedReceipt.statut === 'Argent renvoyé');
 
-            return (
-              <>
-                <div style={{ textAlign: 'center', marginBottom: '20px', borderBottom: '1px dashed #ded6cd', paddingBottom: '16px' }}>
-                  <span style={{ fontSize: '28px' }}>
-                    {isReceiptRefund ? (isReceiptExecuted ? '↩️' : '⏳') : '🧾'}
-                  </span>
-                  <h3 style={{ fontSize: '18px', fontWeight: 800, margin: '8px 0 2px' }}>
-                    {isReceiptRefund
-                      ? (isReceiptExecuted ? 'Avis d’argent renvoyé (Remboursement)' : 'Demande de remboursement (sous 24H)')
-                      : 'Reçu de versement Takapay'}
-                  </h3>
-                  <small style={{ color: '#706966', fontSize: '12px' }}>
-                    Référence : {selectedReceipt.reference || selectedReceipt.id}
-                  </small>
-                </div>
-
-                <div style={{ display: 'grid', gap: '10px', fontSize: '13px', marginBottom: '20px' }}>
-                  {[
-                    ['Bénéficiaire :', <b key="b">{selectedReceipt.client || clientName}</b>],
-                    ['Cagnotte article :', <b key="a">{p.n || '—'}</b>],
-                    ['Moyen utilisé :', <b key="m">{selectedReceipt.methode}</b>],
-                    ['Date & heure :', <b key="d">{selectedReceipt.date}</b>],
-                    [
-                      'Statut :',
-                      <span
-                        key="s"
-                        style={{
-                          color: isReceiptRefund ? (isReceiptExecuted ? '#c2410c' : '#b45309') : '#15803d',
-                          fontWeight: 700,
-                        }}
-                      >
-                        {isReceiptRefund ? (isReceiptExecuted ? '↩ Argent renvoyé' : '⏳ En attente de virement') : '✔ Validé'}
-                      </span>,
-                    ],
-                  ].map(([label, value]) => (
-                    <div key={label} style={{ display: 'flex', justifyContent: 'space-between', gap: '12px' }}>
-                      <span style={{ color: '#706966' }}>{label}</span>
-                      {value}
-                    </div>
-                  ))}
-                  <div
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      paddingTop: '10px',
-                      borderTop: '1px solid #eee7e0',
-                      fontSize: '15px',
-                    }}
-                  >
-                    <span>
-                      {isReceiptRefund
-                        ? (isReceiptExecuted ? 'Argent renvoyé au client :' : 'Argent à renvoyer sous 24H :')
-                        : 'Montant versé (Cotisation) :'}
+              return (
+                <>
+                  <div style={{ textAlign: 'center', marginBottom: '20px', borderBottom: '1px dashed #ded6cd', paddingBottom: '16px' }}>
+                    <span style={{ fontSize: '28px' }}>
+                      {isReceiptRefund ? (isReceiptExecuted ? '↩️' : '⏳') : '🧾'}
                     </span>
-                    <b style={{ color: isReceiptRefund ? (isReceiptExecuted ? '#c2410c' : '#b45309') : '#dc2626' }}>
+                    <h3 style={{ fontSize: '18px', fontWeight: 800, margin: '8px 0 2px' }}>
                       {isReceiptRefund
-                        ? `- ${formatFCFA(selectedReceipt.montant)}`
-                        : `+ ${formatFCFA(selectedReceipt.montant)}`}
-                    </b>
+                        ? (isReceiptExecuted ? 'Avis d’argent renvoyé (Remboursement)' : 'Demande de remboursement (sous 24H)')
+                        : 'Reçu de versement Takapay'}
+                    </h3>
+                    <small style={{ color: '#706966', fontSize: '12px' }}>
+                      Référence : {selectedReceipt.reference || selectedReceipt.id}
+                    </small>
                   </div>
-                </div>
-              </>
-            );
-          })()}
+
+                  <div style={{ display: 'grid', gap: '10px', fontSize: '13px', marginBottom: '20px' }}>
+                    {[
+                      ['Bénéficiaire :', <b key="b">{selectedReceipt.client || clientName}</b>],
+                      ['Cagnotte article :', <b key="a">{p.n || '—'}</b>],
+                      ['Moyen utilisé :', <b key="m">{selectedReceipt.methode}</b>],
+                      ['Date & heure :', <b key="d">{selectedReceipt.date}</b>],
+                      [
+                        'Statut :',
+                        <span
+                          key="s"
+                          style={{
+                            color: isReceiptRefund ? (isReceiptExecuted ? '#c2410c' : '#b45309') : '#15803d',
+                            fontWeight: 700,
+                          }}
+                        >
+                          {isReceiptRefund ? (isReceiptExecuted ? '↩ Argent renvoyé' : '⏳ En attente de virement') : '✔ Validé'}
+                        </span>,
+                      ],
+                    ].map(([label, value]) => (
+                      <div key={label} style={{ display: 'flex', justifyContent: 'space-between', gap: '12px' }}>
+                        <span style={{ color: '#706966' }}>{label}</span>
+                        {value}
+                      </div>
+                    ))}
+                    <div
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        paddingTop: '10px',
+                        borderTop: '1px solid #eee7e0',
+                        fontSize: '15px',
+                      }}
+                    >
+                      <span>
+                        {isReceiptRefund
+                          ? (isReceiptExecuted ? 'Argent renvoyé au client :' : 'Argent à renvoyer sous 24H :')
+                          : 'Montant versé (Cotisation) :'}
+                      </span>
+                      <b style={{ color: isReceiptRefund ? (isReceiptExecuted ? '#c2410c' : '#b45309') : '#dc2626' }}>
+                        {isReceiptRefund
+                          ? `- ${formatFCFA(selectedReceipt.montant)}`
+                          : `+ ${formatFCFA(selectedReceipt.montant)}`}
+                      </b>
+                    </div>
+                  </div>
+                </>
+              );
+            })()}
 
             <div style={{ display: 'flex', gap: '10px' }}>
               <button
@@ -3131,7 +3059,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                         Math.max(
                           0,
                           (cagnotte.montantVerse || 0) -
-                            Math.round(((cagnotte.montantVerse || 0) * 5) / 100)
+                          Math.round(((cagnotte.montantVerse || 0) * 5) / 100)
                         )
                       )}
                     </b>

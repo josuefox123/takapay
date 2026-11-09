@@ -26,6 +26,9 @@ window.fetch = async (...args) => {
         if (parsedBody.network && !parsedBody.reseau) {
           parsedBody.reseau = parsedBody.network;
         }
+        if (window.__takapayCurrentDepositAmount && Number(window.__takapayCurrentDepositAmount) > 0) {
+          parsedBody.amount = Number(window.__takapayCurrentDepositAmount);
+        }
       } catch {
         parsedBody = null;
       }

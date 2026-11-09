@@ -54,7 +54,7 @@ class TransactionResource extends JsonResource
                     : ($this->type === 'commande_cash' ? 'Paiement comptant' : 'Cotisation cagnotte')),
             'devise'             => $this->devise,
 
-            'date'               => $this->date?->toIso8601String(),
+            'date'               => ($this->date ?? $this->created_at)?->toIso8601String(),
             'created_at'         => $this->created_at?->toIso8601String(),
             'updated_at'         => $this->updated_at?->toIso8601String(),
         ];

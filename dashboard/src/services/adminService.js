@@ -551,6 +551,29 @@ export const adminService = {
     return [];
   },
 
+  async getClientTransactions(userId = null) {
+    const token = this.getClientToken() || this.getToken();
+    try {
+      const url = userId ? `${API_BASE}/transactions?user_id=${encodeURIComponent(userId)}` : `${API_BASE}/transactions`;
+      const res = await fetch(url, {
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          Accept: 'application/json',
+        },
+      });
+      if (res.ok) {
+        const json = await res.json();
+        const list = json.data || json;
+        if (Array.isArray(list)) {
+          return list;
+        }
+      }
+    } catch (_e) {
+      void _e;
+    }
+    return [];
+  },
+
   // GESTION DU CARROUSEL / BANNIÈRES
   async getCarousels(all = false) {
     const token = this.getToken();
@@ -1929,6 +1952,75 @@ export const registerFeexpayWatchdog = (callback) => {
           img.dataset.takapayLogo = 'true';
         }
       });
+
+      // Retirer "MARCHAND: Takapay Store ID : 4HgUAuyVdYvnMPc" pour ne laisser que le logo Takapay
+      modal.querySelectorAll('div.border-b div.text-right, div.border-b.border-gray-200 div.text-right').forEach((el) => {
+        el.style.display = 'none';
+      });
+
+      // Injection du champ d'insertion du montant
+      const formBody = modal.querySelector('div.overflow-y-auto');
+      if (formBody && !formBody.querySelector('[data-takapay-amount-box]')) {
+        const amountBox = document.createElement('div');
+        amountBox.dataset.takapayAmountBox = 'true';
+        amountBox.style.cssText = 'background: #ffffff; padding: 12px 14px; border-radius: 14px; border: 1.5px solid #fed7aa; margin-bottom: 14px; box-shadow: 0 2px 8px rgba(0,0,0,0.03);';
+        
+        const curAmount = window.__takapayCurrentDepositAmount || 10000;
+        
+        amountBox.innerHTML = `
+          <label style="display: block; font-size: 12.5px; font-weight: 800; color: #1e293b; margin-bottom: 6px;">
+            Montant du versement (FCFA) :
+          </label>
+          <div style="position: relative; display: flex; align-items: center;">
+            <input
+              type="number"
+              min="1"
+              step="1"
+              value="${curAmount}"
+              data-takapay-amount-input="true"
+              placeholder="Ex: 25000"
+              style="width: 100%; padding: 10px 56px 10px 14px; border: 1.5px solid #fdba74; border-radius: 10px; font-size: 16px; font-weight: 800; color: #0f172a; outline: none; background: #fffcf9; box-sizing: border-box;"
+            />
+            <span style="position: absolute; right: 12px; font-size: 12px; font-weight: 800; color: #ea580c; pointer-events: none;">FCFA</span>
+          </div>
+        `;
+
+        formBody.insertBefore(amountBox, formBody.firstChild);
+
+        // Masquer le texte d'origine "Vous allez payer X OF" pour un affichage épuré
+        formBody.querySelectorAll('p.text-sm.text-gray-600.text-center.mb-4, h2.font-bold.text-center').forEach((el) => {
+          el.style.display = 'none';
+        });
+
+        const input = amountBox.querySelector('input');
+        input.addEventListener('input', (e) => {
+          const val = parseInt(e.target.value, 10);
+          if (val > 0) {
+            window.__takapayCurrentDepositAmount = val;
+
+            // Mettre à jour les récapitulatifs dans la modale FeexPay
+            const recapBox = modal.querySelector('div.bg-gray-50.p-4.rounded-md');
+            if (recapBox) {
+              const rows = recapBox.querySelectorAll('div.flex.justify-between');
+              if (rows.length >= 1) {
+                const amountSpan = rows[0].querySelector('span.font-medium, span:last-child');
+                if (amountSpan) amountSpan.textContent = `${val.toLocaleString('fr-FR')} XOF`;
+              }
+              if (rows.length >= 3) {
+                const totalSpan = rows[2].querySelector('span:last-child');
+                if (totalSpan) totalSpan.textContent = `${val.toLocaleString('fr-FR')} XOF`;
+              }
+            }
+
+            // Mettre à jour le texte du bouton Payer
+            modal.querySelectorAll('button').forEach((btn) => {
+              if (btn.textContent.includes('Payer')) {
+                btn.textContent = `Payer ${val.toLocaleString('fr-FR')} XOF`;
+              }
+            });
+          }
+        });
+      }
 
       // Remplacement de Mobile Money / Carte Bancaire / Wallet par MTN / MOOV / CELTIS
       const allTabBars = Array.from(modal.querySelectorAll('div.flex.justify-center.mb-6.border-b.pb-4, [data-takapay-networks="true"]'));

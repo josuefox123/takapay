@@ -655,20 +655,39 @@ export const mapBackendCagnotteToClient = (c) => {
     const isFailed = ['echoue', 'échec', 'échoué', 'failed', 'cancelled'].includes(normalizedStatus);
     const isPending = normalizedStatus === 'en_attente';
 
+    let periode = 'plus_ancien';
+    const txDateStr = t.date || t.created_at;
+    if (txDateStr) {
+      const txTime = new Date(txDateStr).getTime();
+      if (!isNaN(txTime)) {
+        const diffDays = (Date.now() - txTime) / (1000 * 60 * 60 * 24);
+        if (diffDays <= 1) {
+          periode = 'aujourdhui';
+        } else if (diffDays <= 7) {
+          periode = '7_jours';
+        } else if (diffDays <= 30) {
+          periode = '30_jours';
+        }
+      }
+    } else {
+      periode = 'aujourdhui';
+    }
+
     return {
       id: `tx-${t.id}`,
       reference: t.reference_externe || `TK-${t.id}`,
       titre: isRefundTx
         ? (isExecuted ? 'Argent renvoyé (Remboursement)' : 'Remboursement en attente')
-        : 'Versement cagnotte',
+        : (t.type === 'paiement_cash' ? 'Paiement comptant' : 'Versement cagnotte'),
       methode: t.moyen_paiement || c.moyen_paiement || 'MTN Mobile Money',
-      date: t.date ? new Date(t.date).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Récemment',
+      date: txDateStr ? new Date(txDateStr).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Récemment',
+      rawDate: txDateStr,
       montant: Number(t.montant || 0),
       statut: isRefundTx
         ? (isExecuted ? 'Argent renvoyé' : (isPending ? 'En attente' : (t.statut || 'En attente')))
         : (isExecuted ? 'Réussi' : (isFailed ? 'Échoué' : (isPending ? 'En attente' : (t.statut || 'En attente')))),
       type: isRefundTx ? 'remboursement' : (t.type || 'versement'),
-      periode: 'aujourdhui',
+      periode,
     };
   });
   const hasConfirmedPayment = rawTransactions.some((t) =>
