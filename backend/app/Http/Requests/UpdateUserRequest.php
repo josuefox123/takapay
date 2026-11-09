@@ -12,7 +12,22 @@ class UpdateUserRequest extends FormRequest
      */
     public function authorize(): bool
     {
-        return $this->user()?->isAdmin() ?? false;
+        $user = $this->user();
+        if (! $user) {
+            return false;
+        }
+
+        if ($user->role === 'super_admin') {
+            return true;
+        }
+
+        // Un admin standard ne peut pas modifier un administrateur ni un super_admin
+        $targetUser = $this->route('user');
+        if ($targetUser instanceof \App\Models\User && in_array($targetUser->role, ['admin', 'super_admin'], true)) {
+            return false;
+        }
+
+        return $user->isAdmin();
     }
 
     protected function prepareForValidation(): void

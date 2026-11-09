@@ -12,7 +12,17 @@ class StoreUserRequest extends FormRequest
      */
     public function authorize(): bool
     {
-        return $this->user()?->isAdmin() ?? false;
+        $user = $this->user();
+        if (! $user) {
+            return false;
+        }
+
+        // Seul le super_admin est autorisé à créer des comptes administrateurs ou super_admin
+        if ($this->has('role') && in_array($this->role, ['admin', 'super_admin'], true)) {
+            return $user->role === 'super_admin';
+        }
+
+        return $user->isAdmin();
     }
 
     protected function prepareForValidation(): void

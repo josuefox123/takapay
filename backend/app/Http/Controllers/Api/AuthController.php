@@ -423,6 +423,18 @@ class AuthController extends Controller
             $user->tokens()->delete();
         }
 
+        // Alerte de sécurité par email pour les comptes administrateurs
+        if (in_array($user->role, ['admin', 'super_admin']) && ! empty($user->email)) {
+            try {
+                Mail::raw("Bonjour {$user->prenom} {$user->nom},\n\nLe mot de passe de votre compte administrateur TakaPay a été modifié avec succès le " . now()->format('d/m/Y à H:i') . ".\n\nToutes vos autres sessions actives ont été déconnectées par mesure de sécurité.\n\nSi vous n'êtes pas à l'origine de cette action, veuillez contacter immédiatement l'équipe technique.", function ($message) use ($user) {
+                    $message->to($user->email)
+                        ->subject('Alerte Sécurité : Modification de votre mot de passe TakaPay');
+                });
+            } catch (\Throwable $e) {
+                Log::warning("Impossible d'envoyer l'alerte email de modification de mot de passe : " . $e->getMessage());
+            }
+        }
+
         // Notification in-app et email si renseigné
         $this->notifyPinChanged($user);
 
@@ -471,6 +483,18 @@ class AuthController extends Controller
             $user->tokens()->where('id', '!=', $currentTokenId)->delete();
         } else {
             $user->tokens()->delete();
+        }
+
+        // Alerte de sécurité par email pour les comptes administrateurs
+        if (in_array($user->role, ['admin', 'super_admin']) && ! empty($user->email)) {
+            try {
+                Mail::raw("Bonjour {$user->prenom} {$user->nom},\n\nLe mot de passe de votre compte administrateur TakaPay a été modifié avec succès le " . now()->format('d/m/Y à H:i') . ".\n\nToutes vos autres sessions actives ont été déconnectées par mesure de sécurité.\n\nSi vous n'êtes pas à l'origine de cette action, veuillez contacter immédiatement l'équipe technique.", function ($message) use ($user) {
+                    $message->to($user->email)
+                        ->subject('Alerte Sécurité : Modification de votre mot de passe TakaPay');
+                });
+            } catch (\Throwable $e) {
+                Log::warning("Impossible d'envoyer l'alerte email de modification de mot de passe : " . $e->getMessage());
+            }
         }
 
         return response()->json([

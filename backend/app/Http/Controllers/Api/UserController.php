@@ -21,13 +21,52 @@ class UserController extends Controller
      */
     public function index(Request $request): AnonymousResourceCollection
     {
-        $query = User::orderBy('nom', 'asc')->orderBy('prenom', 'asc');
+        $baseQuery = User::query();
 
+        // Si l'utilisateur connecté n'est pas super_admin, masquer les comptes super_admin
         if ($request->user()?->role !== 'super_admin') {
-            $query->where('role', '!=', 'super_admin');
+            $baseQuery->where('role', '!=', 'super_admin');
         }
 
-        return UserResource::collection($query->paginate(15));
+        // Compteurs réels sur l'ensemble de la base
+        $counts = [
+            'total' => (clone $baseQuery)->count(),
+            'client' => (clone $baseQuery)->where('role', 'client')->count(),
+            'livreur' => (clone $baseQuery)->where('role', 'livreur')->count(),
+            'admin' => (clone $baseQuery)->where(function ($q) use ($request) {
+                if ($request->user()?->role === 'super_admin') {
+                    $q->whereIn('role', ['admin', 'super_admin']);
+                } else {
+                    $q->where('role', 'admin');
+                }
+            })->count(),
+        ];
+
+        $query = clone $baseQuery;
+
+        if ($request->filled('role') && $request->role !== 'tous') {
+            $query->where('role', $request->role);
+        }
+
+        if ($request->filled('q')) {
+            $q = trim($request->q);
+            $query->where(function ($sub) use ($q) {
+                $sub->where('nom', 'like', "%{$q}%")
+                    ->orWhere('prenom', 'like', "%{$q}%")
+                    ->orWhere('email', 'like', "%{$q}%")
+                    ->orWhere('telephone', 'like', "%{$q}%");
+            });
+        }
+
+        $query->latest();
+
+        $perPage = (int) $request->input('per_page', 15);
+        if ($perPage <= 0 || $perPage > 100) {
+            $perPage = 15;
+        }
+
+        return UserResource::collection($query->paginate($perPage))
+            ->additional(['counts' => $counts]);
     }
 
     /**
@@ -100,6 +139,11 @@ class UserController extends Controller
 
         $user->update($data);
         $updatedUser = $user->fresh();
+
+        // Révoquer immédiatement toutes les sessions actives en cas de réinitialisation du mot de passe
+        if (! empty($plainPassword)) {
+            $user->tokens()->delete();
+        }
 
         if (! empty($updatedUser->email)) {
             try {
