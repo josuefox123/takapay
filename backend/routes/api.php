@@ -133,6 +133,9 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
             // Commandes (vue admin avec relations)
             Route::get('/commandes', [CommandeController::class, 'adminIndex']);
 
+            // Cagnottes (vue admin avec visibilité complète super_admin)
+            Route::get('/cagnottes', [CagnotteController::class, 'adminIndex']);
+
             // Produits & médias
             Route::post('/produits', [AdminController::class, 'storeFullProduit']);
             Route::post('/upload-video', [AdminController::class, 'uploadVideo']);
