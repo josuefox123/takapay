@@ -16,6 +16,7 @@ class LoginRequest extends FormRequest
         return [
             'identifiant' => ['required', 'string'],
             'password' => ['required', 'string'],
+            'portal' => ['nullable', 'string', 'in:client,admin,auto'],
         ];
     }
 }

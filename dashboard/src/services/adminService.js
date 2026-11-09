@@ -317,6 +317,7 @@ export const adminService = {
       body: JSON.stringify({
         identifiant: (identifiant || '').trim(),
         password: (password || '').trim(),
+        portal: 'admin',
       }),
     });
 
@@ -370,7 +371,7 @@ export const adminService = {
         'Content-Type': 'application/json',
         Accept: 'application/json',
       },
-      body: JSON.stringify({ identifiant, password }),
+      body: JSON.stringify({ identifiant, password, portal: 'client' }),
     });
 
     const data = await res.json().catch(() => ({}));
