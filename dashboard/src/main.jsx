@@ -108,14 +108,6 @@ if (typeof window !== 'undefined') {
     } catch {
       // Ignorer
     }
-    if (!u) {
-      try {
-        const s2 = localStorage.getItem('takapay_admin_user');
-        if (s2) u = JSON.parse(s2);
-      } catch {
-        // Ignorer
-      }
-    }
     if (!u) return null;
 
     const fullName = `${u.prenom || ''} ${u.nom || ''}`.trim() || u.nom || u.prenom || u.name || '';
@@ -130,13 +122,14 @@ if (typeof window !== 'undefined') {
 
   const tryPrefillFeexpayModal = () => {
     try {
-      // Détection et marquage de la modal FeexPay pour le style et le z-index
+      // Détection stricte de la modal FeexPay uniquement (ne jamais appliquer au reste de l'application)
       const feexpayModalEl = document.querySelector('img[src*="feexpay"]')?.closest('.fixed.inset-0') ||
-        document.querySelector('input[placeholder*="téléphone"]')?.closest('.fixed.inset-0') ||
-        document.querySelector('input[placeholder*="telephone"]')?.closest('.fixed.inset-0') ||
-        document.querySelector('div.fixed.inset-0.z-50');
+        document.querySelector('.fixed.inset-0 img[src*="feexpay"]')?.closest('.fixed.inset-0') ||
+        document.querySelector('.feexpay-modal-overlay-custom');
 
-      if (feexpayModalEl && !feexpayModalEl.classList.contains('feexpay-modal-overlay-custom')) {
+      if (!feexpayModalEl) return;
+
+      if (!feexpayModalEl.classList.contains('feexpay-modal-overlay-custom')) {
         feexpayModalEl.classList.add('feexpay-modal-overlay-custom');
         const card = feexpayModalEl.querySelector('.bg-white.rounded-lg') || feexpayModalEl.querySelector('.max-w-md');
         if (card) card.classList.add('feexpay-modal-card-custom');
@@ -146,9 +139,7 @@ if (typeof window !== 'undefined') {
       if (!clientInfo) return;
 
       const { fullName, phoneDigits, email } = clientInfo;
-
-      const modalScope = feexpayModalEl || document;
-      const inputs = Array.from(modalScope.querySelectorAll('input'));
+      const inputs = Array.from(feexpayModalEl.querySelectorAll('input'));
 
       inputs.forEach((input) => {
         const ph = (input.getAttribute('placeholder') || '').toLowerCase();
