@@ -17,6 +17,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Str;
 
 class PaymentController extends Controller
 {
@@ -78,7 +79,7 @@ class PaymentController extends Controller
         }
         $amount = $requestedAmount;
         $fullProductPrice = $amount;
-        $reference = 'CMD_'.time().'_'.rand(1000, 9999);
+        $reference = 'CMD_'.(string) Str::uuid();
         $commande = null;
 
         // Cas 1 : Versement ultérieur sur une cagnotte existante (ClientCagnotteView)
@@ -109,7 +110,7 @@ class PaymentController extends Controller
             }
 
             $amount = min($requestedAmount, $reste);
-            $reference = 'DEP_CAG_'.$cagnotteId.'_'.time().'_'.rand(100, 999);
+            $reference = 'DEP_CAG_'.$cagnotteId.'_'.(string) Str::uuid();
 
             Transaction::create([
                 'cagnotte_id' => $cagnotte->id,
@@ -154,7 +155,7 @@ class PaymentController extends Controller
                 $unitCash = $prixCash > 0 ? $prixCash : $fullProductPrice;
                 $amount = $unitCash * max(1, $quantite);
                 $fullProductPrice = $unitCash;
-                $reference = ($request->input('moyen_paiement') === 'livraison' ? 'CMD_COD_' : 'CMD_CASH_').time().'_'.rand(1000, 9999);
+                $reference = ($request->input('moyen_paiement') === 'livraison' ? 'CMD_COD_' : 'CMD_CASH_').(string) Str::uuid();
             } else {
                 $quantite = 1;
                 // Cagnotte : vérifier le 1er versement plancher en tenant compte des réductions promotionnelles (arrondi au plancher sans ajout de 1 F)
@@ -175,7 +176,7 @@ class PaymentController extends Controller
                     ], 422);
                 }
                 $amount = min($requestedAmount > 0 ? $requestedAmount : $prixMinimum, $fullProductPrice);
-                $reference = 'CMD_CAG_'.time().'_'.rand(1000, 9999);
+                $reference = 'CMD_CAG_'.(string) Str::uuid();
             }
 
             $isCod = in_array(strtolower((string) $request->input('moyen_paiement')), ['livraison', 'cod', 'especes'])
@@ -566,36 +567,60 @@ class PaymentController extends Controller
         } elseif (in_array($status, ['FAILED', 'CANCELLED'], true)) {
             $commande = Commande::where('reference', $reference)->first();
             if ($commande && $commande->statut === 'en_attente') {
-                $commande->commandeProduits()->delete();
-                $commande->delete();
+                $commande->update(['statut' => 'annulee']);
             }
 
             Transaction::where('reference_externe', $reference)
                 ->where('statut', 'en_attente')
-                ->delete();
+                ->update(['statut' => 'annulee']);
         }
 
         return response()->json(['status' => 'success'], 200);
     }
 
     /**
-     * Annule et purge immédiatement une tentative de paiement non terminée par le client.
+     * Annule une tentative de paiement non terminée par le client.
+     * Conserve l'historique sans purge destructive et vérifie la propriété.
      */
     public function cancelPayment(Request $request): JsonResponse
     {
-        $reference = $request->input('reference');
-        if (! empty($reference)) {
-            $commande = Commande::where('reference', $reference)
-                ->where('statut', 'en_attente')
-                ->first();
-            if ($commande) {
-                $commande->commandeProduits()->delete();
-                $commande->delete();
-            }
+        $request->validate([
+            'reference' => 'required|string',
+        ]);
 
-            Transaction::where('reference_externe', $reference)
-                ->where('statut', 'en_attente')
-                ->delete();
+        $reference = $request->input('reference');
+        $user = $request->user();
+
+        $commande = Commande::where('reference', $reference)->first();
+        $transaction = Transaction::where('reference_externe', $reference)->first();
+
+        if (! $commande && ! $transaction) {
+            return response()->json(['status' => 'cancelled', 'message' => 'Aucune référence correspondante.']);
+        }
+
+        // Vérification de propriété : seul le propriétaire authentifié ou un administrateur peut annuler
+        if ($commande && $commande->utilisateur_id) {
+            if (! $user || ($commande->utilisateur_id !== $user->id && ! $user->isAdmin())) {
+                return response()->json(['message' => 'Non autorisé à annuler cette commande.'], 403);
+            }
+        }
+
+        if ($transaction && $transaction->cagnotte_id) {
+            $cagnotte = $transaction->cagnotte;
+            if ($cagnotte && $cagnotte->utilisateur_id) {
+                if (! $user || ($cagnotte->utilisateur_id !== $user->id && ! $user->isAdmin())) {
+                    return response()->json(['message' => 'Non autorisé à annuler cette transaction.'], 403);
+                }
+            }
+        }
+
+        // Idempotence & conservation des données financières : passage au statut 'annulee' uniquement si 'en_attente'
+        if ($commande && $commande->statut === 'en_attente') {
+            $commande->update(['statut' => 'annulee']);
+        }
+
+        if ($transaction && $transaction->statut === 'en_attente') {
+            $transaction->update(['statut' => 'annulee']);
         }
 
         return response()->json(['status' => 'cancelled']);
@@ -863,6 +888,7 @@ class PaymentController extends Controller
                 $targetProduit = $resolvedCagnotte?->produit
                     ?? $resolvedCommande->commandeProduits()->with('produit')->first()?->produit;
 
+                $isCash = str_starts_with($reference, 'CMD_CASH_') || ($resolvedCommande && $resolvedCommande->type_commande === 'cash');
                 $isOrderReady = $isCash
                     || ($resolvedCagnotte && ($resolvedCagnotte->statut === 'terminee' || $resolvedCagnotte->progression >= 100));
 
@@ -1000,6 +1026,14 @@ class PaymentController extends Controller
 
             $data = $res->json();
             if ($data !== null) {
+                if (str_starts_with($path, '/api/transactions/public/single/status/') && $res->status() === 404) {
+                    return response()->json([
+                        'status' => 'PENDING',
+                        'responsecode' => 'PENDING',
+                        'message' => 'En attente de validation',
+                    ], 200);
+                }
+
                 return response()->json($data, $res->status());
             }
 

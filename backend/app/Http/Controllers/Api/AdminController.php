@@ -243,20 +243,21 @@ class AdminController extends Controller
                 if ($rawVideo && is_string($rawVideo)) {
                     if (str_starts_with($rawVideo, 'data:video/')) {
                         $comma = strpos($rawVideo, ',');
-                        $header = substr($rawVideo, 0, $comma);
-                        $binary = base64_decode(substr($rawVideo, $comma + 1), true);
-                        if ($binary !== false) {
-                            $ext = 'mp4';
-                            if (preg_match('#data:video/(webm|ogg|quicktime|mp4)#i', $header, $m)) {
-                                $ext = $m[1] === 'quicktime' ? 'mov' : $m[1];
+                        if ($comma !== false) {
+                            $header = substr($rawVideo, 0, $comma);
+                            $binary = base64_decode(substr($rawVideo, $comma + 1), true);
+                            if ($binary !== false && strlen($binary) <= 52_428_800 && preg_match('#^data:video/(webm|ogg|quicktime|mp4)#i', $header, $m)) {
+                                $ext = strtolower($m[1]) === 'quicktime' ? 'mov' : strtolower($m[1]);
+                                $videoFileName = 'video_'.Str::uuid().'.'.$ext;
+                                Storage::disk('public')->put('produits/'.$videoFileName, $binary);
+                                $videoPath = 'produits/'.$videoFileName;
                             }
-                            $videoFileName = 'video_'.time().'_'.Str::random(6).'.'.$ext;
-                            Storage::disk('public')->put('produits/'.$videoFileName, $binary);
-                            Storage::disk('public')->put($videoFileName, $binary);
-                            $videoPath = 'produits/'.$videoFileName;
                         }
                     } elseif (!str_starts_with($rawVideo, 'blob:')) {
-                        $videoPath = $rawVideo;
+                        $clean = basename(str_replace('\\', '/', $rawVideo));
+                        if (preg_match('#\.(mp4|webm|mov|ogg)$#i', $clean) || preg_match('#^https?://#i', $rawVideo)) {
+                            $videoPath = str_starts_with($rawVideo, 'produits/') ? $rawVideo : (preg_match('#^https?://#i', $rawVideo) ? $rawVideo : 'produits/'.$clean);
+                        }
                     }
                 }
             }
@@ -324,48 +325,63 @@ class AdminController extends Controller
      */
     public function uploadVideo(Request $request): JsonResponse
     {
-        $request->validate([
-            'video' => ['required'],
-        ]);
+        if ($request->hasFile('video')) {
+            $request->validate([
+                'video' => [
+                    'required',
+                    'file',
+                    'mimes:mp4,webm,mov,ogg',
+                    'mimetypes:video/mp4,video/webm,video/quicktime,video/ogg',
+                    'max:51200', // 50 Mo max
+                ],
+            ]);
 
-        $file = $request->file('video');
-        if ($file) {
-            $ext = $file->getClientOriginalExtension() ?: 'mp4';
-            $filename = 'video_'.time().'_'.Str::random(6).'.'.$ext;
+            $file = $request->file('video');
+            $allowedExtensions = ['mp4', 'webm', 'mov', 'ogg'];
+            $fileExt = strtolower($file->extension() ?: '');
+            $ext = in_array($fileExt, $allowedExtensions, true) ? $fileExt : 'mp4';
+
+            $filename = 'video_'.Str::uuid().'.'.$ext;
             $file->storeAs('produits', $filename, 'public');
-            Storage::disk('public')->putFileAs('', $file, $filename);
 
             return response()->json([
                 'success' => true,
                 'chemin' => 'produits/'.$filename,
                 'url' => Storage::disk('public')->url('produits/'.$filename),
-                'nom_fichier' => $file->getClientOriginalName(),
+                'nom_fichier' => $filename,
             ]);
         }
 
         $raw = $request->input('video');
         if (is_string($raw) && str_starts_with($raw, 'data:video/')) {
             $comma = strpos($raw, ',');
+            if ($comma === false) {
+                return response()->json(['error' => 'Format vidéo non supporté'], 422);
+            }
+
             $header = substr($raw, 0, $comma);
             $binary = base64_decode(substr($raw, $comma + 1), true);
-            if ($binary !== false) {
-                $ext = 'mp4';
-                if (preg_match('#data:video/(webm|ogg|quicktime|mp4)#i', $header, $m)) {
-                    $ext = $m[1] === 'quicktime' ? 'mov' : $m[1];
-                }
-                $filename = 'video_'.time().'_'.Str::random(6).'.'.$ext;
-                Storage::disk('public')->put('produits/'.$filename, $binary);
-                Storage::disk('public')->put($filename, $binary);
 
-                return response()->json([
-                    'success' => true,
-                    'chemin' => 'produits/'.$filename,
-                    'url' => Storage::disk('public')->url('produits/'.$filename),
-                    'nom_fichier' => $filename,
-                ]);
+            if ($binary === false || strlen($binary) > 52_428_800) {
+                return response()->json(['error' => 'Vidéo invalide ou dépassant 50 Mo'], 422);
             }
+
+            if (!preg_match('#^data:video/(webm|ogg|quicktime|mp4)#i', $header, $m)) {
+                return response()->json(['error' => 'Type de vidéo non autorisé (mp4, webm, mov, ogg)'], 422);
+            }
+
+            $ext = strtolower($m[1]) === 'quicktime' ? 'mov' : strtolower($m[1]);
+            $filename = 'video_'.Str::uuid().'.'.$ext;
+            Storage::disk('public')->put('produits/'.$filename, $binary);
+
+            return response()->json([
+                'success' => true,
+                'chemin' => 'produits/'.$filename,
+                'url' => Storage::disk('public')->url('produits/'.$filename),
+                'nom_fichier' => $filename,
+            ]);
         }
 
-        return response()->json(['error' => 'Format vidéo non supporté'], 422);
+        return response()->json(['error' => 'Format vidéo non supporté ou fichier manquant'], 422);
     }
 }

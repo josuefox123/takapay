@@ -1,2 +1,10 @@
 GIT_WORKFLOW.md
 GIT_WORKFLOW.docx
+.env
+.env.*
+*.env
+!.env.example
+!*.env.example
+dashboard/.env
+
+

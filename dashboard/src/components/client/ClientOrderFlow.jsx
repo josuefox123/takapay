@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { FeexPayProvider, FeexPayButton } from '@feexpay/react-sdk';
 import '@feexpay/react-sdk/style.css';
 import { formatFCFA } from '../../data/clientStore';
@@ -65,9 +65,9 @@ export default function ClientOrderFlow({
   const [quantity, setQuantity] = useState(initialQuantity || 1);
   const [successModalData, setSuccessModalData] = useState(null);
 
-  // Simulation validation paiement 20 secondes
+  // Délai de validation paiement 120 secondes (laisse le temps au client de composer son code PIN sur son mobile)
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
-  const [paymentCountdown, setPaymentCountdown] = useState(20);
+  const [paymentCountdown, setPaymentCountdown] = useState(120);
   const [paymentFailed, setPaymentFailed] = useState(false);
 
   useEffect(() => {
@@ -126,8 +126,84 @@ export default function ClientOrderFlow({
   }, [activeUser, user]);
 
   // Connexion Google
-  const handleGoogleAuth = async () => {
-    setError('La connexion directe avec Google sera disponible prochainement. Veuillez vous inscrire ou vous connecter avec votre numéro de téléphone.');
+  const googleBtnOrderRef = useRef(null);
+  const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '400551355957-10e33b4a4ar85g28aiqllk74t252rj7f.apps.googleusercontent.com';
+
+  const handleGoogleSuccess = async (credentialResponse) => {
+    if (!credentialResponse?.credential) return;
+    setSubmitting(true);
+    setError('');
+    try {
+      const result = await adminService.googleAuth({ id_token: credentialResponse.credential });
+      const backendUser = result.user || {};
+      const fullName = `${backendUser.prenom || ''} ${backendUser.nom || ''}`.trim() || backendUser.nom || 'Client';
+      const loggedUser = {
+        nom: backendUser.nom || '',
+        prenom: backendUser.prenom || '',
+        phone: backendUser.telephone || '',
+        telephone: backendUser.telephone || '',
+        adresse: backendUser.adresse || '',
+        email: backendUser.email || '',
+        photo_profil: backendUser.photo_profil || null,
+        avatar: backendUser.photo_profil || null,
+        id: backendUser.id,
+      };
+      if (onUserAuthSuccess) onUserAuthSuccess(loggedUser, result.message || 'Connexion réussie via Google !');
+      setActiveUser(loggedUser);
+      setPaymentName(fullName);
+      if (loggedUser.phone) {
+        setPaymentPhone(loggedUser.phone);
+        setDeliveryPhone(loggedUser.phone);
+      }
+      if (loggedUser.adresse) setDeliveryAddress(loggedUser.adresse);
+    } catch (err) {
+      setError(err.message || 'Erreur lors de la connexion Google.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeUser || user || typeof window === 'undefined') return;
+
+    const setupGoogleBtn = () => {
+      if (window.google?.accounts?.id && googleBtnOrderRef.current) {
+        try {
+          window.google.accounts.id.initialize({
+            client_id: GOOGLE_CLIENT_ID,
+            callback: handleGoogleSuccess,
+          });
+          window.google.accounts.id.renderButton(googleBtnOrderRef.current, {
+            theme: 'outline',
+            size: 'large',
+            width: googleBtnOrderRef.current.offsetWidth || 320,
+            text: 'continue_with',
+            shape: 'rectangular',
+            logo_alignment: 'left',
+            locale: 'fr',
+          });
+        } catch (e) {
+          console.warn('Google Identity initialization notice:', e);
+        }
+      }
+    };
+
+    const interval = setInterval(() => {
+      if (window.google?.accounts?.id && googleBtnOrderRef.current) {
+        setupGoogleBtn();
+        clearInterval(interval);
+      }
+    }, 250);
+
+    return () => clearInterval(interval);
+  }, [activeUser, user]);
+
+  const handleGoogleAuth = () => {
+    if (window.google?.accounts?.id) {
+      window.google.accounts.id.prompt();
+    } else {
+      setError('Chargement du service Google en cours, veuillez patienter...');
+    }
   };
 
   // Étape 1 : Inscription ou Connexion
@@ -542,6 +618,9 @@ export default function ClientOrderFlow({
     );
 
     if (!isSuccess) {
+      if (response?.status?.toUpperCase() === 'PENDING') {
+        return;
+      }
       cancelFeexpayPayment('CANCELLED', true);
       setPaymentData(null);
       setIsProcessingPayment(false);
@@ -576,7 +655,7 @@ export default function ClientOrderFlow({
       setPaymentData(null);
       setIsProcessingPayment(false);
       setPaymentFailed(false);
-      setPaymentCountdown(20);
+      setPaymentCountdown(120);
 
       // Afficher le popup de félicitations avant la redirection vers les cagnottes ou commandes
       setSuccessModalData({
@@ -785,21 +864,27 @@ export default function ClientOrderFlow({
               <span>ou</span>
             </div>
 
-            {/* Bouton de connexion par Google ramené tout en bas */}
-            <button
-              type="button"
-              className="google-auth-btn"
-              onClick={handleGoogleAuth}
-              disabled={submitting}
+            {/* Bouton de connexion par Google */}
+            <div
+              ref={googleBtnOrderRef}
+              style={{ width: '100%', minHeight: '44px', display: 'flex', justifyContent: 'center' }}
             >
-              <svg width="18" height="18" viewBox="0 0 24 24">
-                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
-                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
-                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
-              </svg>
-              <span>{submitting ? 'Connexion en cours...' : 'Continuer avec Google'}</span>
-            </button>
+              <button
+                type="button"
+                className="google-auth-btn"
+                onClick={handleGoogleAuth}
+                disabled={submitting}
+                style={{ marginTop: 0 }}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24">
+                  <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                  <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                  <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
+                  <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
+                </svg>
+                <span>{submitting ? 'Connexion en cours...' : 'Continuer avec Google'}</span>
+              </button>
+            </div>
           </div>
         )}
 
@@ -992,7 +1077,7 @@ export default function ClientOrderFlow({
                   Paiement non finalisé
                 </h3>
                 <p style={{ fontSize: '13.5px', color: '#4b5563', lineHeight: 1.5, maxWidth: '380px', margin: '0 auto 20px' }}>
-                  La transaction a été annulée ou n'a pas pu être validée dans les 30 secondes. Aucun montant n'a été débité. Vous pouvez relancer le paiement dès maintenant.
+                  La transaction n'a pas pu être validée dans le délai imparti. Si votre compte a été débité, votre cagnotte est enregistrée et sera actualisée sur votre espace. Vous pouvez également relancer le paiement.
                 </p>
                 <button
                   type="button"
@@ -1115,7 +1200,7 @@ export default function ClientOrderFlow({
                 </>
               ) : (
                 <>
-                  Votre premier versement de <b>{formatFCFA(successModalData.initialAmount)}</b> pour <b>{successModalData.product?.n}</b> a été validé par FeexPay. Votre cagnotte est active !
+                  Votre premier versement de <b>{formatFCFA(successModalData.initialAmount)}</b> pour <b>{successModalData.product?.n}</b> a été validé par TakaPay. Votre cagnotte est active !
                 </>
               )}
             </p>
@@ -1145,6 +1230,14 @@ export default function ClientOrderFlow({
                 <span style={{ color: '#6b7280' }}>Total à régler :</span>
                 <span style={{ fontWeight: 700, color: '#111827' }}>{formatFCFA(successModalData.totalPrice)}</span>
               </div>
+              {!successModalData.isCash && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                  <span style={{ color: '#6b7280' }}>Montant restant à payer :</span>
+                  <span style={{ fontWeight: 700, color: '#e11d48' }}>
+                    {formatFCFA(Math.max(0, (Number(successModalData.totalPrice) || 0) - (successModalData.isCod ? 0 : (Number(successModalData.initialAmount) || 0))))}
+                  </span>
+                </div>
+              )}
               {successModalData.deliveryAddress && (
                 <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #e5e7eb', paddingTop: '6px', marginTop: '6px' }}>
                   <span style={{ color: '#6b7280' }}>Adresse :</span>

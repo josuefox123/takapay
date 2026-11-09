@@ -55,6 +55,9 @@ Route::get('produits/{produit}', [ProduitController::class, 'show'])->name('prod
 Route::get('promotions', [PromotionController::class, 'index'])->name('promotions.index');
 Route::get('videos/{filename}', function ($filename) {
     $clean = basename($filename);
+    if (!preg_match('/\.(mp4|webm|mov|ogg)$/i', $clean)) {
+        abort(404, 'Format vidéo non supporté');
+    }
     $path = storage_path('app/public/produits/' . $clean);
     if (!file_exists($path)) {
         $path = storage_path('app/public/' . $clean);
@@ -62,8 +65,15 @@ Route::get('videos/{filename}', function ($filename) {
     if (!file_exists($path)) {
         abort(404, 'Vidéo non trouvée');
     }
+    $ext = strtolower(pathinfo($clean, PATHINFO_EXTENSION));
+    $mime = match ($ext) {
+        'webm' => 'video/webm',
+        'mov' => 'video/quicktime',
+        'ogg' => 'video/ogg',
+        default => 'video/mp4',
+    };
     return response()->file($path, [
-        'Content-Type' => 'video/mp4',
+        'Content-Type' => $mime,
         'Accept-Ranges' => 'bytes',
     ]);
 })->name('videos.stream');
@@ -102,6 +112,7 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
     Route::post('cagnottes/{cagnotte}/confirmer-reception', [CagnotteController::class, 'confirmerReception'])->name('cagnottes.confirmer-reception');
     Route::post('cagnottes/{cagnotte}/annuler', [CagnotteController::class, 'demanderAnnulation'])->name('cagnottes.annuler');
     Route::post('cagnottes/{cagnotte}/reactiver', [CagnotteController::class, 'reactiver'])->name('cagnottes.reactiver');
+    Route::post('/payment/cancel', [PaymentController::class, 'cancelPayment'])->name('payment.cancel');
 
     /*
     |--------------------------------------------------------------------------
@@ -207,4 +218,3 @@ Route::post('/payment/initiate', [PaymentController::class, 'initiatePayment']);
 Route::post('/payment/feexpay-proxy', [PaymentController::class, 'feexpayProxy']);
 Route::post('/payment/confirm', [PaymentController::class, 'confirmPayment']);
 Route::post('/payment/webhook', [PaymentController::class, 'handleWebhook']);
-Route::post('/payment/cancel', [PaymentController::class, 'cancelPayment']);

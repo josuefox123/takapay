@@ -13,15 +13,7 @@ export const resolveImageUrl = (path) => {
   if (path.startsWith('http://') || path.startsWith('https://')) {
     try {
       const url = new URL(path);
-      const isLocalHost = ['localhost', '127.0.0.1'].includes(url.hostname);
-      const currentHostIsLocal = typeof window !== 'undefined'
-        && ['localhost', '127.0.0.1'].includes(window.location.hostname);
-      const isSameOrigin = typeof window !== 'undefined'
-        && url.origin === window.location.origin;
-      if (
-        url.pathname.startsWith('/storage/')
-        && (isSameOrigin || (isLocalHost && currentHostIsLocal))
-      ) {
+      if (url.pathname.startsWith('/storage/')) {
         return `${url.pathname}${url.search}${url.hash}`;
       }
     } catch {
@@ -40,8 +32,17 @@ export const resolveImageUrl = (path) => {
   if (path.startsWith('/storage/')) {
     return path;
   }
-  if (path.startsWith('produits/') || path.startsWith('categories/') || path.startsWith('documents/')) {
-    return `/storage/${path}`;
+  if (
+    path.startsWith('produits/') ||
+    path.startsWith('categories/') ||
+    path.startsWith('sous_categories/') ||
+    path.startsWith('carousels/') ||
+    path.startsWith('promotions/') ||
+    path.startsWith('partenaires/') ||
+    path.startsWith('documents/') ||
+    path.includes('/')
+  ) {
+    return `/storage/${path.replace(/^\/+/, '')}`;
   }
   return `/storage/produits/${path}`;
 };

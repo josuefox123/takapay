@@ -30,7 +30,6 @@ class ImageContent implements ValidationRule
         'image/heic',
         'image/heif',
         'image/gif',
-        'image/svg+xml',
         'image/bmp',
         'image/x-ms-bmp',
         'image/jfif',
@@ -91,7 +90,7 @@ class ImageContent implements ValidationRule
 
         // Nom de fichier direct ou chemin relatif / stockage
         $cleaned = ltrim($value, '/');
-        if (preg_match('#\.(png|jpe?g|webp|gif|svg|bmp|avif|heic|heif|jfif)$#i', $cleaned)) {
+        if (preg_match('#\.(png|jpe?g|webp|gif|bmp|avif|heic|heif|jfif)$#i', $cleaned)) {
             return;
         }
 

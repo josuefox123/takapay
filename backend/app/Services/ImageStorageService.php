@@ -12,6 +12,10 @@ class ImageStorageService
 {
     private const DISK = 'public';
 
+    private const ALLOWED_EXTENSIONS = [
+        'jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp', 'avif', 'heic', 'heif', 'jfif',
+    ];
+
     /**
      * Enregistre une image et retourne son chemin relatif.
      *
@@ -52,8 +56,21 @@ class ImageStorageService
 
             $this->validateImage($input, $attribute);
 
+            $mime = $input->getMimeType();
+            $defaultExt = match ($mime) {
+                'image/png' => 'png',
+                'image/webp' => 'webp',
+                'image/gif' => 'gif',
+                'image/bmp' => 'bmp',
+                'image/avif' => 'avif',
+                'image/heic' => 'heic',
+                'image/heif' => 'heif',
+                default => 'jpeg',
+            };
+
             $filename = $this->sanitizeFilename(
-                $preferredName ?: $input->getClientOriginalName()
+                $preferredName ?: $input->getClientOriginalName(),
+                $defaultExt
             );
 
             $path = $input->storeAs(
@@ -228,7 +245,6 @@ class ImageStorageService
             'image/webp',
             'image/gif',
             'image/bmp',
-            'image/svg+xml',
         ];
 
         if (! in_array($mime, $allowedMimes, true)) {
@@ -293,7 +309,7 @@ class ImageStorageService
     /**
      * Nettoie et sécurise un nom de fichier.
      */
-    private function sanitizeFilename(string $name): string
+    private function sanitizeFilename(string $name, string $defaultExt = 'jpg'): string
     {
         $name = basename(str_replace('\\', '/', $name));
 
@@ -305,9 +321,16 @@ class ImageStorageService
 
         $clean = trim($clean ?? '', '. ');
 
-        return $clean !== ''
-            ? $clean
-            : 'image_' . Str::uuid() . '.jpg';
+        if ($clean === '') {
+            return 'image_' . Str::uuid() . '.' . $defaultExt;
+        }
+
+        $ext = strtolower(pathinfo($clean, PATHINFO_EXTENSION));
+        if (! in_array($ext, self::ALLOWED_EXTENSIONS, true)) {
+            $clean = pathinfo($clean, PATHINFO_FILENAME) . '.' . $defaultExt;
+        }
+
+        return $clean;
     }
 
     /**
@@ -328,7 +351,6 @@ class ImageStorageService
 
             $extension = match ($type) {
                 'jpeg', 'jpg', 'jfif', 'pjpeg' => 'jpeg',
-                'svg+xml' => 'svg',
                 'x-png' => 'png',
                 'png', 'webp', 'gif', 'bmp', 'avif', 'heic', 'heif' => $type,
                 default => null,
@@ -351,7 +373,6 @@ class ImageStorageService
             'image/avif' => 'avif',
             'image/heic' => 'heic',
             'image/heif' => 'heif',
-            'image/svg+xml' => 'svg',
             default => null,
         };
 

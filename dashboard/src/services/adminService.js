@@ -1747,13 +1747,15 @@ let activeTransactionRef = null;
 
 export const cancelFeexpayPayment = (reason = 'CANCELLED', wasSubmitted = null, reference = null) => {
   const refToCancel = reference || activeTransactionRef;
-  if (refToCancel) {
+  if (refToCancel && reason === 'CANCELLED' && wasSubmitted === false) {
+    const token = adminService.getClientToken() || adminService.getToken();
     try {
       fetch(`${API_BASE}/payment/cancel`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Accept: 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: JSON.stringify({ reference: refToCancel }),
       }).catch(() => {});
@@ -1779,7 +1781,7 @@ export const cancelFeexpayPayment = (reason = 'CANCELLED', wasSubmitted = null, 
         reason,
         hadStarted,
         message: reason === 'TIMEOUT'
-          ? 'Le paiement a expiré après 30 secondes d’attente. Aucun montant n’a été débité.'
+          ? 'Le délai de validation sur votre téléphone a expiré (120 secondes).'
           : 'La transaction a été annulée.'
       });
     } catch (e) {
@@ -1823,7 +1825,7 @@ export const registerFeexpayWatchdog = (callback) => {
     const url = typeof args[0] === 'string' ? args[0] : (args[0]?.url || '');
 
     // 1. Déclenchement de la demande de paiement FeexPay
-    if (url.includes('api.feexpay.me/api/transactions/requesttopay/integration')) {
+    if (url.includes('/api/transactions/requesttopay/integration')) {
       if (args[1] && typeof args[1].body === 'string' && window.__takapaySelectedNetwork) {
         try {
           const bodyObj = JSON.parse(args[1].body);
@@ -1840,11 +1842,11 @@ export const registerFeexpayWatchdog = (callback) => {
       if (watchdogPaymentTimer) clearTimeout(watchdogPaymentTimer);
       if (watchdogFastPoll) clearInterval(watchdogFastPoll);
 
-      // Limite stricte de 30 secondes demandée : si non validé, arrêt immédiat du spinner
+      // Délai de 120 secondes : laisse le temps réel au client de valider le code USSD sur son téléphone
       watchdogPaymentTimer = setTimeout(() => {
-        console.warn('[Takapay] ⏱️ 30s écoulées sans validation : arrêt immédiat de la rotation.');
+        console.warn('[Takapay] ⏱️ 120s écoulées sans validation : arrêt de la rotation.');
         cancelFeexpayPayment('TIMEOUT', true);
-      }, 30000);
+      }, 120000);
 
       try {
         const res = await originalFetch.apply(this, args);
@@ -1852,26 +1854,6 @@ export const registerFeexpayWatchdog = (callback) => {
         clone.json().then((data) => {
           if (data?.reference) {
             activeTransactionRef = data.reference;
-            // Polling rapide toutes les 2.5s pour détecter l'annulation téléphone immédiatement
-            watchdogFastPoll = setInterval(async () => {
-              if (isPaymentCancelled || !activeTransactionRef) {
-                clearInterval(watchdogFastPoll);
-                return;
-              }
-              try {
-                const pollRes = await originalFetch(`https://api.feexpay.me/api/transactions/getrequesttopay/integration/${activeTransactionRef}`);
-                if (!pollRes.ok) return;
-                const pollData = await pollRes.json();
-                const st = pollData?.status?.toUpperCase();
-                if (st === 'FAILED' || st === 'CANCELLED' || pollData?.reason?.includes('CANCEL') || pollData?.reason?.includes('LOW_BALANCE')) {
-                  clearInterval(watchdogFastPoll);
-                  cancelFeexpayPayment('CANCELLED', true);
-                } else if (st === 'SUCCESSFUL' || st === 'SUCCESS') {
-                  clearInterval(watchdogFastPoll);
-                  if (watchdogPaymentTimer) clearTimeout(watchdogPaymentTimer);
-                }
-              } catch { /* ignore */ }
-            }, 2500);
           } else if (data?.statusCode === '92' || data?.status === 'FAILED') {
             cancelFeexpayPayment('CANCELLED', true);
           }
@@ -1883,14 +1865,14 @@ export const registerFeexpayWatchdog = (callback) => {
       }
     }
 
-    // 2. Interception du polling FeexPay pour stopper son spinner
-    if (url.includes('api.feexpay.me/api/transactions/getrequesttopay/integration/')) {
+    // 2. Interception du polling FeexPay pour stopper son spinner après 120s
+    if (url.includes('/api/transactions/getrequesttopay/integration/') || url.includes('/api/transactions/public/single/status/')) {
       const elapsed = Date.now() - paymentStartTime;
-      if (isPaymentCancelled || (paymentStartTime > 0 && elapsed >= 30000)) {
+      if (paymentStartTime > 0 && elapsed >= 120000) {
         return new Response(JSON.stringify({
           status: 'FAILED',
-          reason: isPaymentCancelled ? 'TRANSACTION_CANCELLED' : 'TIMEOUT',
-          message: isPaymentCancelled ? 'La transaction a été annulée.' : 'Délai de paiement de 30 secondes dépassé.'
+          reason: 'TIMEOUT',
+          message: 'Délai de paiement de 120 secondes dépassé.'
         }), {
           status: 200,
           headers: { 'Content-Type': 'application/json' }

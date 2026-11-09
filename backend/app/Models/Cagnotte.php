@@ -211,7 +211,7 @@ class Cagnotte extends Model
                 Log::warning('Demande d\'annulation enregistrée mais aucun email valide pour utilisateur #' . ($user?->id ?? 'anonyme'));
             }
 
-            // 3. Notification interne au menu Cagnottes de l'admin créateur du produit (sans envoi d'email au .env)
+            // 3. Notification interne au menu Cagnottes de l'admin créateur du produit
             Notification::notifyProductAdmins(
                 $this->produit,
                 $this->id,
@@ -219,6 +219,24 @@ class Cagnotte extends Model
                 'Demande d\'annulation de cagnotte',
                 'Le client ' . ($user?->nom ?? 'Client') . ' a demandé l\'annulation de la cagnotte #' . $this->id . ' (' . ($this->produit?->nom ?? 'Article') . ').'
             );
+
+            // 4. Envoi d'email aux administrateurs (Admin créateur du produit + Super Admin)
+            $adminUserIds = array_values(array_unique(array_filter([
+                $this->produit?->admin_id,
+                ...User::where('role', 'super_admin')->pluck('id')->all(),
+            ])));
+
+            $adminEmails = User::whereIn('id', $adminUserIds)
+                ->whereNotNull('email')
+                ->pluck('email')
+                ->filter(fn ($email) => filter_var($email, FILTER_VALIDATE_EMAIL))
+                ->unique()
+                ->all();
+
+            foreach ($adminEmails as $adminEmail) {
+                Mail::to($adminEmail)->send(new CagnotteAnnuleeMail($this, $user, $montantRemboursement, $fraisAnnulation, $telephone, true));
+                Log::info('Email "Cagnotte annulée (Admin)" envoyé à ' . $adminEmail . ' (cagnotte #' . $this->id . ')');
+            }
         } catch (\Throwable $e) {
             Log::error('Erreur lors de l\'envoi de la notification "Cagnotte annulée" : ' . $e->getMessage());
         }

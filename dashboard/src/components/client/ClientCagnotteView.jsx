@@ -95,9 +95,9 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
   const [paymentData, setPaymentData] = useState(null);
   const [depositError, setDepositError] = useState('');
 
-  // Simulation validation versement 20 secondes
+  // Délai de validation versement 120 secondes (laisse le temps au client de composer son code PIN sur son mobile)
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
-  const [paymentCountdown, setPaymentCountdown] = useState(20);
+  const [paymentCountdown, setPaymentCountdown] = useState(120);
   const [paymentFailed, setPaymentFailed] = useState(false);
 
   useEffect(() => {
@@ -375,7 +375,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
     setPaymentData(null);
     setDepositError('');
     setIsProcessingPayment(false);
-    setPaymentCountdown(20);
+    setPaymentCountdown(120);
     setPaymentFailed(false);
   };
 
@@ -651,6 +651,9 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
     );
 
     if (!isSuccess) {
+      if (response?.status?.toUpperCase() === 'PENDING') {
+        return;
+      }
       cancelFeexpayPayment('CANCELLED', true);
       setPaymentData(null);
       setIsProcessingPayment(false);
@@ -737,7 +740,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
     onShowToast?.(
       isCompleted
         ? `🎉 Bravo ! Votre cagnotte "${target.product?.n}" est désormais financée à 100% !`
-        : `Versement de ${formatFCFA(amountNum)} validé avec succès par FeexPay !`
+        : `Versement de ${formatFCFA(amountNum)} validé avec succès par TakaPay !`
     );
   };
 
@@ -2670,7 +2673,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                   Versement non finalisé
                 </h3>
                 <p style={{ fontSize: '13.5px', color: '#4b5563', lineHeight: 1.5, maxWidth: '380px', margin: '0 auto 20px' }}>
-                  La transaction a été annulée ou n'a pas pu être validée dans les 30 secondes. Aucun montant n'a été débité. Vous pouvez relancer le versement dès maintenant.
+                  La transaction n'a pas pu être validée dans le délai imparti. Si votre compte a été débité, votre cagnotte est enregistrée et sera actualisée sur votre espace. Vous pouvez également relancer le versement.
                 </p>
                 <button
                   type="button"
