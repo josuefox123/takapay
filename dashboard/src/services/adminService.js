@@ -1383,10 +1383,25 @@ export const adminService = {
   },
 
   // 4. GESTION DES UTILISATEURS
-  async getUsers(page = 1) {
+  async getUsers(page = 1, filters = {}) {
+    let p = 1;
+    let opts = {};
+    if (typeof page === 'object' && page !== null) {
+      opts = page;
+      p = opts.page || 1;
+    } else {
+      p = page || 1;
+      opts = filters || {};
+    }
+
     const token = this.getToken();
+    const params = new URLSearchParams();
+    params.set('page', p);
+    if (opts.q) params.set('q', opts.q);
+    if (opts.role && opts.role !== 'tous') params.set('role', opts.role);
+
     try {
-      const res = await fetch(`${API_BASE}/users?page=${page}`, {
+      const res = await fetch(`${API_BASE}/users?${params.toString()}`, {
         headers: {
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
           Accept: 'application/json',
@@ -1397,8 +1412,9 @@ export const adminService = {
         const list = json.data || (Array.isArray(json) ? json : []);
         return {
           data: Array.isArray(list) ? list : [],
+          counts: json.counts || null,
           meta: json.meta || {
-            current_page: page,
+            current_page: p,
             last_page: 1,
             total: Array.isArray(list) ? list.length : 0,
             per_page: 15,
@@ -1410,6 +1426,7 @@ export const adminService = {
     }
     return {
       data: [],
+      counts: null,
       meta: { current_page: 1, last_page: 1, total: 0, per_page: 15 },
     };
   },

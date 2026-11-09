@@ -28,6 +28,7 @@ export default function AdminLogin() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [showForgotInfo, setShowForgotInfo] = useState(false);
   const [quoteIndex, setQuoteIndex] = useState(0);
   const [quoteOpacity, setQuoteOpacity] = useState(1);
 
@@ -236,17 +237,66 @@ export default function AdminLogin() {
               </button>
             </div>
 
-            <p style={{ margin: '-6px 0 20px', fontSize: '13px' }}>
-              <a
-                href="#forgot"
-                onClick={(e) => {
-                  e.preventDefault();
-                  alert('Pour réinitialiser votre mot de passe, contactez l’administrateur système.');
+            {showForgotInfo && (
+              <div
+                style={{
+                  background: '#fef2f2',
+                  border: '1.5px solid #fca5a5',
+                  borderRadius: '12px',
+                  padding: '12px 14px',
+                  marginBottom: '16px',
+                  fontSize: '13px',
+                  color: '#991b1b',
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: '10px',
                 }}
-                style={{ color: 'var(--r)', textDecoration: 'none', fontWeight: 600 }}
+              >
+                <div style={{ color: 'var(--r)', marginTop: '2px', flexShrink: 0 }}>
+                  <AdminIcon name="shield" size={18} />
+                </div>
+                <div style={{ flex: 1, lineHeight: 1.45 }}>
+                  <strong style={{ display: 'block', color: 'var(--r)', marginBottom: '2px' }}>
+                    Réinitialisation d'accès
+                  </strong>
+                  Pour des raisons de sécurité, veuillez contacter le <strong>Super Administrateur</strong> pour recevoir un mot de passe temporaire.
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowForgotInfo(false)}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: '#991b1b',
+                    cursor: 'pointer',
+                    padding: '2px 4px',
+                    lineHeight: 1,
+                  }}
+                  aria-label="Fermer"
+                >
+                  <AdminIcon name="x" size={14} />
+                </button>
+              </div>
+            )}
+
+            <p style={{ margin: '-6px 0 20px', fontSize: '13px' }}>
+              <button
+                type="button"
+                onClick={() => setShowForgotInfo((prev) => !prev)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  padding: 0,
+                  color: 'var(--r)',
+                  cursor: 'pointer',
+                  fontWeight: 600,
+                  fontSize: '13px',
+                  fontFamily: 'inherit',
+                  textDecoration: 'none',
+                }}
               >
                 Mot de passe oublié ?
-              </a>
+              </button>
             </p>
 
             <button

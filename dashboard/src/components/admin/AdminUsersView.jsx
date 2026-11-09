@@ -4,6 +4,7 @@ import AdminIcon from './AdminIcon';
 
 export default function AdminUsersView({ onShowToast, currentUser }) {
   const [users, setUsers] = useState([]);
+  const [counts, setCounts] = useState(null);
   const [meta, setMeta] = useState({ current_page: 1, last_page: 1, total: 0, per_page: 15 });
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
@@ -92,10 +93,7 @@ export default function AdminUsersView({ onShowToast, currentUser }) {
       if (onShowToast) {
         onShowToast(`Administrateur ${newUser.prenom || ''} ${newUser.nom} créé avec succès !`);
       }
-      adminService.getUsers(page).then((response) => {
-        if (response.data) setUsers(response.data);
-        if (response.meta) setMeta(response.meta);
-      });
+      load();
     } catch (err) {
       const msg = err.errors
         ? Object.values(err.errors).flat().join(' ')
@@ -114,22 +112,36 @@ export default function AdminUsersView({ onShowToast, currentUser }) {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  useEffect(() => {
-    let isMounted = true;
+  const load = (overrides = {}) => {
+    const p = 'page' in overrides ? overrides.page : page;
+    const q = 'q' in overrides ? overrides.q : search;
+    const r = 'role' in overrides ? overrides.role : roleFilter;
+
     setLoading(true);
-    adminService.getUsers(page).then((res) => {
-      if (isMounted) {
+    adminService
+      .getUsers(p, { q, role: r })
+      .then((res) => {
         setUsers(res.data || []);
-        if (res.meta) {
-          setMeta(res.meta);
-        }
-        setLoading(false);
-      }
-    });
-    return () => {
-      isMounted = false;
-    };
-  }, [page]);
+        if (res.meta) setMeta(res.meta);
+        if (res.counts) setCounts(res.counts);
+      })
+      .catch(() => onShowToast?.('Erreur lors du chargement des utilisateurs.'))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, roleFilter]);
+
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setPage(1);
+      load({ page: 1, q: search });
+    }, 350);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search]);
 
   const handleStatusChange = async (userId, newStatus) => {
     if (newStatus === 'supprimer') {
@@ -212,6 +224,16 @@ export default function AdminUsersView({ onShowToast, currentUser }) {
         prev.map((u) => (u.id === editingUser.id ? { ...u, ...updatedUser } : u))
       );
       setEditingUser(null);
+
+      if (payload.password) {
+        setCreatedAdmin({
+          user: updatedUser,
+          password: payload.password,
+          isReset: true,
+        });
+        setShowCreateModal(true);
+      }
+
       if (onShowToast) {
         onShowToast(`Compte de ${updatedUser.prenom || ''} ${updatedUser.nom} modifié avec succès.`);
       }
@@ -226,27 +248,12 @@ export default function AdminUsersView({ onShowToast, currentUser }) {
     ? users
     : users.filter((u) => u.role !== 'super_admin');
 
-  const filtered = visibleUsers.filter((u) => {
-    const fullName = `${u.prenom || ''} ${u.nom || ''} ${u.email || ''}`.toLowerCase();
-    const matchSearch = fullName.includes(search.toLowerCase()) || (u.telephone || '').includes(search);
-    const matchRole = roleFilter === 'tous' || u.role === roleFilter;
-    return matchSearch && matchRole;
-  });
-
-  const sorted = [...filtered].sort((a, b) => {
-    const nomA = (a.nom || '').trim().toLowerCase();
-    const nomB = (b.nom || '').trim().toLowerCase();
-    if (nomA !== nomB) return nomA.localeCompare(nomB, 'fr', { sensitivity: 'base' });
-    const prenomA = (a.prenom || '').trim().toLowerCase();
-    const prenomB = (b.prenom || '').trim().toLowerCase();
-    return prenomA.localeCompare(prenomB, 'fr', { sensitivity: 'base' });
-  });
-
-  const clientCount = visibleUsers.filter((u) => u.role === 'client').length;
-  const livreurCount = visibleUsers.filter((u) => u.role === 'livreur').length;
-  const adminCount = visibleUsers.filter((u) =>
-    isSuperAdmin ? (u.role || '').includes('admin') : u.role === 'admin'
-  ).length;
+  const clientCount = counts ? counts.client : visibleUsers.filter((u) => u.role === 'client').length;
+  const livreurCount = counts ? counts.livreur : visibleUsers.filter((u) => u.role === 'livreur').length;
+  const adminCount = counts
+    ? counts.admin
+    : visibleUsers.filter((u) => (isSuperAdmin ? (u.role || '').includes('admin') : u.role === 'admin')).length;
+  const totalCount = counts?.total ?? meta.total ?? visibleUsers.length;
 
   return (
     <div>
@@ -290,7 +297,7 @@ export default function AdminUsersView({ onShowToast, currentUser }) {
             <span>Total Utilisateurs</span>
             <i><AdminIcon name="users" size={16} /></i>
           </div>
-          <b>{meta.total || users.length}</b>
+          <b>{totalCount}</b>
         </div>
         <div className="admin-kpi-card">
           <div className="admin-kpi-header">
@@ -319,7 +326,7 @@ export default function AdminUsersView({ onShowToast, currentUser }) {
       <div className="admin-panel" style={{ marginBottom: '24px', padding: '18px 24px', display: 'flex', gap: '14px', flexWrap: 'wrap', alignItems: 'center' }}>
         <input
           type="text"
-          placeholder="Rechercher..."
+          placeholder="Rechercher par nom, email, téléphone..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           autoComplete="off"
@@ -340,7 +347,10 @@ export default function AdminUsersView({ onShowToast, currentUser }) {
 
         <select
           value={roleFilter}
-          onChange={(e) => setRoleFilter(e.target.value)}
+          onChange={(e) => {
+            setRoleFilter(e.target.value);
+            setPage(1);
+          }}
           style={{
             padding: '10px 14px',
             borderRadius: '10px',
@@ -363,7 +373,7 @@ export default function AdminUsersView({ onShowToast, currentUser }) {
       <div className="admin-panel" style={{ padding: '24px' }}>
         {loading ? (
           <p style={{ textAlign: 'center', color: 'var(--mut)', padding: '24px' }}>Chargement des utilisateurs...</p>
-        ) : sorted.length === 0 ? (
+        ) : visibleUsers.length === 0 ? (
           <p style={{ textAlign: 'center', color: 'var(--mut)', padding: '24px' }}>Aucun utilisateur trouvé.</p>
         ) : (
           <div style={{ overflowX: 'auto' }}>
@@ -378,7 +388,7 @@ export default function AdminUsersView({ onShowToast, currentUser }) {
                 </tr>
               </thead>
               <tbody>
-                {sorted.map((u) => (
+                {visibleUsers.map((u) => (
                   <tr
                     key={u.id}
                     onClick={() => isSuperAdmin && handleOpenEditModal(u)}
@@ -596,11 +606,20 @@ export default function AdminUsersView({ onShowToast, currentUser }) {
                     ✓
                   </div>
                   <h2 style={{ fontSize: '20px', fontWeight: 800, color: 'var(--ink)', margin: 0 }}>
-                    Administrateur créé avec succès !
+                    {createdAdmin.isReset ? 'Mot de passe réinitialisé avec succès !' : 'Administrateur créé avec succès !'}
                   </h2>
                   <p style={{ margin: '8px 0 0', fontSize: '13px', color: 'var(--mut)', lineHeight: 1.5 }}>
-                    Un e-mail de bienvenue contenant ses accès de connexion a été envoyé à <strong>{createdAdmin.user.email}</strong>.
-                    Lors de sa première connexion, le système lui demandera obligatoirement de définir son mot de passe personnel.
+                    {createdAdmin.isReset ? (
+                      <>
+                        Les nouveaux accès temporaires ont été envoyés par e-mail à <strong>{createdAdmin.user.email}</strong>.
+                        À sa prochaine connexion, l'administrateur sera immédiatement invité à définir son nouveau mot de passe personnel.
+                      </>
+                    ) : (
+                      <>
+                        Un e-mail de bienvenue contenant ses accès de connexion a été envoyé à <strong>{createdAdmin.user.email}</strong>.
+                        Lors de sa première connexion, le système lui demandera obligatoirement de définir son mot de passe personnel.
+                      </>
+                    )}
                   </p>
                 </div>
 
