@@ -181,9 +181,40 @@ if (typeof window !== 'undefined') {
     }
   };
 
-  const observer = new MutationObserver(() => {
-    tryPrefillFeexpayModal();
+  let prefillRaf = null;
+  const schedulePrefill = () => {
+    if (prefillRaf) return;
+    prefillRaf = requestAnimationFrame(() => {
+      prefillRaf = null;
+      tryPrefillFeexpayModal();
+    });
+  };
+
+  const observer = new MutationObserver((mutations) => {
+    // Ne s'exécuter que si un nœud potentiellement lié à une modale ou à FeexPay a été ajouté
+    const hasRelevantChange = mutations.some((m) => {
+      if (m.type !== 'childList' || m.addedNodes.length === 0) return false;
+      for (let i = 0; i < m.addedNodes.length; i++) {
+        const node = m.addedNodes[i];
+        if (node.nodeType === 1) {
+          const el = node;
+          if (
+            el.classList?.contains('fixed') ||
+            el.classList?.contains('feexpay-modal-overlay-custom') ||
+            el.querySelector?.('img[src*="feexpay"]')
+          ) {
+            return true;
+          }
+        }
+      }
+      return false;
+    });
+
+    if (hasRelevantChange) {
+      schedulePrefill();
+    }
   });
+
   observer.observe(document.body, { childList: true, subtree: true });
 }
 
