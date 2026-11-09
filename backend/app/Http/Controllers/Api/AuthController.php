@@ -119,8 +119,8 @@ class AuthController extends Controller
 
         if ($user && in_array($user->role, ['admin', 'super_admin'], true)) {
             return response()->json([
-                'message' => 'Les comptes administrateurs doivent se connecter avec leur mot de passe sur le portail dédié.',
-            ], 403);
+                'message' => 'Identifiant invalide.',
+            ], 401);
         }
 
         if ($user && $user->statut_compte !== 'actif') {
@@ -286,14 +286,14 @@ class AuthController extends Controller
         $portal = $request->input('portal');
         if ($portal === 'client' && in_array($user->role, ['admin', 'super_admin'], true)) {
             return response()->json([
-                'message' => 'Ce compte est un compte administrateur. Veuillez vous connecter sur le portail d’administration dédié.',
-            ], 403);
+                'message' => 'Identifiant invalide.',
+            ], 401);
         }
 
         if ($portal === 'admin' && ! in_array($user->role, ['admin', 'super_admin'], true)) {
             return response()->json([
-                'message' => 'Accès refusé. Cet espace est strictement réservé aux administrateurs de la plateforme.',
-            ], 403);
+                'message' => 'Identifiant invalide.',
+            ], 401);
         }
 
         // Révocation des anciens jetons : une connexion invalide toutes les sessions précédentes
