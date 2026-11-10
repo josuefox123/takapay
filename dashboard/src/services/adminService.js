@@ -40,6 +40,92 @@ if (typeof window !== 'undefined') {
   window.addEventListener('takapay_promotions_updated', () => invalidateCache('promotions'));
 }
 
+export const handleAuthError = (res, isClient = false) => {
+  if (res && (res.status === 401 || res.status === 403)) {
+    if (typeof window !== 'undefined') {
+      if (isClient) {
+        try {
+          localStorage.removeItem('takapay-client-user');
+          localStorage.removeItem('takapay_client_token');
+          localStorage.removeItem('takapay_backend_cagnottes');
+        } catch {}
+        window.dispatchEvent(
+          new CustomEvent('takapay:auth:unauthorized', {
+            detail: { status: res.status },
+          })
+        );
+      } else {
+        try {
+          localStorage.removeItem('takapay_admin_token');
+          localStorage.removeItem('takapay_admin_user');
+        } catch {}
+        window.dispatchEvent(
+          new CustomEvent('takapay:admin:unauthorized', {
+            detail: { status: res.status },
+          })
+        );
+      }
+    }
+  }
+};
+
+export const broadcastUserStatusChange = (userId, status) => {
+  if (typeof window === 'undefined' || !userId) return;
+  const numId = Number(userId);
+
+  try {
+    const clientUserRaw = localStorage.getItem('takapay-client-user');
+    if (clientUserRaw) {
+      const clientUser = JSON.parse(clientUserRaw);
+      if (Number(clientUser?.id) === numId) {
+        if (status === 'suspendu' || status === 'inactif' || status === 'supprime') {
+          localStorage.removeItem('takapay-client-user');
+          localStorage.removeItem('takapay_client_token');
+          localStorage.removeItem('takapay_backend_cagnottes');
+        } else if (status === 'actif') {
+          clientUser.statut_compte = 'actif';
+          localStorage.setItem('takapay-client-user', JSON.stringify(clientUser));
+        }
+      }
+    }
+
+    const adminUserRaw = localStorage.getItem('takapay_admin_user');
+    if (adminUserRaw) {
+      const adminUser = JSON.parse(adminUserRaw);
+      if (Number(adminUser?.id) === numId) {
+        if (status === 'suspendu' || status === 'inactif' || status === 'supprime') {
+          localStorage.removeItem('takapay_admin_token');
+          localStorage.removeItem('takapay_admin_user');
+        } else if (status === 'actif') {
+          adminUser.statut_compte = 'actif';
+          localStorage.setItem('takapay_admin_user', JSON.stringify(adminUser));
+        }
+      }
+    }
+  } catch {}
+
+  try {
+    localStorage.setItem(
+      'takapay_user_status_sync',
+      JSON.stringify({ userId: numId, status, timestamp: Date.now() })
+    );
+  } catch {}
+
+  window.dispatchEvent(
+    new CustomEvent('takapay:user_status_changed', {
+      detail: { userId: numId, status, timestamp: Date.now() },
+    })
+  );
+
+  try {
+    if (typeof BroadcastChannel !== 'undefined') {
+      const bc = new BroadcastChannel('takapay_auth_channel');
+      bc.postMessage({ type: 'STATUS_CHANGED', userId: numId, status, timestamp: Date.now() });
+      bc.close();
+    }
+  } catch {}
+};
+
 const readCachedList = (key) => {
   try {
     const value = localStorage.getItem(key);
@@ -310,7 +396,10 @@ export const adminService = {
           Authorization: `Bearer ${token}`,
         },
       });
-      if (!res.ok) return { cagnottes: 0, commandes: 0 };
+      if (!res.ok) {
+        handleAuthError(res, false);
+        return { cagnottes: 0, commandes: 0 };
+      }
       const data = await res.json();
       return {
         cagnottes: Number(data.cagnottes || 0),
@@ -343,7 +432,12 @@ export const adminService = {
   getUser() {
     try {
       const u = localStorage.getItem('takapay_admin_user') || localStorage.getItem('takapay-client-user');
-      return u ? JSON.parse(u) : null;
+      if (!u) return null;
+      const parsed = JSON.parse(u);
+      if (parsed?.statut_compte && parsed.statut_compte !== 'actif') {
+        return null;
+      }
+      return parsed;
     } catch {
       return null;
     }
@@ -536,6 +630,7 @@ export const adminService = {
       body: JSON.stringify(payload),
     });
 
+    handleAuthError(res, true);
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       const msg =
@@ -559,6 +654,7 @@ export const adminService = {
       body: JSON.stringify(payload),
     });
 
+    handleAuthError(res, true);
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       const msg =
@@ -580,6 +676,7 @@ export const adminService = {
           Accept: 'application/json',
         },
       });
+      handleAuthError(res, true);
       if (res.ok) {
         const json = await res.json();
         const list = json.data || json;
@@ -603,6 +700,7 @@ export const adminService = {
           Accept: 'application/json',
         },
       });
+      handleAuthError(res, true);
       if (res.ok) {
         const json = await res.json();
         const list = json.data || json;
@@ -817,21 +915,42 @@ export const adminService = {
     }
   },
 
+  logoutClient() {
+    try {
+      const token = this.getClientToken();
+      if (token) {
+        fetch(`${API_BASE}/logout`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: 'application/json',
+          },
+        }).catch(() => {});
+      }
+    } finally {
+      localStorage.removeItem('takapay-client-user');
+      localStorage.removeItem('takapay_client_token');
+      localStorage.removeItem('takapay_backend_cagnottes');
+    }
+  },
+
   async getDashboardStats() {
     const token = this.getToken();
     if (!token) {
       throw new Error('Session administrateur expirée. Veuillez vous reconnecter.');
     }
     const res = await fetch(`${API_BASE}/admin/stats`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            Accept: 'application/json',
-          },
-        });
-    const data = await res.json();
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/json',
+      },
+    });
     if (!res.ok) {
+      handleAuthError(res, false);
+      const data = await res.json().catch(() => ({}));
       throw new Error(data.message || `Impossible de charger les statistiques (${res.status}).`);
     }
+    const data = await res.json();
 
     return {
       ...EMPTY_STATS,
@@ -1421,6 +1540,10 @@ export const adminService = {
             Accept: 'application/json',
           },
         });
+        if (res.status === 401 || res.status === 403) {
+          handleAuthError(res, false);
+          return [];
+        }
         if (res.ok) {
           const json = await res.json();
           const list = json.data || json;
@@ -1443,6 +1566,10 @@ export const adminService = {
           Accept: 'application/json',
         },
       });
+      if (res.status === 401 || res.status === 403) {
+        handleAuthError(res, Boolean(userId));
+        return [];
+      }
       if (res.ok) {
         const json = await res.json();
         const list = json.data || json;
@@ -1573,19 +1700,20 @@ export const adminService = {
     if (!token) {
       return false;
     }
-    try {
-      await fetch(`${API_BASE}/admin/users/${userId}/status`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-          Accept: 'application/json',
-        },
-        body: JSON.stringify({ statut_compte: status }),
-      });
-    } catch (_error) {
-      void _error;
+    const res = await fetch(`${API_BASE}/admin/users/${userId}/status`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/json',
+      },
+      body: JSON.stringify({ statut_compte: status }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.message || 'Erreur lors du changement de statut');
     }
+    broadcastUserStatusChange(userId, status);
     return true;
   },
 
@@ -1624,6 +1752,9 @@ export const adminService = {
       const msg = data.message || Object.values(data.errors || {})[0]?.[0] || "Erreur lors de la modification de l'utilisateur.";
       throw new Error(msg);
     }
+    if (payload.statut_compte) {
+      broadcastUserStatusChange(userId, payload.statut_compte);
+    }
     return data;
   },
 
@@ -1641,6 +1772,7 @@ export const adminService = {
       const msg = data.message || "Erreur lors de la suppression de l'utilisateur.";
       throw new Error(msg);
     }
+    broadcastUserStatusChange(userId, 'supprime');
     return data;
   },
 
@@ -2272,5 +2404,6 @@ export const registerFeexpayWatchdog = (callback) => {
 
 adminService.registerFeexpayWatchdog = registerFeexpayWatchdog;
 adminService.cancelFeexpayPayment = cancelFeexpayPayment;
+adminService.broadcastUserStatusChange = broadcastUserStatusChange;
 
 export default adminService;
