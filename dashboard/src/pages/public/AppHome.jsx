@@ -510,7 +510,17 @@ export default function AppHome({ initialTab = 'home' }) {
         if (isMounted && Array.isArray(live)) {
           const converted = live.map(mapBackendCagnotteToClient).filter(Boolean);
           try {
-            localStorage.setItem('takapay_backend_cagnottes', JSON.stringify(converted));
+            const rawStored = localStorage.getItem('takapay_backend_cagnottes');
+            let pendingLocal = [];
+            if (rawStored) {
+              const parsed = JSON.parse(rawStored);
+              if (Array.isArray(parsed)) {
+                const knownIds = new Set(converted.map((c) => String(c.backendId || c.id)));
+                pendingLocal = parsed.filter((c) => c && !knownIds.has(String(c.backendId || c.id)));
+              }
+            }
+            const finalMerged = [...converted, ...pendingLocal];
+            localStorage.setItem('takapay_backend_cagnottes', JSON.stringify(finalMerged));
           } catch { /* ignore */ }
           const merged = getStoredCagnottes(user);
           setCagnotteCount(merged.length);

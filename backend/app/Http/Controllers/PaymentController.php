@@ -215,7 +215,7 @@ class PaymentController extends Controller
                             'prix_unitaire' => $amount,
                             'montant_verse' => 0.00,
                             'moyen_paiement' => 'livraison',
-                            'statut' => 'en_attente',
+                            'statut' => 'en_attente_livraison',
                             'adresse_livraison' => $request->input('adresse_livraison') ?? $request->input('delivery_address'),
                             'telephone_livraison' => $request->input('telephone_livraison') ?? $request->input('delivery_phone') ?? $user?->telephone,
                             'note_livraison' => $request->input('note_livraison') ?? $request->input('delivery_note'),
