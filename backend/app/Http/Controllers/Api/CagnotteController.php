@@ -34,8 +34,13 @@ class CagnotteController extends Controller
         $query = Cagnotte::has('produit')
             ->with(['utilisateur', 'produit.imageProduits', 'produit.parametreProduit', 'produit.sousCategorie.categorie', 'transactions'])
             ->where(function ($q) {
-                $q->where('statut', '!=', 'en_attente')
-                    ->orWhere('montant_verse', '>', 0);
+                $q->whereNotIn('statut', ['en_attente', 'initialisation'])
+                    ->orWhere('montant_verse', '>', 0)
+                    ->orWhere('moyen_paiement', 'livraison')
+                    ->orWhere('statut', 'en_attente_livraison')
+                    ->orWhereHas('transactions', function ($t) {
+                        $t->where('moyen_paiement', 'livraison');
+                    });
             })
             ->latest();
 
@@ -85,8 +90,13 @@ class CagnotteController extends Controller
                 'transactions',
             ])
             ->where(function ($q) {
-                $q->where('statut', '!=', 'en_attente')
-                    ->orWhere('montant_verse', '>', 0);
+                $q->whereNotIn('statut', ['en_attente', 'initialisation'])
+                    ->orWhere('montant_verse', '>', 0)
+                    ->orWhere('moyen_paiement', 'livraison')
+                    ->orWhere('statut', 'en_attente_livraison')
+                    ->orWhereHas('transactions', function ($t) {
+                        $t->where('moyen_paiement', 'livraison');
+                    });
             })
             ->latest();
 
