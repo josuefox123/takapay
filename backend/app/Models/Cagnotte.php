@@ -187,7 +187,7 @@ class Cagnotte extends Model
                     'utilisateur_id' => $user->id,
                     'cagnotte_id' => $this->id,
                     'titre' => 'Demande d\'annulation enregistrée',
-                    'message' => "Votre demande d'annulation pour l'article " . ($this->produit?->nom ?? '') . " a bien été enregistrée. Des frais de gestion de 5% (" . number_format($fraisAnnulation, 0, ',', ' ') . " FCFA) sont déduits. Le montant de " . number_format($montantRemboursement, 0, ',', ' ') . " FCFA vous sera reversé sous 24H sur votre numéro " . $telephone . ".",
+                    'message' => "Votre demande d'annulation pour l'article " . ($this->produit?->nom ?? '') . " a bien été enregistrée. Aucun frais n'est déduit (0%). Le montant total de " . number_format($montantRemboursement, 0, ',', ' ') . " FCFA vous sera reversé sous 24H sur votre numéro " . $telephone . ".",
                     'type' => 'alerte',
                     'statut' => 'non_lu',
                 ]);

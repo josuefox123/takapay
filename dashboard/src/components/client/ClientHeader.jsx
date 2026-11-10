@@ -120,6 +120,10 @@ export default function ClientHeader({
         }
       }, 100);
     }
+
+    try {
+      window.dispatchEvent(new CustomEvent('takapay_language_changed', { detail: { lang: newLang } }));
+    } catch { /* ignore */ }
   };
   const [favCount, setFavCount] = useState(() => {
     try {

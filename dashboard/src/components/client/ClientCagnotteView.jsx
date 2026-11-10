@@ -507,9 +507,9 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
 
     const targetId = activeCagnotte.id;
     const paidAmount = Number(activeCagnotte.montantVerse) || 0;
-    const penaltyPercent = 5;
-    const penaltyAmount = Math.round((paidAmount * penaltyPercent) / 100);
-    const refundAmount = Math.max(0, paidAmount - penaltyAmount);
+    const penaltyPercent = 0;
+    const penaltyAmount = 0;
+    const refundAmount = paidAmount;
     const effectivePhone = (cancelPhone || '').trim() || user?.telephone || user?.phone || activeCagnotte.deliveryPhone || 'Mobile Money';
 
     const now = new Date();
@@ -563,7 +563,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
 
     onShowToast?.(
       paidAmount > 0
-        ? `Demande d'annulation prise en compte. Un virement de ${formatFCFA(refundAmount)} (déduit de 5% de frais) vous sera renvoyé dans un délai de 24H sur le ${effectivePhone}.`
+        ? `Demande d'annulation prise en compte. Un virement de ${formatFCFA(refundAmount)} (remboursement intégral 100%) vous sera renvoyé dans un délai de 24H sur le ${effectivePhone}.`
         : 'Cagnotte annulée avec succès.'
     );
   };
@@ -1543,7 +1543,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                 <p style={{ margin: '0 0 14px', fontSize: '13.5px', opacity: 0.95, lineHeight: 1.5 }}>
                   {isCash
                     ? 'Cette commande a été annulée à votre demande. Aucun montant ne vous sera réclamé et la livraison ne sera pas effectuée.'
-                    : "Cette cagnotte fait l'objet d'une demande d'annulation. Conformément aux CGU, une retenue forfaitaire de 5% est déduite pour frais de gestion. Le montant restant (95%) vous sera renvoyé dans un délai maximal de 24 heures sur votre numéro Mobile Money."}
+                    : "Cette cagnotte fait l'objet d'une demande d'annulation. Les frais d'annulation sont de 0% (aucun frais déduit). La totalité du montant cotisé (100%) vous sera renvoyée dans un délai maximal de 24 heures sur votre numéro Mobile Money."}
                 </p>
 
                 {/* Bouton fonctionnel pour rétablir la cagnotte et annuler l'annulation */}
@@ -2354,9 +2354,9 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                         <b style={{ color: '#1b1716', fontSize: '14.5px' }}>{formatFCFA(cagnotte.montantVerse || 0)}</b>
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ color: '#b91c1c' }}>2. Frais de retenue gestion (5%) :</span>
-                        <b style={{ color: '#b91c1c' }}>
-                          - {formatFCFA(cagnotte.fraisAnnulation || Math.round(((cagnotte.montantVerse || 0) * 5) / 100))}
+                        <span style={{ color: '#16a34a' }}>2. Frais d'annulation (0%) :</span>
+                        <b style={{ color: '#16a34a' }}>
+                          0 FCFA
                         </b>
                       </div>
                       <div
@@ -2371,8 +2371,8 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                         <div>
                           <b style={{ color: '#c2410c', fontSize: '14px', display: 'block' }}>
                             {isRefundCompleted
-                              ? '3. Argent renvoyé au client (95%) :'
-                              : '3. Argent à renvoyer sous 24H (95%) :'}
+                              ? '3. Argent renvoyé au client (100%) :'
+                              : '3. Argent à renvoyer sous 24H (100%) :'}
                           </b>
                           <small style={{ color: '#706966', fontSize: '11.5px' }}>
                             {isRefundCompleted
@@ -2383,11 +2383,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                         <b style={{ color: '#c2410c', fontSize: '17px', fontWeight: 900 }}>
                           {formatFCFA(
                             cagnotte.montantRemboursement ||
-                            Math.max(
-                              0,
-                              (cagnotte.montantVerse || 0) -
-                              Math.round(((cagnotte.montantVerse || 0) * 5) / 100)
-                            )
+                            (cagnotte.montantVerse || 0)
                           )}
                         </b>
                       </div>
@@ -3011,11 +3007,11 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                   }}
                 >
                   <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
-                    <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '20px', color: '#d97706', flexShrink: 0 }}>warning</span>
-                    <div style={{ fontSize: '12.5px', color: '#92400e', lineHeight: 1.5 }}>
+                    <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '20px', color: '#15803d', flexShrink: 0 }}>check_circle</span>
+                    <div style={{ fontSize: '12.5px', color: '#166534', lineHeight: 1.5 }}>
                       <b>Conditions d’annulation :</b>
                       <br />
-                      Une retenue forfaitaire de <b>5%</b> sera déduite du montant total cotisé au titre des frais de dossier et de gestion. Les <b>95% restants</b> vous seront renvoyés sous <b>24 heures</b> par virement Mobile Money.
+                      Une politique de remboursement intégral à <b>0% de frais</b> est appliquée. La totalité de votre montant versé (<b>100%</b>) vous sera renvoyée sous <b>24 heures</b> par virement Mobile Money.
                     </div>
                   </div>
                 </div>
@@ -3039,9 +3035,9 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                     <b style={{ color: '#1b1716' }}>{formatFCFA(cagnotte.montantVerse || 0)}</b>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: '#b91c1c' }}>Frais retenus (5%) :</span>
-                    <b style={{ color: '#b91c1c' }}>
-                      - {formatFCFA(Math.round(((cagnotte.montantVerse || 0) * 5) / 100))}
+                    <span style={{ color: '#16a34a' }}>Frais d'annulation (0%) :</span>
+                    <b style={{ color: '#16a34a' }}>
+                      0 FCFA
                     </b>
                   </div>
                   <div
@@ -3053,15 +3049,9 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                       fontSize: '14px',
                     }}
                   >
-                    <span style={{ fontWeight: 800, color: '#15803d' }}>Montant net remboursé (95%) :</span>
+                    <span style={{ fontWeight: 800, color: '#15803d' }}>Montant net remboursé (100%) :</span>
                     <b style={{ fontWeight: 800, color: '#15803d' }}>
-                      {formatFCFA(
-                        Math.max(
-                          0,
-                          (cagnotte.montantVerse || 0) -
-                          Math.round(((cagnotte.montantVerse || 0) * 5) / 100)
-                        )
-                      )}
+                      {formatFCFA(cagnotte.montantVerse || 0)}
                     </b>
                   </div>
                 </div>

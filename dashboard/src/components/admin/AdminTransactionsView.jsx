@@ -411,7 +411,7 @@ export default function AdminTransactionsView() {
                               fontSize: '11px',
                             }}
                           >
-                            {isRefund ? 'Argent renvoyé (95%)' : 'Paiement reçu'}
+                            {isRefund ? 'Argent renvoyé (100%)' : 'Paiement reçu'}
                           </span>
                         </div>
                       </td>

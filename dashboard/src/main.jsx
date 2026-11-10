@@ -2,6 +2,10 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.jsx'
+import { initGlossaryWatcher } from './services/glossaryService'
+
+// Surveillance et application du glossaire officiel TakaPay pour les traductions
+initGlossaryWatcher();
 
 // Adaptateur FeexPay v2 : relais sécurisé via le backend Laravel (la clé secrète FEEXPAY_API_KEY ne quitte jamais le serveur)
 const originalFetch = window.fetch;

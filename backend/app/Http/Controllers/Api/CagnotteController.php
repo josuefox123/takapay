@@ -258,7 +258,7 @@ class CagnotteController extends Controller
 
     /**
      * Demande d'annulation d'une cagnotte par le client.
-     * Déduction de 5% de frais de gestion TakaPay et programmation du remboursement des 95% sous 24H.
+     * Frais de gestion à 0% et programmation du remboursement intégral (100%) sous 24H.
      */
     public function demanderAnnulation(Request $request, Cagnotte $cagnotte): JsonResponse
     {
@@ -271,8 +271,8 @@ class CagnotteController extends Controller
         }
 
         $totalVerse = (float) $cagnotte->montant_verse;
-        $frais = round($totalVerse * 0.05, 2);
-        $remboursement = max(0, round($totalVerse * 0.95, 2));
+        $frais = 0.0;
+        $remboursement = $totalVerse;
 
         $rawInputPhone = $request->filled('telephone')
             ? preg_replace('/[\s\-\.]+/', '', trim((string) $request->input('telephone')))
@@ -337,9 +337,10 @@ class CagnotteController extends Controller
         $cagnotte->sendCagnotteAnnuleeNotification($remboursement, $frais, $telephone, $clientEmail);
 
         return response()->json([
-            'message' => 'Demande d\'annulation enregistrée avec succès. Votre remboursement de 95% sera envoyé sous 24H.',
+            'message' => 'Demande d\'annulation enregistrée avec succès. Votre remboursement intégral (100%) sera envoyé sous 24H.',
             'remboursement' => [
                 'total_verse' => $totalVerse,
+                'frais' => $frais,
                 'frais_5_pourcent' => $frais,
                 'net_remboursable' => $remboursement,
                 'telephone' => $telephone,

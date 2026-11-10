@@ -607,18 +607,18 @@ export default function AdminCagnottesView() {
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '13px' }}>
-                <span style={{ color: 'var(--mut, #6b6a75)' }}>Frais TakaPay conservés (5%) :</span>
+                <span style={{ color: 'var(--mut, #6b6a75)' }}>Frais TakaPay conservés (0%) :</span>
                 <span style={{ color: '#16a34a', fontWeight: 700 }}>
-                  + {(Number(selectedCagnotte.frais_annulation) || Math.round((Number(selectedCagnotte.montant_verse) || 0) * 0.05)).toLocaleString('fr-FR')} FCFA
+                  0 FCFA
                 </span>
               </div>
 
               <div style={{ height: '1px', background: 'var(--line, #ebe6dc)', margin: '12px 0' }} />
 
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontWeight: 800, fontSize: '14px', color: 'var(--ink, #1c1b22)' }}>Net à virer au client (95%) :</span>
+                <span style={{ fontWeight: 800, fontSize: '14px', color: 'var(--ink, #1c1b22)' }}>Net à virer au client (100%) :</span>
                 <strong style={{ fontSize: '20px', color: '#dc2626', fontWeight: 800 }}>
-                  {(Number(selectedCagnotte.montant_remboursement) || Math.round((Number(selectedCagnotte.montant_verse) || 0) * 0.95)).toLocaleString('fr-FR')} FCFA
+                  {(Number(selectedCagnotte.montant_remboursement) || Number(selectedCagnotte.montant_verse) || 0).toLocaleString('fr-FR')} FCFA
                 </strong>
               </div>
             </div>

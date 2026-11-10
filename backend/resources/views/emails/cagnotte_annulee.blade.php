@@ -179,9 +179,9 @@
             <div class="alert-box">
                 <p class="alert-box-text">
                     @if(!empty($isAdmin))
-                        ⏳ <strong>Remboursement à traiter sous 24H :</strong> Un montant net de <strong>{{ number_format($montantRemboursement, 0, ',', ' ') }} FCFA</strong> (après déduction des 5% de frais de gestion) doit être versé au client sur son compte Mobile Money au numéro : <strong>{{ $telephone }}</strong>.
+                        ⏳ <strong>Remboursement à traiter sous 24H :</strong> Un montant net de <strong>{{ number_format($montantRemboursement, 0, ',', ' ') }} FCFA</strong> (remboursement intégral 100%, 0% de frais) doit être versé au client sur son compte Mobile Money au numéro : <strong>{{ $telephone }}</strong>.
                     @else
-                        ⏳ <strong>Délai de traitement :</strong> Conformément à nos conditions d'utilisation, votre virement de remboursement vous sera retourné sous un délai maximal de <strong>24 heures</strong> sur votre compte Mobile Money.
+                        ⏳ <strong>Délai de traitement :</strong> Conformément à nos conditions, votre remboursement intégral (100%, sans frais) vous sera retourné sous un délai maximal de <strong>24 heures</strong> sur votre compte Mobile Money.
                     @endif
                 </p>
             </div>
@@ -197,11 +197,11 @@
                     <span class="detail-value">{{ number_format($cagnotte->montant_verse, 0, ',', ' ') }} FCFA</span>
                 </div>
                 <div class="detail-row">
-                    <span class="detail-label">Frais de gestion & dossier (5%) :</span>
-                    <span class="detail-value" style="color: #dc2626;">- {{ number_format($fraisAnnulation, 0, ',', ' ') }} FCFA</span>
+                    <span class="detail-label">Frais de gestion & dossier (0%) :</span>
+                    <span class="detail-value" style="color: #16a34a;">0 FCFA</span>
                 </div>
                 <div class="detail-row highlight">
-                    <span class="detail-label" style="font-weight: 700; color: #1c1817;">Montant net remboursé (95%) :</span>
+                    <span class="detail-label" style="font-weight: 700; color: #1c1817;">Montant net remboursé (100%) :</span>
                     <span class="detail-value" style="font-size: 16px; color: #dc2626; font-weight: 900;">
                         {{ number_format($montantRemboursement, 0, ',', ' ') }} FCFA
                     </span>
