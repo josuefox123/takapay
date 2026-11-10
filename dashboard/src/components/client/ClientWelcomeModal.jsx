@@ -14,37 +14,26 @@ export default function ClientWelcomeModal({
     : (popupPromo ? [popupPromo] : []);
 
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [progress, setProgress] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
 
   // Réinitialiser à chaque ouverture
   useEffect(() => {
     if (isOpen) {
       setCurrentIndex(0);
-      setProgress(0);
       setIsPaused(false);
     }
   }, [isOpen]);
 
-  // Durée d'affichage de chaque affiche (5 secondes)
-  const SLIDE_DURATION = 5000;
-  const TICK_INTERVAL = 50;
-
+  // Défilement automatique doux (toutes les 6 secondes sans barre de progression agressive)
   useEffect(() => {
     if (!isOpen || items.length <= 1 || isPaused) return;
 
     const timer = setInterval(() => {
-      setProgress((prev) => {
-        if (prev >= 100) {
-          setCurrentIndex((idx) => (idx + 1) % items.length);
-          return 0;
-        }
-        return prev + (100 / (SLIDE_DURATION / TICK_INTERVAL));
-      });
-    }, TICK_INTERVAL);
+      setCurrentIndex((idx) => (idx + 1) % items.length);
+    }, 6000);
 
     return () => clearInterval(timer);
-  }, [isOpen, items.length, isPaused, currentIndex]);
+  }, [isOpen, items.length, isPaused]);
 
   if (!isOpen || items.length === 0) return null;
 
@@ -61,13 +50,11 @@ export default function ClientWelcomeModal({
 
   const goToNext = (e) => {
     if (e) e.stopPropagation();
-    setProgress(0);
     setCurrentIndex((prev) => (prev + 1) % items.length);
   };
 
   const goToPrev = (e) => {
     if (e) e.stopPropagation();
-    setProgress(0);
     setCurrentIndex((prev) => (prev - 1 + items.length) % items.length);
   };
 
@@ -94,12 +81,13 @@ export default function ClientWelcomeModal({
         position: 'fixed',
         inset: 0,
         zIndex: 9999,
-        background: 'rgba(11, 15, 23, 0.78)',
+        background: 'rgba(15, 23, 42, 0.72)',
         backdropFilter: 'blur(8px)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
         padding: '16px',
+        boxSizing: 'border-box',
       }}
     >
       <div
@@ -109,7 +97,7 @@ export default function ClientWelcomeModal({
         aria-labelledby="welcome-title"
         style={{
           background: '#ffffff',
-          color: '#1b1716',
+          color: '#0f172a',
           maxWidth: '520px',
           width: '100%',
           borderRadius: '24px',
@@ -117,63 +105,10 @@ export default function ClientWelcomeModal({
           position: 'relative',
           display: 'flex',
           flexDirection: 'column',
-          boxShadow: '0 30px 80px rgba(0, 0, 0, 0.45)',
+          boxShadow: '0 25px 60px -15px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.1)',
+          boxSizing: 'border-box',
         }}
       >
-        {/* Barres de progression fines en haut (style Story Instagram / Revolut) */}
-        {items.length > 1 && (
-          <div
-            style={{
-              position: 'absolute',
-              top: '12px',
-              left: '14px',
-              right: '54px',
-              display: 'flex',
-              gap: '6px',
-              zIndex: 30,
-            }}
-          >
-            {items.map((_, idx) => {
-              let fillWidth = '0%';
-              if (idx < currentIndex) fillWidth = '100%';
-              else if (idx === currentIndex) fillWidth = `${Math.min(100, Math.max(0, progress))}%`;
-
-              return (
-                <div
-                  key={idx}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setProgress(0);
-                    setCurrentIndex(idx);
-                  }}
-                  role="button"
-                  tabIndex={0}
-                  aria-label={`Aller à l'affiche ${idx + 1}`}
-                  style={{
-                    flex: 1,
-                    height: '3px',
-                    borderRadius: '99px',
-                    background: 'rgba(255, 255, 255, 0.35)',
-                    overflow: 'hidden',
-                    cursor: 'pointer',
-                    boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
-                  }}
-                >
-                  <div
-                    style={{
-                      height: '100%',
-                      width: fillWidth,
-                      background: '#ffffff',
-                      borderRadius: '99px',
-                      transition: idx === currentIndex ? 'none' : 'width 0.2s ease',
-                    }}
-                  />
-                </div>
-              );
-            })}
-          </div>
-        )}
-
         {/* Bouton de fermeture discret × */}
         <button
           type="button"
@@ -182,23 +117,24 @@ export default function ClientWelcomeModal({
           aria-label="Fermer la fenêtre"
           style={{
             position: 'absolute',
-            top: '10px',
-            right: '12px',
+            top: '14px',
+            right: '14px',
             zIndex: 35,
-            width: '34px',
-            height: '34px',
+            width: '36px',
+            height: '36px',
             borderRadius: '50%',
-            background: 'rgba(15, 23, 42, 0.65)',
-            backdropFilter: 'blur(8px)',
-            color: '#ffffff',
-            border: '1px solid rgba(255, 255, 255, 0.25)',
-            fontSize: '20px',
+            background: 'rgba(255, 255, 255, 0.92)',
+            backdropFilter: 'blur(6px)',
+            color: '#1e293b',
+            border: '1px solid rgba(226, 232, 240, 0.8)',
+            fontSize: '18px',
+            fontWeight: '700',
             lineHeight: 1,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             cursor: 'pointer',
-            boxShadow: '0 4px 12px rgba(0,0,0,0.25)',
+            boxShadow: '0 4px 14px rgba(0, 0, 0, 0.15)',
           }}
         >
           ×
@@ -220,17 +156,17 @@ export default function ClientWelcomeModal({
                 width: '36px',
                 height: '36px',
                 borderRadius: '50%',
-                background: 'rgba(15, 23, 42, 0.6)',
-                backdropFilter: 'blur(8px)',
-                color: '#ffffff',
-                border: '1px solid rgba(255, 255, 255, 0.25)',
+                background: 'rgba(255, 255, 255, 0.92)',
+                backdropFilter: 'blur(6px)',
+                color: '#1e293b',
+                border: '1px solid rgba(226, 232, 240, 0.8)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 cursor: 'pointer',
                 fontSize: '18px',
                 fontWeight: 'bold',
-                boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+                boxShadow: '0 4px 14px rgba(0, 0, 0, 0.18)',
               }}
             >
               ‹
@@ -248,17 +184,17 @@ export default function ClientWelcomeModal({
                 width: '36px',
                 height: '36px',
                 borderRadius: '50%',
-                background: 'rgba(15, 23, 42, 0.6)',
-                backdropFilter: 'blur(8px)',
-                color: '#ffffff',
-                border: '1px solid rgba(255, 255, 255, 0.25)',
+                background: 'rgba(255, 255, 255, 0.92)',
+                backdropFilter: 'blur(6px)',
+                color: '#1e293b',
+                border: '1px solid rgba(226, 232, 240, 0.8)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 cursor: 'pointer',
                 fontSize: '18px',
                 fontWeight: 'bold',
-                boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+                boxShadow: '0 4px 14px rgba(0, 0, 0, 0.18)',
               }}
             >
               ›
@@ -280,9 +216,9 @@ export default function ClientWelcomeModal({
           style={{
             position: 'relative',
             overflow: 'hidden',
-            background: '#090d16',
-            maxHeight: hasBottomDetails ? '380px' : '520px',
-            minHeight: '260px',
+            background: 'radial-gradient(circle at center, #1e293b 0%, #0f172a 100%)',
+            maxHeight: hasBottomDetails ? '360px' : '500px',
+            minHeight: '240px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -297,7 +233,7 @@ export default function ClientWelcomeModal({
               style={{
                 width: '100%',
                 height: '100%',
-                maxHeight: hasBottomDetails ? '380px' : '520px',
+                maxHeight: hasBottomDetails ? '360px' : '500px',
                 objectFit: 'contain',
                 display: 'block',
               }}
@@ -310,28 +246,65 @@ export default function ClientWelcomeModal({
                 position: 'absolute',
                 bottom: '14px',
                 left: '14px',
-                background: 'var(--r, #dc2626)',
+                background: 'var(--r, #c62828)',
                 color: '#ffffff',
                 fontWeight: 800,
-                fontSize: '13px',
+                fontSize: '12px',
                 padding: '5px 12px',
                 borderRadius: '99px',
-                boxShadow: '0 4px 12px rgba(220, 38, 38, 0.4)',
+                boxShadow: '0 4px 14px rgba(198, 40, 40, 0.45)',
                 zIndex: 10,
+                letterSpacing: '0.4px',
               }}
             >
-              −{pct}% PROMO
+              −{pct}% DE RÉDUCTION
             </span>
           )}
         </div>
+
+        {/* Indicateurs discrets de navigation (points) au lieu de barres de progression */}
+        {items.length > 1 && (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '6px',
+              padding: '12px 0 4px',
+              background: '#ffffff',
+            }}
+          >
+            {items.map((_, idx) => (
+              <button
+                key={idx}
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setCurrentIndex(idx);
+                }}
+                aria-label={`Afficher l'affiche ${idx + 1}`}
+                style={{
+                  width: idx === currentIndex ? '22px' : '7px',
+                  height: '7px',
+                  borderRadius: '99px',
+                  background: idx === currentIndex ? 'var(--r, #c62828)' : '#cbd5e1',
+                  border: 'none',
+                  padding: 0,
+                  cursor: 'pointer',
+                  transition: 'all 0.25s ease',
+                }}
+              />
+            ))}
+          </div>
+        )}
 
         {/* Détails du bas : offre commerciale VS annonce pure */}
         {hasBottomDetails && (
           <div
             style={{
               background: '#ffffff',
-              color: '#1b1716',
-              padding: '20px 24px',
+              color: '#0f172a',
+              padding: items.length > 1 ? '10px 24px 24px' : '20px 24px 24px',
               display: 'flex',
               flexDirection: 'column',
               gap: '6px',
@@ -345,7 +318,7 @@ export default function ClientWelcomeModal({
                   fontWeight: 800,
                   letterSpacing: '1.2px',
                   textTransform: 'uppercase',
-                  color: 'var(--r, #dc2626)',
+                  color: 'var(--r, #c62828)',
                 }}
               >
                 {pct > 0 ? `OFFRE SPÉCIALE −${pct}%` : 'OFFRE DU MOMENT'}
@@ -357,10 +330,10 @@ export default function ClientWelcomeModal({
                 id="welcome-title"
                 style={{
                   fontWeight: 800,
-                  color: '#1b1716',
+                  color: '#0f172a',
                   margin: '0',
-                  lineHeight: 1.25,
-                  fontSize: '19px',
+                  lineHeight: 1.3,
+                  fontSize: '18px',
                 }}
               >
                 {current.titre || linkedProductName}
@@ -371,9 +344,9 @@ export default function ClientWelcomeModal({
               <p
                 style={{
                   margin: '4px 0 10px',
-                  color: '#4b443f',
+                  color: '#64748b',
                   lineHeight: 1.5,
-                  fontSize: '14px',
+                  fontSize: '13px',
                 }}
               >
                 {current.description}
@@ -389,7 +362,11 @@ export default function ClientWelcomeModal({
                   padding: '13px',
                   fontSize: '15px',
                   fontWeight: 800,
-                  marginTop: '8px',
+                  borderRadius: '12px',
+                  marginTop: '6px',
+                  background: 'var(--r, #c62828)',
+                  color: '#ffffff',
+                  boxShadow: '0 6px 18px rgba(198, 40, 40, 0.35)',
                 }}
                 onClick={handleAction}
               >

@@ -2,6 +2,130 @@ const API_BASE = '/api';
 const DASHBOARD_STATS_UPDATE_KEY = 'takapay_dashboard_stats_updated';
 const DASHBOARD_STATS_UPDATE_EVENT = 'takapay:dashboard-stats-updated';
 
+// Cache en mémoire vive (RAM navigateur) pour instantanéité des navigations
+const memoryCache = new Map();
+const DEFAULT_TTL_MS = 120 * 1000; // 2 minutes
+
+const getCached = (key) => {
+  const item = memoryCache.get(key);
+  if (!item) return null;
+  if (Date.now() > item.expiresAt) {
+    memoryCache.delete(key);
+    return null;
+  }
+  return item.data;
+};
+
+const setCached = (key, data, ttlMs = DEFAULT_TTL_MS) => {
+  memoryCache.set(key, {
+    data,
+    expiresAt: Date.now() + ttlMs,
+  });
+};
+
+const invalidateCache = (pattern) => {
+  if (!pattern) {
+    memoryCache.clear();
+    return;
+  }
+  for (const key of memoryCache.keys()) {
+    if (key.includes(pattern)) {
+      memoryCache.delete(key);
+    }
+  }
+};
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('takapay_products_updated', () => invalidateCache('produits'));
+  window.addEventListener('takapay_promotions_updated', () => invalidateCache('promotions'));
+}
+
+export const handleAuthError = (res, isClient = false) => {
+  if (res && (res.status === 401 || res.status === 403)) {
+    if (typeof window !== 'undefined') {
+      if (isClient) {
+        try {
+          localStorage.removeItem('takapay-client-user');
+          localStorage.removeItem('takapay_client_token');
+          localStorage.removeItem('takapay_backend_cagnottes');
+        } catch {}
+        window.dispatchEvent(
+          new CustomEvent('takapay:auth:unauthorized', {
+            detail: { status: res.status },
+          })
+        );
+      } else {
+        try {
+          localStorage.removeItem('takapay_admin_token');
+          localStorage.removeItem('takapay_admin_user');
+        } catch {}
+        window.dispatchEvent(
+          new CustomEvent('takapay:admin:unauthorized', {
+            detail: { status: res.status },
+          })
+        );
+      }
+    }
+  }
+};
+
+export const broadcastUserStatusChange = (userId, status) => {
+  if (typeof window === 'undefined' || !userId) return;
+  const numId = Number(userId);
+
+  try {
+    const clientUserRaw = localStorage.getItem('takapay-client-user');
+    if (clientUserRaw) {
+      const clientUser = JSON.parse(clientUserRaw);
+      if (Number(clientUser?.id) === numId) {
+        if (status === 'suspendu' || status === 'inactif' || status === 'supprime') {
+          localStorage.removeItem('takapay-client-user');
+          localStorage.removeItem('takapay_client_token');
+          localStorage.removeItem('takapay_backend_cagnottes');
+        } else if (status === 'actif') {
+          clientUser.statut_compte = 'actif';
+          localStorage.setItem('takapay-client-user', JSON.stringify(clientUser));
+        }
+      }
+    }
+
+    const adminUserRaw = localStorage.getItem('takapay_admin_user');
+    if (adminUserRaw) {
+      const adminUser = JSON.parse(adminUserRaw);
+      if (Number(adminUser?.id) === numId) {
+        if (status === 'suspendu' || status === 'inactif' || status === 'supprime') {
+          localStorage.removeItem('takapay_admin_token');
+          localStorage.removeItem('takapay_admin_user');
+        } else if (status === 'actif') {
+          adminUser.statut_compte = 'actif';
+          localStorage.setItem('takapay_admin_user', JSON.stringify(adminUser));
+        }
+      }
+    }
+  } catch {}
+
+  try {
+    localStorage.setItem(
+      'takapay_user_status_sync',
+      JSON.stringify({ userId: numId, status, timestamp: Date.now() })
+    );
+  } catch {}
+
+  window.dispatchEvent(
+    new CustomEvent('takapay:user_status_changed', {
+      detail: { userId: numId, status, timestamp: Date.now() },
+    })
+  );
+
+  try {
+    if (typeof BroadcastChannel !== 'undefined') {
+      const bc = new BroadcastChannel('takapay_auth_channel');
+      bc.postMessage({ type: 'STATUS_CHANGED', userId: numId, status, timestamp: Date.now() });
+      bc.close();
+    }
+  } catch {}
+};
+
 const readCachedList = (key) => {
   try {
     const value = localStorage.getItem(key);
@@ -47,6 +171,10 @@ export const adminService = {
 
   getCachedProduits() {
     return readCachedList('takapay_backend_products');
+  },
+
+  invalidateCache(pattern) {
+    invalidateCache(pattern);
   },
 
   async initiatePayment(payload) {
@@ -268,7 +396,10 @@ export const adminService = {
           Authorization: `Bearer ${token}`,
         },
       });
-      if (!res.ok) return { cagnottes: 0, commandes: 0 };
+      if (!res.ok) {
+        handleAuthError(res, false);
+        return { cagnottes: 0, commandes: 0 };
+      }
       const data = await res.json();
       return {
         cagnottes: Number(data.cagnottes || 0),
@@ -301,7 +432,12 @@ export const adminService = {
   getUser() {
     try {
       const u = localStorage.getItem('takapay_admin_user') || localStorage.getItem('takapay-client-user');
-      return u ? JSON.parse(u) : null;
+      if (!u) return null;
+      const parsed = JSON.parse(u);
+      if (parsed?.statut_compte && parsed.statut_compte !== 'actif') {
+        return null;
+      }
+      return parsed;
     } catch {
       return null;
     }
@@ -494,6 +630,7 @@ export const adminService = {
       body: JSON.stringify(payload),
     });
 
+    handleAuthError(res, true);
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       const msg =
@@ -517,6 +654,7 @@ export const adminService = {
       body: JSON.stringify(payload),
     });
 
+    handleAuthError(res, true);
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       const msg =
@@ -538,6 +676,7 @@ export const adminService = {
           Accept: 'application/json',
         },
       });
+      handleAuthError(res, true);
       if (res.ok) {
         const json = await res.json();
         const list = json.data || json;
@@ -561,6 +700,7 @@ export const adminService = {
           Accept: 'application/json',
         },
       });
+      handleAuthError(res, true);
       if (res.ok) {
         const json = await res.json();
         const list = json.data || json;
@@ -575,7 +715,11 @@ export const adminService = {
   },
 
   // GESTION DU CARROUSEL / BANNIÈRES
-  async getCarousels(all = false) {
+  async getCarousels(all = false, force = false) {
+    if (!all && !force) {
+      const memoryItem = getCached('carousels_public');
+      if (memoryItem) return memoryItem;
+    }
     const token = this.getToken();
     const url = all ? `${API_BASE}/admin/carousels` : `${API_BASE}/carousels`;
     try {
@@ -589,14 +733,17 @@ export const adminService = {
         const json = await res.json();
         const list = json.data || json;
         if (Array.isArray(list)) {
-          if (!all) writeCachedList('takapay_public_carousels', list);
+          if (!all) {
+            setCached('carousels_public', list);
+            writeCachedList('takapay_public_carousels', list);
+          }
           return list;
         }
       }
     } catch (_e) {
       void _e;
     }
-    return all ? [] : readCachedList('takapay_public_carousels');
+    return all ? [] : (getCached('carousels_public') || readCachedList('takapay_public_carousels'));
   },
 
   async createCarousel(formData) {
@@ -614,6 +761,7 @@ export const adminService = {
       const msg = data.message || Object.values(data.errors || {})?.[0]?.[0] || 'Erreur lors de la création de la bannière.';
       throw new Error(msg);
     }
+    invalidateCache('carousels');
     try { localStorage.removeItem('takapay_public_carousels'); } catch {}
     return data;
   },
@@ -639,6 +787,7 @@ export const adminService = {
       const msg = data.message || Object.values(data.errors || {})?.[0]?.[0] || 'Erreur lors de la modification de la bannière.';
       throw new Error(msg);
     }
+    invalidateCache('carousels');
     try { localStorage.removeItem('takapay_public_carousels'); } catch {}
     return data;
   },
@@ -657,11 +806,16 @@ export const adminService = {
       const msg = data.message || 'Erreur lors de la suppression de la bannière.';
       throw new Error(msg);
     }
+    invalidateCache('carousels');
     try { localStorage.removeItem('takapay_public_carousels'); } catch {}
     return data;
   },
 
-  async getPartenaires(all = false) {
+  async getPartenaires(all = false, force = false) {
+    if (!all && !force) {
+      const memoryItem = getCached('partenaires_public');
+      if (memoryItem) return memoryItem;
+    }
     const token = this.getToken();
     const res = await fetch(`${API_BASE}/${all ? 'admin/' : ''}partenaires`, {
       headers: {
@@ -676,6 +830,9 @@ export const adminService = {
     const list = data.data || data;
     if (!Array.isArray(list)) {
       throw new Error('La réponse des partenaires est invalide.');
+    }
+    if (!all) {
+      setCached('partenaires_public', list);
     }
     return list;
   },
@@ -695,6 +852,7 @@ export const adminService = {
       const msg = data.message || Object.values(data.errors || {})?.[0]?.[0] || 'Erreur lors de la création du partenaire.';
       throw new Error(msg);
     }
+    invalidateCache('partenaires');
     return data;
   },
 
@@ -718,6 +876,7 @@ export const adminService = {
       const msg = data.message || Object.values(data.errors || {})?.[0]?.[0] || 'Erreur lors de la modification du partenaire.';
       throw new Error(msg);
     }
+    invalidateCache('partenaires');
     return data;
   },
 
@@ -734,6 +893,7 @@ export const adminService = {
     if (!res.ok) {
       throw new Error(data.message || 'Erreur lors de la suppression du partenaire.');
     }
+    invalidateCache('partenaires');
     return data;
   },
 
@@ -755,21 +915,42 @@ export const adminService = {
     }
   },
 
+  logoutClient() {
+    try {
+      const token = this.getClientToken();
+      if (token) {
+        fetch(`${API_BASE}/logout`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: 'application/json',
+          },
+        }).catch(() => {});
+      }
+    } finally {
+      localStorage.removeItem('takapay-client-user');
+      localStorage.removeItem('takapay_client_token');
+      localStorage.removeItem('takapay_backend_cagnottes');
+    }
+  },
+
   async getDashboardStats() {
     const token = this.getToken();
     if (!token) {
       throw new Error('Session administrateur expirée. Veuillez vous reconnecter.');
     }
     const res = await fetch(`${API_BASE}/admin/stats`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            Accept: 'application/json',
-          },
-        });
-    const data = await res.json();
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/json',
+      },
+    });
     if (!res.ok) {
+      handleAuthError(res, false);
+      const data = await res.json().catch(() => ({}));
       throw new Error(data.message || `Impossible de charger les statistiques (${res.status}).`);
     }
+    const data = await res.json();
 
     return {
       ...EMPTY_STATS,
@@ -837,7 +1018,11 @@ export const adminService = {
     }
   },
 
-  async getProduits() {
+  async getProduits(force = false) {
+    if (!force) {
+      const memoryItem = getCached('produits');
+      if (memoryItem) return memoryItem;
+    }
     const token = this.getToken();
     try {
       const res = await fetch(`${API_BASE}/produits`, {
@@ -869,6 +1054,7 @@ export const adminService = {
             })
           );
           const allProducts = [...list, ...remainingPages.flat()];
+          setCached('produits', allProducts);
           writeCachedList('takapay_backend_products', allProducts);
           return allProducts;
         }
@@ -876,7 +1062,7 @@ export const adminService = {
     } catch {
       // Fallback
     }
-    return readCachedList('takapay_backend_products');
+    return getCached('produits') || readCachedList('takapay_backend_products');
   },
 
   async getAdminProduits() {
@@ -916,6 +1102,7 @@ export const adminService = {
       error.status = res.status;
       throw error;
     }
+    invalidateCache('produits');
     window.dispatchEvent(new CustomEvent('takapay_products_updated'));
     return true;
   },
@@ -951,6 +1138,7 @@ export const adminService = {
     if (payload.video) {
       created.video = payload.video;
     }
+    invalidateCache('produits');
     window.dispatchEvent(
       new CustomEvent('takapay_products_updated', { detail: created })
     );
@@ -977,13 +1165,18 @@ export const adminService = {
     if (payload.video) {
       updated.video = payload.video;
     }
+    invalidateCache('produits');
     window.dispatchEvent(
       new CustomEvent('takapay_products_updated', { detail: updated })
     );
     return { success: true, data: updated };
   },
 
-  async getCategories() {
+  async getCategories(force = false) {
+    if (!force) {
+      const memoryItem = getCached('categories');
+      if (memoryItem) return memoryItem;
+    }
     try {
       const res = await fetch(`${API_BASE}/categories`, {
         headers: { Accept: 'application/json' },
@@ -992,6 +1185,7 @@ export const adminService = {
         const json = await res.json();
         const apiList = json.data || json;
         if (Array.isArray(apiList)) {
+          setCached('categories', apiList);
           writeCachedList('takapay_backend_categories', apiList);
           return apiList;
         }
@@ -1000,7 +1194,7 @@ export const adminService = {
       void _error;
     }
 
-    return readCachedList('takapay_backend_categories');
+    return getCached('categories') || readCachedList('takapay_backend_categories');
   },
 
   async getAdminCategories() {
@@ -1049,6 +1243,7 @@ export const adminService = {
 
     const json = await res.json();
     const created = json.data || json;
+    invalidateCache('categories');
     window.dispatchEvent(
       new CustomEvent('takapay_categories_updated', { detail: created })
     );
@@ -1085,6 +1280,7 @@ export const adminService = {
     }
 
     const updated = response.data || response;
+    invalidateCache('categories');
     window.dispatchEvent(
       new CustomEvent('takapay_categories_updated', { detail: updated })
     );
@@ -1216,6 +1412,7 @@ export const adminService = {
     }
 
     const json = await res.json().catch(() => ({}));
+    invalidateCache('categories');
     window.dispatchEvent(new CustomEvent('takapay_categories_updated', { detail: { id, deleted: true } }));
     return { success: true, ...json };
   },
@@ -1239,11 +1436,16 @@ export const adminService = {
     }
 
     const json = await res.json().catch(() => ({}));
+    invalidateCache('categories');
     window.dispatchEvent(new CustomEvent('takapay_categories_updated', { detail: { id, deleted: true } }));
     return { success: true, ...json };
   },
 
-  async getPromotions() {
+  async getPromotions(force = false) {
+    if (!force) {
+      const memoryItem = getCached('promotions');
+      if (memoryItem) return memoryItem;
+    }
     const token = this.getToken();
     try {
       const res = await fetch(`${API_BASE}/promotions`, {
@@ -1256,13 +1458,14 @@ export const adminService = {
         const json = await res.json();
         const list = json.data || json;
         if (Array.isArray(list)) {
+          setCached('promotions', list);
           return list;
         }
       }
     } catch (_error) {
       void _error;
     }
-    return [];
+    return getCached('promotions') || [];
   },
 
   async createPromotion(payload) {
@@ -1281,6 +1484,8 @@ export const adminService = {
       const msg = data.message || Object.values(data.errors || {})?.[0]?.[0] || 'Erreur lors de la création de la promotion.';
       throw new Error(msg);
     }
+    invalidateCache('promotions');
+    window.dispatchEvent(new CustomEvent('takapay_promotions_updated'));
     return { success: true, data: data.data || data };
   },
 
@@ -1300,6 +1505,8 @@ export const adminService = {
       const msg = data.message || Object.values(data.errors || {})?.[0]?.[0] || 'Erreur lors de la modification de la promotion.';
       throw new Error(msg);
     }
+    invalidateCache('promotions');
+    window.dispatchEvent(new CustomEvent('takapay_promotions_updated'));
     return { success: true, data: data.data || data };
   },
 
@@ -1316,12 +1523,41 @@ export const adminService = {
     } catch (_error) {
       void _error;
     }
+    invalidateCache('promotions');
+    window.dispatchEvent(new CustomEvent('takapay_promotions_updated'));
     return true;
   },
 
   // 2. GESTION DES CAGNOTTES
   async getCagnottes(userId = null) {
-    const token = this.getClientToken() || this.getToken();
+    if (!userId) {
+      // Espace Administration : endpoint dédié sécurisé avec visibilité super_admin / admin
+      const adminToken = this.getToken();
+      try {
+        const res = await fetch(`${API_BASE}/admin/cagnottes`, {
+          headers: {
+            ...(adminToken ? { Authorization: `Bearer ${adminToken}` } : {}),
+            Accept: 'application/json',
+          },
+        });
+        if (res.status === 401 || res.status === 403) {
+          handleAuthError(res, false);
+          return [];
+        }
+        if (res.ok) {
+          const json = await res.json();
+          const list = json.data || json;
+          if (Array.isArray(list)) {
+            return list;
+          }
+        }
+      } catch (_error) {
+        void _error;
+      }
+    }
+
+    // Espace Client (avec userId explicite) ou fallback
+    const token = userId ? (this.getClientToken() || this.getToken()) : this.getToken();
     try {
       const url = userId ? `${API_BASE}/cagnottes?user_id=${encodeURIComponent(userId)}` : `${API_BASE}/cagnottes`;
       const res = await fetch(url, {
@@ -1330,6 +1566,10 @@ export const adminService = {
           Accept: 'application/json',
         },
       });
+      if (res.status === 401 || res.status === 403) {
+        handleAuthError(res, Boolean(userId));
+        return [];
+      }
       if (res.ok) {
         const json = await res.json();
         const list = json.data || json;
@@ -1460,19 +1700,20 @@ export const adminService = {
     if (!token) {
       return false;
     }
-    try {
-      await fetch(`${API_BASE}/admin/users/${userId}/status`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-          Accept: 'application/json',
-        },
-        body: JSON.stringify({ statut_compte: status }),
-      });
-    } catch (_error) {
-      void _error;
+    const res = await fetch(`${API_BASE}/admin/users/${userId}/status`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/json',
+      },
+      body: JSON.stringify({ statut_compte: status }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.message || 'Erreur lors du changement de statut');
     }
+    broadcastUserStatusChange(userId, status);
     return true;
   },
 
@@ -1511,6 +1752,9 @@ export const adminService = {
       const msg = data.message || Object.values(data.errors || {})[0]?.[0] || "Erreur lors de la modification de l'utilisateur.";
       throw new Error(msg);
     }
+    if (payload.statut_compte) {
+      broadcastUserStatusChange(userId, payload.statut_compte);
+    }
     return data;
   },
 
@@ -1528,6 +1772,7 @@ export const adminService = {
       const msg = data.message || "Erreur lors de la suppression de l'utilisateur.";
       throw new Error(msg);
     }
+    broadcastUserStatusChange(userId, 'supprime');
     return data;
   },
 
@@ -2159,5 +2404,6 @@ export const registerFeexpayWatchdog = (callback) => {
 
 adminService.registerFeexpayWatchdog = registerFeexpayWatchdog;
 adminService.cancelFeexpayPayment = cancelFeexpayPayment;
+adminService.broadcastUserStatusChange = broadcastUserStatusChange;
 
 export default adminService;

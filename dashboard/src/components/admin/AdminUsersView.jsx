@@ -39,6 +39,67 @@ export default function AdminUsersView({ onShowToast, currentUser }) {
   const [editLoading, setEditLoading] = useState(false);
   const [editError, setEditError] = useState('');
 
+  // Modal de confirmation personnalisé (remplace window.confirm pour les changements de statut et suppressions)
+  const [confirmModal, setConfirmModal] = useState(null);
+
+  const getActionConfig = (status) => {
+    switch (status) {
+      case 'supprimer':
+        return {
+          icon: 'trash',
+          iconBg: '#fee2e2',
+          iconColor: '#dc2626',
+          title: 'Supprimer définitivement ce compte ?',
+          badge: 'Suppression irréversible',
+          badgeBg: '#fef2f2',
+          badgeColor: '#b91c1c',
+          desc: 'Cette action supprimera définitivement le compte et toutes les données associées. Les sessions et jetons de connexion seront immédiatement révoqués. Cette opération ne peut pas être annulée.',
+          confirmLabel: 'Supprimer définitivement',
+          btnBg: '#dc2626',
+        };
+      case 'suspendu':
+        return {
+          icon: 'lock',
+          iconBg: '#ffedd5',
+          iconColor: '#c2410c',
+          title: 'Suspendre ce compte ?',
+          badge: 'Révocation immédiate des accès',
+          badgeBg: '#fff7ed',
+          badgeColor: '#c2410c',
+          desc: 'Le compte sera immédiatement bloqué. Toutes les sessions actives de l’utilisateur seront révoquées et il sera déconnecté sur tous ses appareils jusqu’à réactivation.',
+          confirmLabel: 'Confirmer la suspension',
+          btnBg: '#ea580c',
+        };
+      case 'inactif':
+        return {
+          icon: 'shield',
+          iconBg: '#f1f5f9',
+          iconColor: '#475569',
+          title: 'Désactiver ce compte ?',
+          badge: 'Passage en inactivité',
+          badgeBg: '#f8fafc',
+          badgeColor: '#475569',
+          desc: 'Le compte sera marqué comme inactif. Ses sessions actives seront révoquées et l’utilisateur ne pourra plus effectuer d’opérations sans réactivation préalable.',
+          confirmLabel: 'Marquer comme inactif',
+          btnBg: '#475569',
+        };
+      case 'actif':
+      default:
+        return {
+          icon: 'check',
+          iconBg: '#dcfce7',
+          iconColor: '#16a34a',
+          title: 'Réactiver ce compte ?',
+          badge: 'Rétablissement des accès',
+          badgeBg: '#f0fdf4',
+          badgeColor: '#15803d',
+          desc: 'Le compte sera de nouveau actif. L’utilisateur pourra se reconnecter avec ses identifiants habituels et utiliser l’ensemble des services Takapay.',
+          confirmLabel: 'Réactiver le compte',
+          btnBg: '#16a34a',
+        };
+    }
+  };
+
   const generateRandomPassword = () => {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%&*';
     let pwd = 'Tk@';
@@ -143,34 +204,75 @@ export default function AdminUsersView({ onShowToast, currentUser }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search]);
 
-  const handleStatusChange = async (userId, newStatus) => {
-    if (newStatus === 'supprimer') {
-      const target = users.find((u) => u.id === userId);
-      const label = target ? `${target.prenom || ''} ${target.nom || ''} (${target.email || ''})`.trim() : 'cet utilisateur';
-      if (!window.confirm(`Voulez-vous vraiment supprimer le compte de ${label} ?`)) {
-        return;
-      }
-      try {
-        await adminService.deleteUser(userId);
-        setUsers((prev) => prev.filter((u) => u.id !== userId));
+  const handleRequestStatusChange = (user, newStatus) => {
+    if (!user || (user.statut_compte || 'actif') === newStatus) return;
+    setConfirmModal({
+      user,
+      targetStatus: newStatus,
+      loading: false,
+      error: '',
+    });
+  };
+
+  const handleConfirmAction = async () => {
+    if (!confirmModal || !confirmModal.user) return;
+    const { user, targetStatus, editPayload } = confirmModal;
+    setConfirmModal((prev) => ({ ...prev, loading: true, error: '' }));
+
+    try {
+      if (targetStatus === 'supprimer') {
+        await adminService.deleteUser(user.id);
+        setUsers((prev) => prev.filter((u) => u.id !== user.id));
         setMeta((prev) => ({ ...prev, total: Math.max((prev.total || 1) - 1, 0) }));
+        if (editingUser?.id === user.id) {
+          setEditingUser(null);
+        }
         if (onShowToast) {
           onShowToast('Compte utilisateur supprimé avec succès.');
         }
-      } catch (err) {
+      } else if (editPayload) {
+        const res = await adminService.updateUser(user.id, editPayload);
+        const updatedUser = res.data || res;
+        setUsers((prev) =>
+          prev.map((u) => (u.id === user.id ? { ...u, ...updatedUser } : u))
+        );
+        setEditingUser(null);
+        if (editPayload.password) {
+          setCreatedAdmin({
+            user: updatedUser,
+            password: editPayload.password,
+            isReset: true,
+          });
+          setShowCreateModal(true);
+        }
         if (onShowToast) {
-          onShowToast(err.message || 'Erreur lors de la suppression du compte.');
+          onShowToast(`Compte de ${updatedUser.prenom || ''} ${updatedUser.nom} modifié avec succès.`);
+        }
+      } else {
+        await adminService.updateUserStatus(user.id, targetStatus);
+        setUsers((prev) =>
+          prev.map((u) => (u.id === user.id ? { ...u, statut_compte: targetStatus } : u))
+        );
+        if (editingUser?.id === user.id) {
+          setEditingUser((prev) => (prev ? { ...prev, statut_compte: targetStatus } : null));
+          setEditForm((prev) => ({ ...prev, statut_compte: targetStatus }));
+        }
+        const statusLabels = {
+          actif: 'réactivé (actif)',
+          suspendu: 'suspendu',
+          inactif: 'marqué inactif',
+        };
+        if (onShowToast) {
+          onShowToast(`Compte de ${user.prenom || ''} ${user.nom || ''} ${statusLabels[targetStatus] || targetStatus}.`);
         }
       }
-      return;
-    }
-
-    await adminService.updateUserStatus(userId, newStatus);
-    setUsers((prev) =>
-      prev.map((u) => (u.id === userId ? { ...u, statut_compte: newStatus } : u))
-    );
-    if (onShowToast) {
-      onShowToast(`Statut de l'utilisateur mis à jour : ${newStatus}`);
+      setConfirmModal(null);
+    } catch (err) {
+      setConfirmModal((prev) => ({
+        ...prev,
+        loading: false,
+        error: err.message || "Une erreur s'est produite lors de l'opération.",
+      }));
     }
   };
 
@@ -203,20 +305,32 @@ export default function AdminUsersView({ onShowToast, currentUser }) {
       return;
     }
 
+    const payload = {
+      nom: editForm.nom.trim(),
+      prenom: editForm.prenom.trim(),
+      email: editForm.email.trim(),
+      telephone: editForm.telephone.trim() || null,
+      role: editForm.role,
+      statut_compte: editForm.statut_compte,
+    };
+    if (editForm.password && editForm.password.trim()) {
+      payload.password = editForm.password.trim();
+    }
+
+    // Si le statut a été modifié depuis le formulaire d'édition, demander confirmation via le modal
+    if (editForm.statut_compte !== (editingUser.statut_compte || 'actif')) {
+      setConfirmModal({
+        user: editingUser,
+        targetStatus: editForm.statut_compte,
+        editPayload: payload,
+        loading: false,
+        error: '',
+      });
+      return;
+    }
+
     setEditLoading(true);
     try {
-      const payload = {
-        nom: editForm.nom.trim(),
-        prenom: editForm.prenom.trim(),
-        email: editForm.email.trim(),
-        telephone: editForm.telephone.trim() || null,
-        role: editForm.role,
-        statut_compte: editForm.statut_compte,
-      };
-      if (editForm.password && editForm.password.trim()) {
-        payload.password = editForm.password.trim();
-      }
-
       const res = await adminService.updateUser(editingUser.id, payload);
       const updatedUser = res.data || res;
 
@@ -443,7 +557,7 @@ export default function AdminUsersView({ onShowToast, currentUser }) {
                     <td onClick={(e) => e.stopPropagation()}>
                       <select
                         value={u.statut_compte || 'actif'}
-                        onChange={(e) => handleStatusChange(u.id, e.target.value)}
+                        onChange={(e) => handleRequestStatusChange(u, e.target.value)}
                         style={{
                           padding: '6px 10px',
                           borderRadius: '8px',
@@ -452,6 +566,7 @@ export default function AdminUsersView({ onShowToast, currentUser }) {
                           color: 'var(--ink)',
                           fontSize: '12px',
                           font: 'inherit',
+                          cursor: 'pointer',
                         }}
                       >
                         <option value="actif">Actif</option>
@@ -1188,46 +1303,326 @@ export default function AdminUsersView({ onShowToast, currentUser }) {
                 />
               </div>
 
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+                {isSuperAdmin && (
+                  <button
+                    type="button"
+                    disabled={editLoading}
+                    onClick={() => {
+                      handleRequestStatusChange(editingUser, 'supprimer');
+                    }}
+                    style={{
+                      padding: '10px 16px',
+                      borderRadius: '8px',
+                      border: '1px solid #fecaca',
+                      background: '#fff1f2',
+                      color: '#dc2626',
+                      fontSize: '13px',
+                      fontWeight: 600,
+                      cursor: editLoading ? 'not-allowed' : 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                    }}
+                  >
+                    <AdminIcon name="trash" size={14} />
+                    Supprimer ce compte
+                  </button>
+                )}
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginLeft: 'auto' }}>
+                  <button
+                    type="button"
+                    onClick={() => setEditingUser(null)}
+                    disabled={editLoading}
+                    style={{
+                      padding: '10px 18px',
+                      borderRadius: '8px',
+                      border: '1px solid var(--line)',
+                      background: 'transparent',
+                      color: 'var(--ink)',
+                      fontSize: '13px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Annuler
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={editLoading}
+                    style={{
+                      padding: '10px 20px',
+                      borderRadius: '8px',
+                      border: 'none',
+                      background: 'var(--r)',
+                      color: '#ffffff',
+                      fontSize: '13px',
+                      fontWeight: 700,
+                      cursor: editLoading ? 'not-allowed' : 'pointer',
+                      opacity: editLoading ? 0.7 : 1,
+                    }}
+                  >
+                    {editLoading ? 'Enregistrement...' : 'Enregistrer les modifications'}
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de confirmation personnalisé pour la suppression et le changement de statut */}
+      {confirmModal && (() => {
+        const config = getActionConfig(confirmModal.targetStatus);
+        const targetUser = confirmModal.user;
+        const initials = ((targetUser.prenom || '')[0] || (targetUser.nom || '')[0] || 'U').toUpperCase();
+
+        return (
+          <div
+            role="dialog"
+            aria-modal="true"
+            style={{
+              position: 'fixed',
+              inset: 0,
+              background: 'rgba(0, 0, 0, 0.65)',
+              zIndex: 1200,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '24px 16px',
+              backdropFilter: 'blur(5px)',
+              boxSizing: 'border-box',
+            }}
+            onClick={(e) => {
+              if (e.target === e.currentTarget && !confirmModal.loading) {
+                setConfirmModal(null);
+              }
+            }}
+          >
+            <div
+              style={{
+                background: 'var(--card)',
+                border: '1.5px solid var(--line)',
+                borderRadius: '20px',
+                maxWidth: '480px',
+                width: '100%',
+                padding: '28px',
+                boxShadow: '0 25px 60px rgba(0,0,0,0.3)',
+                boxSizing: 'border-box',
+                position: 'relative',
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => !confirmModal.loading && setConfirmModal(null)}
+                aria-label="Fermer"
+                style={{
+                  position: 'absolute',
+                  top: '18px',
+                  right: '18px',
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--muted)',
+                  cursor: 'pointer',
+                  padding: '6px',
+                  borderRadius: '8px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <AdminIcon name="x" size={16} />
+              </button>
+
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '14px', marginBottom: '16px' }}>
+                <div
+                  style={{
+                    width: '46px',
+                    height: '46px',
+                    borderRadius: '12px',
+                    background: config.iconBg,
+                    color: config.iconColor,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0,
+                  }}
+                >
+                  <AdminIcon name={config.icon} size={22} />
+                </div>
+                <div>
+                  <span
+                    style={{
+                      display: 'inline-block',
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.5px',
+                      padding: '3px 8px',
+                      borderRadius: '6px',
+                      background: config.badgeBg,
+                      color: config.badgeColor,
+                      marginBottom: '6px',
+                    }}
+                  >
+                    {config.badge}
+                  </span>
+                  <h3
+                    style={{
+                      margin: 0,
+                      fontSize: '17px',
+                      fontWeight: 800,
+                      color: 'var(--ink)',
+                      lineHeight: 1.3,
+                    }}
+                  >
+                    {config.title}
+                  </h3>
+                </div>
+              </div>
+
+              <p
+                style={{
+                  fontSize: '13px',
+                  color: 'var(--muted)',
+                  lineHeight: 1.5,
+                  margin: '0 0 16px',
+                }}
+              >
+                {config.desc}
+              </p>
+
+              {/* Carte récapitulative du compte ciblé */}
+              <div
+                style={{
+                  background: 'var(--bg)',
+                  border: '1px solid var(--line)',
+                  borderRadius: '12px',
+                  padding: '12px 14px',
+                  marginBottom: '20px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px',
+                }}
+              >
+                <div
+                  style={{
+                    width: '38px',
+                    height: '38px',
+                    borderRadius: '50%',
+                    background: 'var(--soft)',
+                    color: 'var(--r)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontWeight: 700,
+                    fontSize: '14px',
+                    flexShrink: 0,
+                  }}
+                >
+                  {initials}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div
+                    style={{
+                      fontWeight: 700,
+                      fontSize: '13px',
+                      color: 'var(--ink)',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {targetUser.prenom || ''} {targetUser.nom || ''}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: '12px',
+                      color: 'var(--muted)',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {targetUser.email || targetUser.telephone || 'Compte sans email'}
+                  </div>
+                </div>
+                <span
+                  style={{
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    padding: '3px 8px',
+                    borderRadius: '6px',
+                    textTransform: 'uppercase',
+                    background: targetUser.statut_compte === 'actif' ? '#dcfce7' : '#fee2e2',
+                    color: targetUser.statut_compte === 'actif' ? '#15803d' : '#b91c1c',
+                    flexShrink: 0,
+                  }}
+                >
+                  {targetUser.statut_compte || 'actif'}
+                </span>
+              </div>
+
+              {confirmModal.error && (
+                <div
+                  style={{
+                    padding: '10px 14px',
+                    background: '#fef2f2',
+                    border: '1px solid #fecaca',
+                    borderRadius: '10px',
+                    color: '#b91c1c',
+                    fontSize: '12px',
+                    marginBottom: '16px',
+                  }}
+                >
+                  {confirmModal.error}
+                </div>
+              )}
+
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
                 <button
                   type="button"
-                  onClick={() => setEditingUser(null)}
-                  disabled={editLoading}
+                  disabled={confirmModal.loading}
+                  onClick={() => setConfirmModal(null)}
                   style={{
-                    padding: '10px 18px',
+                    padding: '10px 16px',
                     borderRadius: '8px',
                     border: '1px solid var(--line)',
                     background: 'transparent',
                     color: 'var(--ink)',
                     fontSize: '13px',
                     fontWeight: 600,
-                    cursor: 'pointer',
+                    cursor: confirmModal.loading ? 'not-allowed' : 'pointer',
                   }}
                 >
                   Annuler
                 </button>
                 <button
-                  type="submit"
-                  disabled={editLoading}
+                  type="button"
+                  disabled={confirmModal.loading}
+                  onClick={handleConfirmAction}
                   style={{
                     padding: '10px 20px',
                     borderRadius: '8px',
                     border: 'none',
-                    background: 'var(--r)',
+                    background: config.btnBg,
                     color: '#ffffff',
                     fontSize: '13px',
                     fontWeight: 700,
-                    cursor: editLoading ? 'not-allowed' : 'pointer',
-                    opacity: editLoading ? 0.7 : 1,
+                    cursor: confirmModal.loading ? 'not-allowed' : 'pointer',
+                    opacity: confirmModal.loading ? 0.7 : 1,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '8px',
                   }}
                 >
-                  {editLoading ? 'Enregistrement...' : 'Enregistrer les modifications'}
+                  {confirmModal.loading ? 'Traitement en cours...' : config.confirmLabel}
                 </button>
               </div>
-            </form>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 }

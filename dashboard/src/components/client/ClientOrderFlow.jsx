@@ -571,6 +571,7 @@ export default function ClientOrderFlow({
 
   // Observer pour remplacer le logo FeexPay par le logo Takapay dans la modale
   useEffect(() => {
+    let logoRaf = null;
     const swapLogo = () => {
       const logos = document.querySelectorAll('img[src*="feexpay_logo"], img[alt="Logo"]');
       logos.forEach((img) => {
@@ -585,11 +586,33 @@ export default function ClientOrderFlow({
       });
     };
 
-    const obs = new MutationObserver(swapLogo);
+    const scheduleSwap = () => {
+      if (logoRaf) return;
+      logoRaf = requestAnimationFrame(() => {
+        logoRaf = null;
+        swapLogo();
+      });
+    };
+
+    const obs = new MutationObserver((mutations) => {
+      const hasModalOrImg = mutations.some((m) =>
+        m.addedNodes.length > 0 &&
+        Array.from(m.addedNodes).some(
+          (n) => n.nodeType === 1 && (n.classList?.contains('fixed') || n.querySelector?.('img[src*="feexpay_logo"]'))
+        )
+      );
+      if (hasModalOrImg) {
+        scheduleSwap();
+      }
+    });
+
     obs.observe(document.body, { childList: true, subtree: true });
     swapLogo();
 
-    return () => obs.disconnect();
+    return () => {
+      if (logoRaf) cancelAnimationFrame(logoRaf);
+      obs.disconnect();
+    };
   }, []);
 
   // Watchdog FeexPay : arrêt immédiat de la rotation après 30s ou annulation

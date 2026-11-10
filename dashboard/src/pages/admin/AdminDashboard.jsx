@@ -87,30 +87,37 @@ export default function AdminDashboard() {
 
   // Vérification de la session admin et mise à jour de l'utilisateur
   useEffect(() => {
-    const token = adminService.getToken();
-    if (!token) {
-      navigate('/admin/connexion', { replace: true });
-      return;
-    }
+    let isMounted = true;
+    const checkAdminSession = () => {
+      const token = adminService.getToken();
+      if (!token) {
+        if (isMounted) navigate('/admin/connexion', { replace: true });
+        return;
+      }
 
-    fetch('/api/me', {
-      headers: {
-        Accept: 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-    })
-      .then((res) => {
-        if (res.status === 401 || res.status === 403) {
-          adminService.logout();
-          navigate('/admin/connexion', { replace: true });
-          return null;
-        }
-        return res.ok ? res.json() : null;
+      fetch('/api/me', {
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
       })
-      .then((data) => {
-        if (data) {
+        .then((res) => {
+          if (res.status === 401 || res.status === 403) {
+            adminService.logout();
+            if (isMounted) navigate('/admin/connexion', { replace: true });
+            return null;
+          }
+          return res.ok ? res.json() : null;
+        })
+        .then((data) => {
+          if (!isMounted || !data) return;
           const user = data.user || data.data || data;
           if (user?.role !== 'super_admin' && user?.role !== 'admin') {
+            adminService.logout();
+            navigate('/admin/connexion', { replace: true });
+            return;
+          }
+          if (user?.statut_compte && user.statut_compte !== 'actif') {
             adminService.logout();
             navigate('/admin/connexion', { replace: true });
             return;
@@ -119,9 +126,60 @@ export default function AdminDashboard() {
           try {
             localStorage.setItem('takapay_admin_user', JSON.stringify(user));
           } catch {}
-        }
-      })
-      .catch(() => {});
+        })
+        .catch(() => {});
+    };
+
+    checkAdminSession();
+
+    const handleStatusSync = (targetUserId, newStatus) => {
+      const currentAdmin = adminService.getUser();
+      if (!currentAdmin?.id || Number(currentAdmin.id) !== Number(targetUserId)) return;
+      if (newStatus === 'suspendu' || newStatus === 'inactif' || newStatus === 'supprime') {
+        adminService.logout();
+        if (isMounted) navigate('/admin/connexion', { replace: true });
+      }
+    };
+
+    const handleCustomStatus = (e) => {
+      if (e?.detail?.userId) {
+        handleStatusSync(e.detail.userId, e.detail.status);
+      }
+    };
+
+    const handleStorageEvent = (e) => {
+      if (e.key === 'takapay_user_status_sync' && e.newValue) {
+        try {
+          const data = JSON.parse(e.newValue);
+          if (data?.userId) handleStatusSync(data.userId, data.status);
+        } catch {}
+      }
+    };
+
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        checkAdminSession();
+      }
+    }, 5000);
+
+    const handleAdminUnauthorized = () => {
+      adminService.logout();
+      if (isMounted) navigate('/admin/connexion', { replace: true });
+    };
+
+    window.addEventListener('focus', checkAdminSession);
+    window.addEventListener('takapay:admin:unauthorized', handleAdminUnauthorized);
+    window.addEventListener('takapay:user_status_changed', handleCustomStatus);
+    window.addEventListener('storage', handleStorageEvent);
+
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+      window.removeEventListener('focus', checkAdminSession);
+      window.removeEventListener('takapay:admin:unauthorized', handleAdminUnauthorized);
+      window.removeEventListener('takapay:user_status_changed', handleCustomStatus);
+      window.removeEventListener('storage', handleStorageEvent);
+    };
   }, [navigate]);
 
   // Toast flottant

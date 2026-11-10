@@ -13,6 +13,7 @@ use App\Models\Document;
 use App\Models\Echeance;
 use App\Models\ImageProduit;
 use App\Models\Livreur;
+use App\Models\Notification;
 use App\Models\ParametreProduit;
 use App\Models\Produit;
 use App\Models\Transaction;
@@ -25,6 +26,9 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Cache;
 
 class AdminController extends Controller
 {
@@ -52,9 +56,96 @@ class AdminController extends Controller
             'statut_compte' => ['required', 'string', 'in:actif,inactif,suspendu'],
         ]);
 
+        $newStatus = $request->statut_compte;
+
         $user->update([
-            'statut_compte' => $request->statut_compte,
+            'statut_compte' => $newStatus,
         ]);
+
+        // 1. Actions immédiates sur les sessions & verrous
+        if ($newStatus === 'suspendu' || $newStatus === 'inactif') {
+            // Révocation immédiate de toutes les sessions actives
+            $user->tokens()->delete();
+        } elseif ($newStatus === 'actif') {
+            // Déverrouiller d'éventuels blocages de tentatives de connexion
+            try {
+                Cache::forget('login_lockout_'.$user->id);
+                if ($user->email) {
+                    Cache::forget('login_attempts_'.md5(strtolower($user->email)));
+                }
+                if ($user->telephone) {
+                    Cache::forget('login_attempts_'.md5(preg_replace('/\D/', '', $user->telephone)));
+                }
+            } catch (\Throwable $e) {
+                // Ignorer
+            }
+        }
+
+        // 2. Notification in-app
+        try {
+            $titres = [
+                'suspendu' => 'Suspension temporaire de votre compte',
+                'inactif' => 'Désactivation de votre compte',
+                'actif' => 'Votre compte est de nouveau actif',
+            ];
+            $messages = [
+                'suspendu' => 'Votre compte TakaPay a été suspendu temporairement. Pour toute question ou réactivation, contactez le service client.',
+                'inactif' => 'Votre compte a été marqué comme inactif. Vos données et cagnottes restent conservées en toute sécurité.',
+                'actif' => 'Bonne nouvelle ! Votre compte TakaPay a été réactivé. Vous pouvez vous reconnecter avec vos identifiants habituels.',
+            ];
+
+            Notification::create([
+                'utilisateur_id' => $user->id,
+                'titre' => $titres[$newStatus] ?? 'Mise à jour de votre compte',
+                'message' => $messages[$newStatus] ?? 'Le statut de votre compte a été modifié.',
+                'type' => 'compte',
+                'statut' => 'non_lu',
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning('Notification in-app statut compte non créée : ' . $e->getMessage());
+        }
+
+        // 3. Envoi d'un email d'état si l'utilisateur possède une adresse email valide
+        $hasRealEmail = ! empty($user->email) && ! str_ends_with($user->email, '@client.takapay.bj');
+        if ($hasRealEmail) {
+            try {
+                $prenomNom = trim("{$user->prenom} {$user->nom}") ?: 'Utilisateur';
+                $dateHeure = now()->format('d/m/Y à H:i');
+
+                if ($newStatus === 'suspendu') {
+                    $subject = 'Alerte Sécurité : Suspension temporaire de votre compte TakaPay';
+                    $content = "Bonjour {$prenomNom},\n\n"
+                        . "Nous vous informons que votre compte TakaPay a été temporairement suspendu le {$dateHeure}.\n\n"
+                        . "Par mesure de sécurité, toutes vos sessions actives ont été déconnectées et vos accès sont momentanément restreints.\n\n"
+                        . "Si vous pensez qu'il s'agit d'une erreur ou pour demander la levée de cette suspension, veuillez contacter notre équipe d'assistance par email à support@takapay.bj ou par WhatsApp au +229 01 90 00 00.\n\n"
+                        . "Cordialement,\n"
+                        . "L'équipe TakaPay";
+                } elseif ($newStatus === 'inactif') {
+                    $subject = 'Information : Désactivation de votre compte TakaPay';
+                    $content = "Bonjour {$prenomNom},\n\n"
+                        . "Votre compte TakaPay a été marqué comme inactif le {$dateHeure}.\n\n"
+                        . "Toutes vos informations, historiques d'achat et cagnottes restent sauvegardés en toute sécurité. Vos accès sont pour l'instant désactivés.\n\n"
+                        . "Si vous souhaitez réactiver votre compte à l'avenir, contactez simplement notre service client à support@takapay.bj.\n\n"
+                        . "Cordialement,\n"
+                        . "L'équipe TakaPay";
+                } else { // 'actif'
+                    $subject = 'Bonne nouvelle : Votre compte TakaPay est réactivé !';
+                    $content = "Bonjour {$prenomNom},\n\n"
+                        . "Nous avons le plaisir de vous informer que votre compte TakaPay a été réactivé avec succès le {$dateHeure}.\n\n"
+                        . "Vous pouvez dès à présent vous reconnecter sur la plateforme avec vos identifiants habituels (votre numéro de téléphone ou email, et votre mot de passe / code PIN existant).\n\n"
+                        . "Nous vous remercions de votre fidélité.\n\n"
+                        . "Cordialement,\n"
+                        . "L'équipe TakaPay";
+                }
+
+                Mail::raw($content, function ($message) use ($user, $subject) {
+                    $message->to($user->email)
+                        ->subject($subject);
+                });
+            } catch (\Throwable $e) {
+                Log::warning("Impossible d'envoyer l'email de changement de statut pour {$user->email} : " . $e->getMessage());
+            }
+        }
 
         return response()->json([
             'message' => 'Statut du compte mis à jour avec succès.',

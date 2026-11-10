@@ -1,7 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { formatFCFA, discountPercentage, PRODUCTS, resolveImageUrl } from '../../data/clientStore';
+import { formatFCFA, resolveImageUrl } from '../../data/clientStore';
 import { adminService } from '../../services/adminService';
-import welcomeBannerImg from '../../assets/imagetakapay.webp';
 
 export default function ClientHeroCarousel({
   products = [],
@@ -39,11 +38,15 @@ export default function ClientHeroCarousel({
     };
   }, []);
 
-  // Construction des diapositives
+  // Construction des diapositives : uniquement les bannières envoyées depuis le back-office
   const slides = useMemo(() => {
-    // 1. Si l'administrateur a configuré des bannières carrousel dans la base, on les utilise en priorité
-    if (dbCarousels.length > 0) {
-      return dbCarousels.map((item) => {
+    if (!Array.isArray(dbCarousels) || dbCarousels.length === 0) {
+      return [];
+    }
+
+    return dbCarousels
+      .filter((item) => item && (item.image_url || item.image))
+      .map((item) => {
         const hasProd = item.produit;
         const hasText = Boolean(
           (item.kicker && item.kicker.trim()) ||
@@ -66,11 +69,13 @@ export default function ClientHeroCarousel({
           };
         }
 
+        const bannerImg = resolveImageUrl(item.image_url || item.image);
+
         return {
           id: `carousel-db-${item.id}`,
           isDb: true,
           hasTextOverlay: hasText,
-          image: resolveImageUrl(item.image_url) || welcomeBannerImg,
+          image: bannerImg,
           kicker: item.kicker ? item.kicker.trim() : null,
           title: item.titre ? item.titre.trim() : null,
           description: item.description ? item.description.trim() : null,
@@ -80,71 +85,9 @@ export default function ClientHeroCarousel({
           btnText: item.texte_bouton ? item.texte_bouton.trim() : null,
           action,
         };
-      });
-    }
-
-    // 2. Repli par défaut si aucune bannière n'est encore configurée dans le dashboard admin
-    const welcomeSlide = {
-      id: 'slide-welcome',
-      isDb: false,
-      image: welcomeBannerImg,
-      kicker: 'TAKAPAY BÉNIN',
-      title: 'Épargnez progressivement pour vos achats',
-      description: 'Cotisez à votre convenance en toute liberté et sans intérêt. Catalogue en ligne ouvert à tous.',
-      priceText: null,
-      btnText: 'Découvrir le catalogue →',
-      action: () => {
-        if (typeof onGoCatalog === 'function') onGoCatalog();
-        else if (typeof onSelectPromo === 'function') onSelectPromo();
-      },
-    };
-
-    const pool = Array.isArray(products) && products.length > 0 ? products : PRODUCTS;
-    const validProducts = (pool || []).filter((p) => p && p.im);
-
-    const promoProducts = validProducts
-      .filter((p) => discountPercentage(p) > 0)
-      .sort((a, b) => discountPercentage(b) - discountPercentage(a));
-
-    let chosenArticles = [];
-    if (promoProducts.length > 0) {
-      chosenArticles = [...promoProducts.slice(0, 3)];
-      if (chosenArticles.length < 3) {
-        const remaining = validProducts.filter((p) => !chosenArticles.some((c) => c.id === p.id));
-        chosenArticles.push(...remaining.slice(0, 3 - chosenArticles.length));
-      }
-    } else {
-      chosenArticles = validProducts.slice(0, 3);
-    }
-
-    const articleSlides = chosenArticles.map((p) => {
-      const discount = discountPercentage(p);
-      const isPromo = discount > 0;
-      const kicker = isPromo
-        ? `🔥 PROMOTION −${discount}%`
-        : (p.c || p.subcategory || 'ARTICLE TAKAPAY').toUpperCase();
-
-      const minPrice = p.payment?.minimumStart || p.p;
-      const rawDesc = (p.d || '').trim();
-
-      return {
-        id: `slide-prod-${p.id}`,
-        isDb: false,
-        product: p,
-        image: p.im,
-        kicker,
-        title: p.n,
-        description: rawDesc ? (rawDesc.endsWith('.') ? rawDesc : `${rawDesc}.`) : '',
-        priceText: `Disponible dès ${formatFCFA(minPrice)} de 1er versement.`,
-        btnText: 'Voir cet article →',
-        action: () => {
-          if (typeof onSelectProduct === 'function') onSelectProduct(p.id);
-        },
-      };
-    });
-
-    return [welcomeSlide, ...articleSlides];
-  }, [dbCarousels, products, onGoCatalog, onSelectPromo, onSelectProduct]);
+      })
+      .filter((slide) => Boolean(slide.image));
+  }, [dbCarousels, onGoCatalog, onSelectProduct]);
 
   // Diapositives étendues pour une boucle infinie continue (clone de la première slide en fin de piste)
   // Diapositives étendues avec clones aux deux extrémités pour une boucle infinie continue et fluide

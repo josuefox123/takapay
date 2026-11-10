@@ -11,6 +11,7 @@ use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 
@@ -140,9 +141,21 @@ class UserController extends Controller
         $user->update($data);
         $updatedUser = $user->fresh();
 
-        // Révoquer immédiatement toutes les sessions actives en cas de réinitialisation du mot de passe
-        if (! empty($plainPassword)) {
+        // Révoquer immédiatement toutes les sessions actives en cas de réinitialisation du mot de passe ou suspension du compte
+        if (! empty($plainPassword) || in_array($updatedUser->statut_compte, ['suspendu', 'inactif'], true)) {
             $user->tokens()->delete();
+        } elseif ($updatedUser->statut_compte === 'actif') {
+            try {
+                Cache::forget('login_lockout_'.$user->id);
+                if ($user->email) {
+                    Cache::forget('login_attempts_'.md5(strtolower($user->email)));
+                }
+                if ($user->telephone) {
+                    Cache::forget('login_attempts_'.md5(preg_replace('/\D/', '', $user->telephone)));
+                }
+            } catch (\Throwable $e) {
+                // Ignorer
+            }
         }
 
         if (! empty($updatedUser->email)) {
@@ -161,6 +174,7 @@ class UserController extends Controller
      */
     public function destroy(User $user): JsonResponse
     {
+        $user->tokens()->delete();
         $user->delete();
 
         return response()->json(['message' => 'Utilisateur supprimé avec succès.']);
