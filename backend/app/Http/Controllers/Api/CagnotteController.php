@@ -66,6 +66,40 @@ class CagnotteController extends Controller
     }
 
     /**
+     * Liste des cagnottes pour le back-office administration.
+     * Route : GET /api/admin/cagnottes
+     *
+     * Pour super_admin : visibilité complète sur l'ensemble des cagnottes de chaque admin.
+     * Pour admin : uniquement les cagnottes associées aux produits qu'il gère.
+     */
+    public function adminIndex(Request $request): AnonymousResourceCollection
+    {
+        $user = $request->user();
+
+        $query = Cagnotte::has('produit')
+            ->with([
+                'utilisateur',
+                'produit.imageProduits',
+                'produit.parametreProduit',
+                'produit.sousCategorie.categorie',
+                'transactions',
+            ])
+            ->where(function ($q) {
+                $q->where('statut', '!=', 'en_attente')
+                    ->orWhere('montant_verse', '>', 0);
+            })
+            ->latest();
+
+        // Si rôle admin (délégué), restreindre aux produits de cet admin
+        if ($user && $user->role === 'admin') {
+            $query->whereHas('produit', fn ($q) => $q->where('admin_id', $user->id));
+        }
+        // Pour super_admin : aucune restriction, visibilité totale sur tous les produits et admins
+
+        return CagnotteResource::collection($query->get());
+    }
+
+    /**
      * Créer une cagnotte.
      */
     public function store(StoreCagnotteRequest $request): JsonResponse
@@ -183,7 +217,7 @@ class CagnotteController extends Controller
 
         if ($user->role === 'admin') {
             $produitAdminId = $cagnotte->produit?->admin_id;
-            if ($produitAdminId && (int) $produitAdminId !== (int) $user->id) {
+            if (! $produitAdminId || (int) $produitAdminId !== (int) $user->id) {
                 abort(403, 'Accès non autorisé à cette cagnotte.');
             }
             return;
@@ -419,7 +453,7 @@ class CagnotteController extends Controller
             abort(403, 'Action réservée aux administrateurs.');
         }
 
-        if ($admin->role === 'admin' && $cagnotte->produit?->admin_id && (int) $cagnotte->produit->admin_id !== (int) $admin->id) {
+        if ($admin->role === 'admin' && (! $cagnotte->produit?->admin_id || (int) $cagnotte->produit->admin_id !== (int) $admin->id)) {
             abort(403, 'Accès non autorisé à cette cagnotte.');
         }
 
