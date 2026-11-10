@@ -543,7 +543,8 @@ export const createCagnotteFromOrder = (orderData, user = null) => {
   const isCod = Boolean(orderData?.isCod || orderData?.mode_reglement === 'livraison');
 
   return {
-    id: `cag-${Date.now()}`,
+    id: orderData?.backendId ? `cag-${orderData.backendId}` : `cag-${Date.now()}`,
+    backendId: orderData?.backendId || null,
     userId: clientUserId,
     userPhone: clientPhone,
     userEmail: clientEmail,

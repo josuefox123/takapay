@@ -149,7 +149,17 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
       if (Array.isArray(live)) {
         const converted = live.map(mapBackendCagnotteToClient).filter(Boolean);
         try {
-          localStorage.setItem('takapay_backend_cagnottes', JSON.stringify(converted));
+          const rawStored = localStorage.getItem('takapay_backend_cagnottes');
+          let pendingLocal = [];
+          if (rawStored) {
+            const parsed = JSON.parse(rawStored);
+            if (Array.isArray(parsed)) {
+              const knownIds = new Set(converted.map((c) => String(c.backendId || c.id)));
+              pendingLocal = parsed.filter((c) => c && !knownIds.has(String(c.backendId || c.id)));
+            }
+          }
+          const finalMerged = [...converted, ...pendingLocal];
+          localStorage.setItem('takapay_backend_cagnottes', JSON.stringify(finalMerged));
         } catch { /* ignore */ }
         const merged = getStoredCagnottes(user);
         setCagnottesList(merged);
@@ -175,6 +185,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
 
   // Observer pour remplacer le logo FeexPay par le logo Takapay dans la modale
   useEffect(() => {
+    let logoRaf = null;
     const swapLogo = () => {
       const logos = document.querySelectorAll('img[src*="feexpay_logo"], img[alt="Logo"]');
       logos.forEach((img) => {
@@ -189,11 +200,33 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
       });
     };
 
-    const obs = new MutationObserver(swapLogo);
+    const scheduleSwap = () => {
+      if (logoRaf) return;
+      logoRaf = requestAnimationFrame(() => {
+        logoRaf = null;
+        swapLogo();
+      });
+    };
+
+    const obs = new MutationObserver((mutations) => {
+      const hasModalOrImg = mutations.some((m) =>
+        m.addedNodes.length > 0 &&
+        Array.from(m.addedNodes).some(
+          (n) => n.nodeType === 1 && (n.classList?.contains('fixed') || n.querySelector?.('img[src*="feexpay_logo"]'))
+        )
+      );
+      if (hasModalOrImg) {
+        scheduleSwap();
+      }
+    });
+
     obs.observe(document.body, { childList: true, subtree: true });
     swapLogo();
 
-    return () => obs.disconnect();
+    return () => {
+      if (logoRaf) cancelAnimationFrame(logoRaf);
+      obs.disconnect();
+    };
   }, []);
 
   // Watchdog FeexPay : arrêt immédiat de la rotation après 30s ou annulation

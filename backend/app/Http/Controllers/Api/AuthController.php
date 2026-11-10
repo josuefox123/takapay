@@ -146,6 +146,12 @@ class AuthController extends Controller
                 'statut_compte' => 'actif',
             ]);
         } else {
+            if ($user->statut_compte !== 'actif') {
+                return response()->json([
+                    'message' => 'Votre compte est suspendu ou inactif.',
+                ], 403);
+            }
+
             $user->update(array_filter([
                 'nom' => $user->nom ?: ($nom !== '' ? $nom : null),
                 'prenom' => $user->prenom ?: ($prenom !== '' ? $prenom : null),
