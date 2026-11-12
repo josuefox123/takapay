@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreLivraisonRequest;
 use App\Http\Requests\UpdateLivraisonRequest;
 use App\Http\Resources\LivraisonResource;
+use App\Models\Cagnotte;
 use App\Models\Livraison;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -29,11 +30,34 @@ class LivraisonController extends Controller
     }
 
     /**
+     * Vérifie que l'admin standard accède uniquement aux livraisons de ses propres produits.
+     */
+    private function authorizeCagnotteAccess(Request $request, ?int $cagnotteId): void
+    {
+        $user = $request->user();
+        if ($user?->role === 'super_admin') {
+            return;
+        }
+
+        if (! $user || $user->role !== 'admin') {
+            abort(403, 'Accès refusé.');
+        }
+
+        $cagnotte = $cagnotteId ? Cagnotte::with('produit')->find($cagnotteId) : null;
+        if (! $cagnotte || (int) $cagnotte->produit?->admin_id !== (int) $user->id) {
+            abort(403, 'Accès refusé. Cette livraison ne concerne pas vos produits.');
+        }
+    }
+
+    /**
      * Créer une livraison.
      */
     public function store(StoreLivraisonRequest $request): JsonResponse
     {
-        $livraison = Livraison::create($request->validated());
+        $data = $request->validated();
+        $this->authorizeCagnotteAccess($request, (int) ($data['cagnotte_id'] ?? 0));
+
+        $livraison = Livraison::create($data);
 
         return (new LivraisonResource($livraison))
             ->response()
@@ -43,8 +67,10 @@ class LivraisonController extends Controller
     /**
      * Afficher une livraison.
      */
-    public function show(Livraison $livraison): LivraisonResource
+    public function show(Request $request, Livraison $livraison): LivraisonResource
     {
+        $this->authorizeCagnotteAccess($request, $livraison->cagnotte_id);
+
         return new LivraisonResource($livraison);
     }
 
@@ -55,7 +81,14 @@ class LivraisonController extends Controller
         UpdateLivraisonRequest $request,
         Livraison $livraison
     ): LivraisonResource {
-        $livraison->update($request->validated());
+        $this->authorizeCagnotteAccess($request, $livraison->cagnotte_id);
+
+        $data = $request->validated();
+        if (isset($data['cagnotte_id']) && (int) $data['cagnotte_id'] !== (int) $livraison->cagnotte_id) {
+            $this->authorizeCagnotteAccess($request, (int) $data['cagnotte_id']);
+        }
+
+        $livraison->update($data);
 
         return new LivraisonResource($livraison);
     }
@@ -63,8 +96,10 @@ class LivraisonController extends Controller
     /**
      * Supprimer une livraison.
      */
-    public function destroy(Livraison $livraison): JsonResponse
+    public function destroy(Request $request, Livraison $livraison): JsonResponse
     {
+        $this->authorizeCagnotteAccess($request, $livraison->cagnotte_id);
+
         $livraison->delete();
 
         return response()->json([

@@ -8,26 +8,13 @@ use Illuminate\Validation\Rule;
 class UpdateUserRequest extends FormRequest
 {
     /**
-     * Seule l'administration peut modifier un compte.
+     * Seul le super administrateur peut modifier un compte utilisateur.
      */
     public function authorize(): bool
     {
         $user = $this->user();
-        if (! $user) {
-            return false;
-        }
 
-        if ($user->role === 'super_admin') {
-            return true;
-        }
-
-        // Un admin standard ne peut pas modifier un administrateur ni un super_admin
-        $targetUser = $this->route('user');
-        if ($targetUser instanceof \App\Models\User && in_array($targetUser->role, ['admin', 'super_admin'], true)) {
-            return false;
-        }
-
-        return $user->isAdmin();
+        return $user !== null && $user->role === 'super_admin';
     }
 
     protected function prepareForValidation(): void
@@ -59,10 +46,10 @@ class UpdateUserRequest extends FormRequest
         $user = $this->route('user');
         $userId = is_object($user) ? $user->id : $user;
 
-        // Seul un super_admin peut attribuer ou conserver un rôle super_admin
+        // Seul un super_admin peut attribuer un rôle admin ou super_admin
         $allowedRoles = ($this->user()?->role ?? '') === 'super_admin'
             ? 'in:client,livreur,admin,super_admin'
-            : 'in:client,livreur,admin';
+            : 'in:client,livreur';
 
         return [
             'nom' => ['sometimes', 'required', 'string', 'min:2', 'max:100', 'regex:/^[\p{L}\s\-\'\.]+$/u'],

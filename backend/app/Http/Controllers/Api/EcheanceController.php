@@ -6,18 +6,47 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreEcheanceRequest;
 use App\Http\Requests\UpdateEcheanceRequest;
 use App\Http\Resources\EcheanceResource;
+use App\Models\Cagnotte;
 use App\Models\Echeance;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 
 class EcheanceController extends Controller
 {
     /**
+     * Vérifie que l'admin standard accède uniquement aux échéances de ses propres produits.
+     */
+    private function authorizeCagnotteAccess(Request $request, ?int $cagnotteId): void
+    {
+        $user = $request->user();
+        if ($user?->role === 'super_admin') {
+            return;
+        }
+
+        if (! $user || $user->role !== 'admin') {
+            abort(403, 'Accès refusé.');
+        }
+
+        $cagnotte = $cagnotteId ? Cagnotte::with('produit')->find($cagnotteId) : null;
+        if (! $cagnotte || (int) $cagnotte->produit?->admin_id !== (int) $user->id) {
+            abort(403, 'Accès refusé. Cette échéance ne concerne pas vos produits.');
+        }
+    }
+
+    /**
      * Liste paginée des échéances.
      */
-    public function index(): AnonymousResourceCollection
+    public function index(Request $request): AnonymousResourceCollection
     {
-        return EcheanceResource::collection(Echeance::latest()->paginate(15));
+        $user = $request->user();
+        $query = Echeance::latest();
+
+        if ($user && $user->role === 'admin') {
+            $query->whereHas('cagnotte.produit', fn ($p) => $p->where('admin_id', $user->id));
+        }
+
+        return EcheanceResource::collection($query->paginate(15));
     }
 
     /**
@@ -25,7 +54,10 @@ class EcheanceController extends Controller
      */
     public function store(StoreEcheanceRequest $request): JsonResponse
     {
-        $echeance = Echeance::create($request->validated());
+        $data = $request->validated();
+        $this->authorizeCagnotteAccess($request, (int) ($data['cagnotte_id'] ?? 0));
+
+        $echeance = Echeance::create($data);
 
         return (new EcheanceResource($echeance))
             ->response()
@@ -35,8 +67,10 @@ class EcheanceController extends Controller
     /**
      * Afficher une échéance.
      */
-    public function show(Echeance $echeance): EcheanceResource
+    public function show(Request $request, Echeance $echeance): EcheanceResource
     {
+        $this->authorizeCagnotteAccess($request, $echeance->cagnotte_id);
+
         return new EcheanceResource($echeance);
     }
 
@@ -47,7 +81,14 @@ class EcheanceController extends Controller
         UpdateEcheanceRequest $request,
         Echeance $echeance
     ): EcheanceResource {
-        $echeance->update($request->validated());
+        $this->authorizeCagnotteAccess($request, $echeance->cagnotte_id);
+
+        $data = $request->validated();
+        if (isset($data['cagnotte_id']) && (int) $data['cagnotte_id'] !== (int) $echeance->cagnotte_id) {
+            $this->authorizeCagnotteAccess($request, (int) $data['cagnotte_id']);
+        }
+
+        $echeance->update($data);
 
         return new EcheanceResource($echeance);
     }
@@ -55,8 +96,10 @@ class EcheanceController extends Controller
     /**
      * Supprimer une échéance.
      */
-    public function destroy(Echeance $echeance): JsonResponse
+    public function destroy(Request $request, Echeance $echeance): JsonResponse
     {
+        $this->authorizeCagnotteAccess($request, $echeance->cagnotte_id);
+
         $echeance->delete();
 
         return response()->json([

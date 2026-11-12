@@ -113,6 +113,9 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
     Route::post('cagnottes/{cagnotte}/confirmer-reception', [CagnotteController::class, 'confirmerReception'])->name('cagnottes.confirmer-reception');
     Route::post('cagnottes/{cagnotte}/annuler', [CagnotteController::class, 'demanderAnnulation'])->name('cagnottes.annuler');
     Route::post('cagnottes/{cagnotte}/reactiver', [CagnotteController::class, 'reactiver'])->name('cagnottes.reactiver');
+    Route::post('/payment/initiate', [PaymentController::class, 'initiatePayment'])->middleware('throttle:10,1');
+    Route::post('/payment/feexpay-proxy', [PaymentController::class, 'feexpayProxy'])->middleware('throttle:30,1');
+    Route::post('/payment/confirm', [PaymentController::class, 'confirmPayment'])->middleware('throttle:15,1');
     Route::post('/payment/cancel', [PaymentController::class, 'cancelPayment'])->name('payment.cancel');
 
     /*
@@ -157,19 +160,23 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
             Route::post('/support/conversations/{id}/reply', [SupportChatController::class, 'adminReply']);
             Route::patch('/support/conversations/{id}/close', [SupportChatController::class, 'adminCloseConversation']);
 
-            // Bannières Carrousel
+            // Bannières Carrousel (lecture pour tous les admins, écriture réservée au super_admin)
             Route::get('/carousels', [CarouselController::class, 'adminIndex']);
-            Route::post('/carousels', [CarouselController::class, 'store']);
-            Route::post('/carousels/{carousel}', [CarouselController::class, 'update']);
-            Route::put('/carousels/{carousel}', [CarouselController::class, 'update']);
-            Route::delete('/carousels/{carousel}', [CarouselController::class, 'destroy']);
 
-            // Partenaires de la vitrine
+            // Partenaires de la vitrine (lecture pour tous les admins, écriture réservée au super_admin)
             Route::get('/partenaires', [PartenaireController::class, 'adminIndex']);
-            Route::post('/partenaires', [PartenaireController::class, 'store']);
-            Route::post('/partenaires/{partenaire}', [PartenaireController::class, 'update']);
-            Route::put('/partenaires/{partenaire}', [PartenaireController::class, 'update']);
-            Route::delete('/partenaires/{partenaire}', [PartenaireController::class, 'destroy']);
+
+            Route::middleware('role:super_admin')->group(function () {
+                Route::post('/carousels', [CarouselController::class, 'store']);
+                Route::post('/carousels/{carousel}', [CarouselController::class, 'update']);
+                Route::put('/carousels/{carousel}', [CarouselController::class, 'update']);
+                Route::delete('/carousels/{carousel}', [CarouselController::class, 'destroy']);
+
+                Route::post('/partenaires', [PartenaireController::class, 'store']);
+                Route::post('/partenaires/{partenaire}', [PartenaireController::class, 'update']);
+                Route::put('/partenaires/{partenaire}', [PartenaireController::class, 'update']);
+                Route::delete('/partenaires/{partenaire}', [PartenaireController::class, 'destroy']);
+            });
 
             // Remboursements FeexPay
             Route::post('/cagnottes/{cagnotte}/rembourser-feexpay', [CagnotteController::class, 'validerRemboursementFeexpay']);
@@ -187,12 +194,12 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
         // Catalogue (écriture réservée à l'administration)
         Route::apiResource('categories', CategorieController::class)->except(['index', 'show']);
         Route::apiResource('sous-categories', SousCategorieController::class)->except(['index', 'show']);
-        Route::apiResource('produits', ProduitController::class)->except(['index', 'show']);
+        Route::apiResource('produits', ProduitController::class)->except(['index', 'show', 'store']);
         Route::apiResource('image-produits', ImageProduitController::class);
         Route::apiResource('promotions', PromotionController::class)->except(['index', 'show']);
 
         // Paramètres & cycle financier (écriture et lecture réservées à l'administration)
-        Route::apiResource('parametre-produits', ParametreProduitController::class);
+        Route::apiResource('parametre-produits', ParametreProduitController::class)->except(['destroy']);
         Route::apiResource('cagnottes', CagnotteController::class)->except(['index']);
         Route::apiResource('echeances', EcheanceController::class);
         Route::apiResource('transactions', TransactionController::class)->except(['index']);
@@ -215,10 +222,7 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
 
 /*
 |--------------------------------------------------------------------------
-| ROUTES PAIEMENTS FEEXPAY (Initiation, Confirmation & Webhook)
+| ROUTES PAIEMENTS FEEXPAY (Webhook serveur)
 |--------------------------------------------------------------------------
 */
-Route::post('/payment/initiate', [PaymentController::class, 'initiatePayment']);
-Route::post('/payment/feexpay-proxy', [PaymentController::class, 'feexpayProxy']);
-Route::post('/payment/confirm', [PaymentController::class, 'confirmPayment']);
-Route::post('/payment/webhook', [PaymentController::class, 'handleWebhook']);
+Route::post('/payment/webhook', [PaymentController::class, 'handleWebhook'])->middleware('throttle:60,1');

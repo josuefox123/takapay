@@ -105,8 +105,12 @@ class UserController extends Controller
     /**
      * Afficher un utilisateur.
      */
-    public function show(User $user): UserResource
+    public function show(Request $request, User $user): UserResource
     {
+        if ($user->role === 'super_admin' && $request->user()?->role !== 'super_admin') {
+            abort(403, 'Accès refusé.');
+        }
+
         return new UserResource($user);
     }
 
@@ -170,10 +174,22 @@ class UserController extends Controller
     }
 
     /**
-     * Supprimer un utilisateur.
+     * Supprimer un utilisateur (Réservé Super Admin).
      */
-    public function destroy(User $user): JsonResponse
+    public function destroy(Request $request, User $user): JsonResponse
     {
+        if ($request->user()?->role !== 'super_admin') {
+            return response()->json([
+                'message' => 'Accès refusé. Seul le super administrateur peut supprimer un compte.',
+            ], 403);
+        }
+
+        if ($request->user()->id === $user->id) {
+            return response()->json([
+                'message' => 'Vous ne pouvez pas supprimer votre propre compte.',
+            ], 422);
+        }
+
         $user->tokens()->delete();
         $user->delete();
 

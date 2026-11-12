@@ -39,11 +39,19 @@ window.fetch = async (...args) => {
     }
 
     try {
+      let authToken = null;
+      try {
+        authToken =
+          localStorage.getItem('takapay_client_token') ||
+          localStorage.getItem('takapay_admin_token');
+      } catch {}
+
       const res = await originalFetch('/api/payment/feexpay-proxy', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Accept: 'application/json',
+          ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
         },
         body: JSON.stringify({
           url,

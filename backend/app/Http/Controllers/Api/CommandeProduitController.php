@@ -13,6 +13,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class CommandeProduitController extends Controller
 {
@@ -42,7 +43,12 @@ class CommandeProduitController extends Controller
             unset($data['total']);
 
             $parametre = ParametreProduit::where('produit_id', $data['produit_id'])->first();
-            $prixUnitaire = $parametre !== null ? (float) $parametre->prix_total : (float) $data['prix_unitaire'];
+            if ($parametre === null) {
+                throw ValidationException::withMessages([
+                    'produit_id' => ['Aucun paramètre de prix configuré pour ce produit.'],
+                ]);
+            }
+            $prixUnitaire = (float) $parametre->prix_total;
             $data['prix_unitaire'] = $prixUnitaire;
             $data['total'] = round($prixUnitaire * (int) $data['quantite'], 2);
 
@@ -79,13 +85,16 @@ class CommandeProduitController extends Controller
 
         DB::transaction(function () use ($request, $commandeProduit) {
             $data = $request->validated();
-            unset($data['total']);
+            unset($data['total'], $data['prix_unitaire']);
 
             if (isset($data['produit_id'])) {
                 $parametre = ParametreProduit::where('produit_id', $data['produit_id'])->first();
-                if ($parametre !== null) {
-                    $data['prix_unitaire'] = (float) $parametre->prix_total;
+                if ($parametre === null) {
+                    throw ValidationException::withMessages([
+                        'produit_id' => ['Aucun paramètre de prix configuré pour ce produit.'],
+                    ]);
                 }
+                $data['prix_unitaire'] = (float) $parametre->prix_total;
             }
 
             $commandeProduit->fill($data);
