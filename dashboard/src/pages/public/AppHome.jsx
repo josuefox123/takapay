@@ -66,20 +66,14 @@ export default function AppHome({ initialTab = 'home' }) {
   // Utilisateur connecté & Cagnottes (sauvegarde en localStorage)
   const [user, setUser] = useState(() => {
     try {
-      const token = localStorage.getItem('takapay_client_token');
-      const saved = localStorage.getItem('takapay-client-user');
-      if (!token || !saved) {
-        if (!token && saved) {
-          localStorage.removeItem('takapay-client-user');
-          localStorage.removeItem('takapay_backend_cagnottes');
-        }
+      const saved = localStorage.getItem('takapay-client-user') || localStorage.getItem('takapay_admin_user');
+      if (!saved) {
         return null;
       }
       const parsed = JSON.parse(saved);
       if (parsed?.statut_compte && parsed.statut_compte !== 'actif') {
         localStorage.removeItem('takapay-client-user');
         localStorage.removeItem('takapay_client_token');
-        localStorage.removeItem('takapay_backend_cagnottes');
         return null;
       }
       return parsed;
@@ -90,9 +84,8 @@ export default function AppHome({ initialTab = 'home' }) {
 
   const [cagnotteCount, setCagnotteCount] = useState(() => {
     try {
-      const token = localStorage.getItem('takapay_client_token');
-      const saved = localStorage.getItem('takapay-client-user');
-      if (!token || !saved) return 0;
+      const saved = localStorage.getItem('takapay-client-user') || localStorage.getItem('takapay_admin_user');
+      if (!saved) return 0;
       const savedUser = JSON.parse(saved);
       if (savedUser?.statut_compte && savedUser.statut_compte !== 'actif') return 0;
       const list = getStoredCagnottes(savedUser);
@@ -417,8 +410,8 @@ export default function AppHome({ initialTab = 'home' }) {
 
     const checkSession = async () => {
       lastChecked = Date.now();
-      const token = localStorage.getItem('takapay_client_token');
-      const savedUser = localStorage.getItem('takapay-client-user');
+      const token = localStorage.getItem('takapay_client_token') || localStorage.getItem('takapay_admin_token');
+      const savedUser = localStorage.getItem('takapay-client-user') || localStorage.getItem('takapay_admin_user');
       if (!token || !savedUser) {
         if (user && isMounted) handleLogout();
         return;
@@ -461,12 +454,12 @@ export default function AppHome({ initialTab = 'home' }) {
 
     checkSession();
 
-    // Surveillance régulière toutes les 4 secondes
+    // Surveillance régulière toutes les 25 secondes
     const interval = setInterval(() => {
       if (document.visibilityState === 'visible') {
         checkSession();
       }
-    }, 4000);
+    }, 25000);
 
     const handleFocus = () => checkSession();
     const handleActivity = () => {
