@@ -649,7 +649,22 @@ export const mapBackendCagnotteToClient = (c) => {
       t.type === 'remboursement' ||
       t.type === 'annulation' ||
       (t.reference_externe && (t.reference_externe.startsWith('REM-') || t.reference_externe.includes('ANNUL')));
-  const txs = rawTransactions.map((t) => {
+  const isCodTransaction = (t) =>
+      t.type === 'paiement_livraison' ||
+      t.moyen_paiement === 'livraison' ||
+      t.prestataire === 'LIVRAISON' ||
+      (t.reference_externe && t.reference_externe.startsWith('CMD_COD_'));
+
+  const txs = rawTransactions
+    .filter((t) => {
+      const normalizedStatus = String(t.statut || '').toLowerCase();
+      // N'inclure dans l'historique que les versements confirmés, les remboursements ou les commandes à la livraison
+      if (['en_attente', 'pending', 'initialisation'].includes(normalizedStatus)) {
+        return isRefundTransaction(t) || isCodTransaction(t);
+      }
+      return ['succes', 'reussi', 'argent renvoyé', 'effectue'].includes(normalizedStatus);
+    })
+    .map((t) => {
     const isRefundTx = isRefundTransaction(t);
     const normalizedStatus = String(t.statut || '').toLowerCase();
     const isExecuted = ['succes', 'reussi', 'argent renvoyé', 'effectue'].includes(normalizedStatus);

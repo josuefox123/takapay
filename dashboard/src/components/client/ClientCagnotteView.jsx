@@ -183,6 +183,30 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
     return () => window.removeEventListener('takapay_cagnotte_updated', sync);
   }, [user]);
 
+  // Synchronisation des coordonnées du client connecté pour les versements et FeexPay
+  useEffect(() => {
+    const u = user || (() => {
+      try {
+        const s = localStorage.getItem('takapay-client-user') || localStorage.getItem('takapay_admin_user');
+        return s ? JSON.parse(s) : null;
+      } catch {
+        return null;
+      }
+    })();
+    if (u) {
+      const p = u.telephone || u.phone || '';
+      if (p) setDepositPhone((prev) => prev || p);
+      const full = `${u.prenom || ''} ${u.nom || ''}`.trim() || u.nom || u.prenom || u.name || '';
+      const cleanP = p.replace(/\D/g, '').replace(/^229/, '');
+      const em = u.email && !u.email.endsWith('@client.takapay.bj') ? u.email : '';
+      window.__takapayPrefillUser = {
+        fullName: full || 'Client',
+        phoneDigits: cleanP,
+        email: em,
+      };
+    }
+  }, [user]);
+
   // Observer pour remplacer le logo FeexPay par le logo Takapay dans la modale
   useEffect(() => {
     let logoRaf = null;
@@ -2710,18 +2734,26 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                                 gap: '4px',
                                 fontSize: '11px',
                                 fontWeight: 700,
-                                color: isRefund ? (isRefundExecuted ? '#c2410c' : '#b45309') : isReactivate ? '#b45309' : '#15803d',
-                                background: isRefund ? (isRefundExecuted ? '#ffedd5' : '#fef3c7') : isReactivate ? '#fef3c7' : '#dcfce7',
+                                color: isRefund
+                                  ? (isRefundExecuted ? '#c2410c' : '#b45309')
+                                  : isReactivate
+                                    ? '#b45309'
+                                    : (tx.statut === 'en_attente' || tx.statut === 'En attente' ? '#b45309' : '#15803d'),
+                                background: isRefund
+                                  ? (isRefundExecuted ? '#ffedd5' : '#fef3c7')
+                                  : isReactivate
+                                    ? '#fef3c7'
+                                    : (tx.statut === 'en_attente' || tx.statut === 'En attente' ? '#fef3c7' : '#dcfce7'),
                                 padding: '2px 8px',
                                 borderRadius: '99px',
                                 marginTop: '3px',
                               }}
                             >
                               {isRefund
-                                ? (isRefundExecuted ? '↩ Argent renvoyé' : '⏳ En attente sous 24H')
-                                : isReactivate
-                                  ? '✔ Rétablie'
-                                  : '✔ Validé'}
+                                  ? (isRefundExecuted ? '↩ Argent renvoyé' : '⏳ En attente sous 24H')
+                                  : isReactivate
+                                    ? '✔ Rétablie'
+                                    : (tx.statut === 'en_attente' || tx.statut === 'En attente' ? '⏳ En attente' : '✔ Validé')}
                             </span>
                           </div>
                           <span style={{ color: '#a09895', fontSize: '18px', fontWeight: 600 }}>›</span>

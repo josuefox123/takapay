@@ -60,6 +60,25 @@ window.fetch = async (...args) => {
         }),
       });
 
+      if (res.ok && url.includes('/api/transactions/details')) {
+        try {
+          const clone = res.clone();
+          const data = await clone.json();
+          if (data && typeof data === 'object') {
+            const realTotal = data.total || data.real_amount || (data.fees ? (Number(parsedBody?.amount || 0) + Number(data.fees)) : null);
+            if (realTotal && !data.total) {
+              data.total = realTotal;
+              return new Response(JSON.stringify(data), {
+                status: res.status,
+                headers: { 'Content-Type': 'application/json' },
+              });
+            }
+          }
+        } catch {
+          // Utiliser la réponse directe
+        }
+      }
+
       if (!res.ok && url.includes('/get_shop')) {
         return new Response(
           JSON.stringify({
@@ -113,25 +132,37 @@ if (typeof window !== 'undefined') {
   };
 
   const getActiveClientInfo = () => {
-    if (window.__takapayPrefillUser && (window.__takapayPrefillUser.fullName || window.__takapayPrefillUser.phoneDigits)) {
-      return window.__takapayPrefillUser;
-    }
     let u = null;
     try {
-      const s1 = localStorage.getItem('takapay-client-user');
+      const s1 = localStorage.getItem('takapay-client-user') || localStorage.getItem('takapay_admin_user');
       if (s1) u = JSON.parse(s1);
     } catch {
       // Ignorer
     }
-    if (!u) return null;
 
-    const fullName = `${u.prenom || ''} ${u.nom || ''}`.trim() || u.nom || u.prenom || u.name || '';
-    let rawPhone = u.telephone || u.phone || '';
-    let phoneDigits = String(rawPhone).replace(/\D/g, '');
-    if (phoneDigits.startsWith('229') && phoneDigits.length > 8) {
-      phoneDigits = phoneDigits.substring(3);
+    const prefill = window.__takapayPrefillUser || {};
+    let fullName = prefill.fullName || '';
+    if (!fullName || fullName === 'Client') {
+      const uFull = `${u?.prenom || ''} ${u?.nom || ''}`.trim() || u?.nom || u?.prenom || u?.n || '';
+      if (uFull) fullName = uFull;
     }
-    const email = u.email && !u.email.endsWith('@client.takapay.bj') ? u.email : '';
+    if (!fullName) fullName = 'Client';
+
+    let phoneDigits = prefill.phoneDigits || '';
+    if (!phoneDigits) {
+      const rawPhone = u?.telephone || u?.phone || '';
+      let digits = String(rawPhone).replace(/\D/g, '');
+      if (digits.startsWith('229') && digits.length > 8) {
+        digits = digits.substring(3);
+      }
+      phoneDigits = digits;
+    }
+
+    let email = prefill.email || '';
+    if (!email && u?.email && !u.email.endsWith('@client.takapay.bj')) {
+      email = u.email;
+    }
+
     return { fullName, phoneDigits, email };
   };
 
@@ -160,19 +191,41 @@ if (typeof window !== 'undefined') {
         const ph = (input.getAttribute('placeholder') || '').toLowerCase();
         const type = (input.getAttribute('type') || '').toLowerCase();
 
-        // 1. Champ Téléphone (sans indicatif)
+        // 1. Champ Téléphone (sans indicatif ou avec indicatif)
         if (type === 'tel' || ph.includes('téléphone') || ph.includes('telephone') || ph.includes('numéro') || ph.includes('numero')) {
-          if (phoneDigits && input.value !== phoneDigits && !input.dataset.manuallyEdited) {
-            setNativeInputValue(input, phoneDigits);
+          const targetPhone = ph.includes('avec indicatif') ? (phoneDigits ? `+229${phoneDigits}` : '') : phoneDigits;
+          if (targetPhone && input.value !== targetPhone && !input.dataset.manuallyEdited) {
+            setNativeInputValue(input, targetPhone);
           }
         }
-        // 2. Champ Nom et Prénoms
-        else if (ph.includes('nom') || ph.includes('prénom') || ph.includes('prenom')) {
-          if (fullName && input.value !== fullName && !input.dataset.manuallyEdited) {
-            setNativeInputValue(input, fullName);
+        // 2. Champ Prénom seul
+        else if (ph.includes('prénom') || ph.includes('prenom')) {
+          if (!ph.includes('nom')) {
+            const firstName = fullName.split(' ')[0] || fullName;
+            if (firstName && input.value !== firstName && !input.dataset.manuallyEdited) {
+              setNativeInputValue(input, firstName);
+            }
+          } else {
+            // "Nom et Prénoms"
+            if (fullName && input.value !== fullName && !input.dataset.manuallyEdited) {
+              setNativeInputValue(input, fullName);
+            }
           }
         }
-        // 3. Champ Email
+        // 3. Champ Nom seul ou Nom complet
+        else if (ph.includes('nom')) {
+          if (!ph.includes('prénom') && !ph.includes('prenom')) {
+            const lastName = fullName.split(' ').slice(1).join(' ') || fullName;
+            if (lastName && input.value !== lastName && !input.dataset.manuallyEdited) {
+              setNativeInputValue(input, lastName);
+            }
+          } else {
+            if (fullName && input.value !== fullName && !input.dataset.manuallyEdited) {
+              setNativeInputValue(input, fullName);
+            }
+          }
+        }
+        // 4. Champ Email
         else if (type === 'email' || ph.includes('email') || ph.includes('e-mail') || ph.includes('courriel')) {
           if (email && input.value !== email && !input.dataset.manuallyEdited) {
             setNativeInputValue(input, email);
@@ -188,42 +241,90 @@ if (typeof window !== 'undefined') {
           });
         }
       });
+
+      // Vérification et combinaison stricte du montant et des frais (Montant + Frais = Montant Total à payer)
+      const summaryCard = feexpayModalEl.querySelector('div.bg-gray-50.p-4.rounded-md');
+      if (summaryCard) {
+        const rows = Array.from(summaryCard.querySelectorAll('div.flex.justify-between'));
+        let montantVal = null;
+        let fraisVal = null;
+        let totalRowSpan = null;
+        let currency = 'XOF';
+
+        rows.forEach((row) => {
+          const text = (row.textContent || '').replace(/\s+/g, ' ');
+          if (text.includes('Montant :') && !text.includes('Total')) {
+            const valSpan = row.querySelector('span:last-child');
+            const valText = valSpan?.textContent || '';
+            const matchCurrency = valText.match(/[A-Z]{3}/);
+            if (matchCurrency) currency = matchCurrency[0];
+            const num = parseInt(valText.replace(/\D/g, ''), 10);
+            if (!isNaN(num) && num > 0) montantVal = num;
+          } else if (text.includes('Frais')) {
+            const valSpan = row.querySelector('span:last-child');
+            const num = parseInt((valSpan?.textContent || '').replace(/\D/g, ''), 10);
+            if (!isNaN(num) && num > 0) fraisVal = num;
+          } else if (text.includes('Total')) {
+            totalRowSpan = row.querySelector('span:last-child');
+          }
+        });
+
+        if (montantVal !== null && fraisVal !== null && fraisVal > 0 && totalRowSpan) {
+          const expectedTotal = montantVal + fraisVal;
+          const currentTotalNum = parseInt((totalRowSpan.textContent || '').replace(/\D/g, ''), 10);
+          if (currentTotalNum !== expectedTotal) {
+            const formattedTotal = `${expectedTotal.toLocaleString('fr-FR')} ${currency}`;
+            totalRowSpan.textContent = formattedTotal;
+
+            const payBtn = feexpayModalEl.querySelector('button.bg-primary-orange') ||
+              Array.from(feexpayModalEl.querySelectorAll('button')).find((b) => (b.textContent || '').includes('Payer'));
+            if (payBtn) {
+              const spinner = payBtn.querySelector('svg');
+              if (spinner) {
+                payBtn.innerHTML = '';
+                payBtn.appendChild(spinner);
+                payBtn.appendChild(document.createTextNode(` Payer ${formattedTotal}`));
+              } else {
+                payBtn.textContent = `Payer ${formattedTotal}`;
+              }
+            }
+          }
+        }
+      }
     } catch {
       // Ignorer
     }
   };
 
-  let prefillRaf = null;
-  const schedulePrefill = () => {
-    if (prefillRaf) return;
-    prefillRaf = requestAnimationFrame(() => {
-      prefillRaf = null;
+  let feexpaySyncInterval = null;
+  const startFeexpaySync = () => {
+    tryPrefillFeexpayModal();
+    if (feexpaySyncInterval) return;
+    let ticks = 0;
+    feexpaySyncInterval = setInterval(() => {
+      ticks++;
+      const modal = document.querySelector('img[src*="feexpay"]')?.closest('.fixed.inset-0') ||
+        document.querySelector('.fixed.inset-0 img[src*="feexpay"]')?.closest('.fixed.inset-0') ||
+        document.querySelector('.feexpay-modal-overlay-custom');
+      if (!modal) {
+        clearInterval(feexpaySyncInterval);
+        feexpaySyncInterval = null;
+        return;
+      }
       tryPrefillFeexpayModal();
-    });
+      if (ticks > 50) {
+        clearInterval(feexpaySyncInterval);
+        feexpaySyncInterval = null;
+      }
+    }, 100);
   };
 
-  const observer = new MutationObserver((mutations) => {
-    // Ne s'exécuter que si un nœud potentiellement lié à une modale ou à FeexPay a été ajouté
-    const hasRelevantChange = mutations.some((m) => {
-      if (m.type !== 'childList' || m.addedNodes.length === 0) return false;
-      for (let i = 0; i < m.addedNodes.length; i++) {
-        const node = m.addedNodes[i];
-        if (node.nodeType === 1) {
-          const el = node;
-          if (
-            el.classList?.contains('fixed') ||
-            el.classList?.contains('feexpay-modal-overlay-custom') ||
-            el.querySelector?.('img[src*="feexpay"]')
-          ) {
-            return true;
-          }
-        }
-      }
-      return false;
-    });
-
-    if (hasRelevantChange) {
-      schedulePrefill();
+  const observer = new MutationObserver(() => {
+    const modal = document.querySelector('img[src*="feexpay"]')?.closest('.fixed.inset-0') ||
+      document.querySelector('.fixed.inset-0 img[src*="feexpay"]')?.closest('.fixed.inset-0') ||
+      document.querySelector('.feexpay-modal-overlay-custom');
+    if (modal) {
+      startFeexpaySync();
     }
   });
 

@@ -22,7 +22,7 @@ export default function ClientOrderFlow({
   const [activeUser, setActiveUser] = useState(() => {
     if (user) return user;
     try {
-      const s = localStorage.getItem('takapay-client-user');
+      const s = localStorage.getItem('takapay-client-user') || localStorage.getItem('takapay_admin_user');
       return s ? JSON.parse(s) : null;
     } catch {
       return null;
@@ -37,9 +37,18 @@ export default function ClientOrderFlow({
   const currentStep = (user || activeUser) && step === 'auth' ? 'payment' : step;
 
   // Formulaire inscription
-  const [nom, setNom] = useState('');
-  const [prenom, setPrenom] = useState('');
-  const [phone, setPhone] = useState('+229 ');
+  const [nom, setNom] = useState(() => {
+    const u = user || activeUser;
+    return u?.nom || '';
+  });
+  const [prenom, setPrenom] = useState(() => {
+    const u = user || activeUser;
+    return u?.prenom || '';
+  });
+  const [phone, setPhone] = useState(() => {
+    const u = user || activeUser;
+    return u?.telephone || u?.phone || '+229 ';
+  });
   const [email, setEmail] = useState(() => {
     const em = user?.email || activeUser?.email || '';
     return em && !em.endsWith('@client.takapay.bj') ? em : '';
@@ -47,7 +56,10 @@ export default function ClientOrderFlow({
   const [terms, setTerms] = useState(true);
 
   // Formulaire connexion
-  const [loginId, setLoginId] = useState('');
+  const [loginId, setLoginId] = useState(() => {
+    const u = user || activeUser;
+    return u?.telephone || u?.phone || '';
+  });
   const [loginPin, setLoginPin] = useState('');
   const loginLockoutSeconds = remainingFor(loginId);
 
@@ -108,20 +120,38 @@ export default function ClientOrderFlow({
 
   // Synchronisation automatique des informations du client connecté ou inscrit
   useEffect(() => {
-    const current = activeUser || user;
+    const current = activeUser || user || (() => {
+      try {
+        const s = localStorage.getItem('takapay-client-user') || localStorage.getItem('takapay_admin_user');
+        return s ? JSON.parse(s) : null;
+      } catch {
+        return null;
+      }
+    })();
     if (current) {
-      const full = `${current.prenom || ''} ${current.nom || ''}`.trim() || current.nom || current.n || '';
+      const full = `${current.prenom || ''} ${current.nom || ''}`.trim() || current.nom || current.prenom || current.n || '';
       const p = current.telephone || current.phone || '';
       const em = current.email && !current.email.endsWith('@client.takapay.bj') ? current.email : '';
-      const adr = current.adresse || '';
+      const adr = current.adresse || current.address || '';
 
+      if (current.nom) setNom((prev) => prev || current.nom);
+      if (current.prenom) setPrenom((prev) => prev || current.prenom);
       if (full) setPaymentName((prev) => prev || full);
       if (p) {
+        setPhone((prev) => (prev && prev !== '+229 ' ? prev : p));
         setPaymentPhone((prev) => (prev && prev !== '+229 ' ? prev : p));
         setDeliveryPhone((prev) => (prev && prev !== '+229 ' ? prev : p));
+        setLoginId((prev) => prev || p);
       }
       if (adr) setDeliveryAddress((prev) => prev || adr);
       if (em) setEmail((prev) => prev || em);
+
+      const cleanP = p.replace(/\D/g, '').replace(/^229/, '');
+      window.__takapayPrefillUser = {
+        fullName: full || 'Client',
+        phoneDigits: cleanP,
+        email: em,
+      };
     }
   }, [activeUser, user]);
 
