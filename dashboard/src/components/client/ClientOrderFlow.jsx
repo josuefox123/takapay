@@ -22,7 +22,7 @@ export default function ClientOrderFlow({
   const [activeUser, setActiveUser] = useState(() => {
     if (user) return user;
     try {
-      const s = localStorage.getItem('takapay-client-user') || localStorage.getItem('takapay_admin_user');
+      const s = localStorage.getItem('takapay-client-user');
       return s ? JSON.parse(s) : null;
     } catch {
       return null;
@@ -122,7 +122,7 @@ export default function ClientOrderFlow({
   useEffect(() => {
     const current = activeUser || user || (() => {
       try {
-        const s = localStorage.getItem('takapay-client-user') || localStorage.getItem('takapay_admin_user');
+        const s = localStorage.getItem('takapay-client-user');
         return s ? JSON.parse(s) : null;
       } catch {
         return null;

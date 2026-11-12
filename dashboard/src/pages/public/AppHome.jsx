@@ -66,7 +66,7 @@ export default function AppHome({ initialTab = 'home' }) {
   // Utilisateur connecté & Cagnottes (sauvegarde en localStorage)
   const [user, setUser] = useState(() => {
     try {
-      const saved = localStorage.getItem('takapay-client-user') || localStorage.getItem('takapay_admin_user');
+      const saved = localStorage.getItem('takapay-client-user');
       if (!saved) {
         return null;
       }
@@ -84,7 +84,7 @@ export default function AppHome({ initialTab = 'home' }) {
 
   const [cagnotteCount, setCagnotteCount] = useState(() => {
     try {
-      const saved = localStorage.getItem('takapay-client-user') || localStorage.getItem('takapay_admin_user');
+      const saved = localStorage.getItem('takapay-client-user');
       if (!saved) return 0;
       const savedUser = JSON.parse(saved);
       if (savedUser?.statut_compte && savedUser.statut_compte !== 'actif') return 0;
@@ -123,17 +123,29 @@ export default function AppHome({ initialTab = 'home' }) {
   }, []);
 
   const handleLogout = useCallback((customMsg = null) => {
+    adminService.logoutClient();
     setUser(null);
     setCagnotteCount(0);
+    setUnreadNotifCount(0);
     try {
       localStorage.removeItem('takapay-client-user');
       localStorage.removeItem('takapay_client_token');
       localStorage.removeItem('takapay_backend_cagnottes');
+      localStorage.removeItem('takapay_admin_user');
+      localStorage.removeItem('takapay_admin_token');
+      window.dispatchEvent(new CustomEvent('takapay_auth_changed', { detail: { user: null } }));
+      window.dispatchEvent(new CustomEvent('takapay_cagnotte_updated'));
+      window.dispatchEvent(new CustomEvent('takapay_notification_updated'));
     } catch {
       // Ignorer
     }
-    showToast(customMsg || 'Vous avez été déconnecté.');
-  }, [showToast]);
+
+    // Retour sur la page normale (Accueil) avec invitation de connexion accessible
+    setView('home');
+    navigate('/app');
+
+    showToast(customMsg || 'Vous avez été déconnecté avec succès.');
+  }, [navigate, showToast]);
 
   // Fermeture du popup
   const handleCloseWelcome = () => {
@@ -410,10 +422,13 @@ export default function AppHome({ initialTab = 'home' }) {
 
     const checkSession = async () => {
       lastChecked = Date.now();
-      const token = localStorage.getItem('takapay_client_token') || localStorage.getItem('takapay_admin_token');
-      const savedUser = localStorage.getItem('takapay-client-user') || localStorage.getItem('takapay_admin_user');
+      const token = localStorage.getItem('takapay_client_token');
+      const savedUser = localStorage.getItem('takapay-client-user');
       if (!token || !savedUser) {
-        if (user && isMounted) handleLogout();
+        if (user && isMounted) {
+          setUser(null);
+          setCagnotteCount(0);
+        }
         return;
       }
 

@@ -187,7 +187,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
   useEffect(() => {
     const u = user || (() => {
       try {
-        const s = localStorage.getItem('takapay-client-user') || localStorage.getItem('takapay_admin_user');
+        const s = localStorage.getItem('takapay-client-user');
         return s ? JSON.parse(s) : null;
       } catch {
         return null;

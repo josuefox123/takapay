@@ -37,7 +37,7 @@ export default function ClientProductDetail({
   // Utilisateur connecté
   const user = propUser || (() => {
     try {
-      const saved = localStorage.getItem('takapay-client-user') || localStorage.getItem('takapay_admin_user');
+      const saved = localStorage.getItem('takapay-client-user');
       return saved ? JSON.parse(saved) : null;
     } catch {
       return null;
@@ -63,7 +63,7 @@ export default function ClientProductDetail({
   useEffect(() => {
     const activeU = propUser || user || (() => {
       try {
-        const saved = localStorage.getItem('takapay-client-user') || localStorage.getItem('takapay_admin_user');
+        const saved = localStorage.getItem('takapay-client-user');
         return saved ? JSON.parse(saved) : null;
       } catch {
         return null;
@@ -102,7 +102,7 @@ export default function ClientProductDetail({
     if (isOutOfStock) return;
     const activeU = propUser || user || (() => {
       try {
-        const saved = localStorage.getItem('takapay-client-user') || localStorage.getItem('takapay_admin_user');
+        const saved = localStorage.getItem('takapay-client-user');
         return saved ? JSON.parse(saved) : null;
       } catch {
         return null;
@@ -1268,7 +1268,7 @@ export default function ClientProductDetail({
                 if (isOutOfStock) return;
                 const activeU = propUser || user || (() => {
                   try {
-                    const saved = localStorage.getItem('takapay-client-user') || localStorage.getItem('takapay_admin_user');
+                    const saved = localStorage.getItem('takapay-client-user');
                     return saved ? JSON.parse(saved) : null;
                   } catch {
                     return null;
