@@ -17,6 +17,7 @@ export default function ClientProfileView({
   const [authNotice, setAuthNotice] = useState('');
   const [isSubmittingAuth, setIsSubmittingAuth] = useState(false);
   const [showForgotPinModal, setShowForgotPinModal] = useState(false);
+  const [photoError, setPhotoError] = useState(false);
   const { startLockout, clearLockout, remainingFor } = useLoginLockout();
 
   // Formulaire connexion
@@ -1206,20 +1207,17 @@ export default function ClientProfileView({
               borderRadius: '50%',
               border: '3.5px solid #f59e0b',
               overflow: 'hidden',
-              background: hasUserPhoto ? '#fef3c7' : 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+              background: hasUserPhoto && !photoError ? '#fef3c7' : 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
               display: 'grid',
               placeItems: 'center',
             }}
           >
-            {hasUserPhoto ? (
+            {hasUserPhoto && !photoError ? (
               <img
                 src={profileUser.photo_profil || profileUser.avatar}
                 alt={userDisplayName}
                 style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                onError={(e) => {
-                  e.target.style.display = 'none';
-                  e.target.parentElement.innerHTML = `<div style="display:grid;place-items:center;height:100%;font-size:38px;font-weight:800;color:#ffffff;background:linear-gradient(135deg, #f59e0b 0%, #d97706 100%);width:100%;">${userInitial}</div>`;
-                }}
+                onError={() => setPhotoError(true)}
               />
             ) : (
               <span
