@@ -40,12 +40,13 @@ class AppServiceProvider extends ServiceProvider
                 .'|'.$request->getContent()
             );
 
-            // Autoriser le polling automatique en arrière-plan du chat support ouvert (toutes les 2,5s à 4s)
-            if ($request->isMethod('GET') && ($request->is('api/support/messages') || $request->is('api/admin/support/*'))) {
-                return Limit::perMinute(35)->by($fingerprint);
+            // Pour les requêtes de consultation GET (lecture seule, actualisations, polling, navigation),
+            // appliquer un quota fluide de 120 requêtes par minute par utilisateur/IP.
+            if ($request->isMethod('GET')) {
+                return Limit::perMinute(120)->by($principal);
             }
 
-            // Toute requête identique envoyée une 10e fois dans la même minute est refusée (max 9 autorisées/min)
+            // Toute mutation (POST, PUT, DELETE, PATCH) identique envoyée une 10e fois dans la même minute est refusée
             return Limit::perMinute(9)->by($fingerprint)->response(function (Request $request, array $headers) {
                 return response()->json([
                     'message' => 'Trop de requêtes identiques envoyées en moins d’une minute. Veuillez patienter avant de réessayer.',

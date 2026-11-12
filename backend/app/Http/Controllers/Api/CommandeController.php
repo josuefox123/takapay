@@ -29,6 +29,12 @@ class CommandeController extends Controller
 
         $query = Commande::with(['utilisateur', 'commandeProduits.produit', 'transactions.cagnotte'])->latest();
 
+        // Seules les commandes payées ou confirmées apparaissent
+        $query->where(function ($q) {
+            $q->whereIn('statut', ['payee', 'terminee', 'livree', 'annulee'])
+                ->orWhere('mode_paiement', 'livraison');
+        });
+
         $requestedUserId = $request->query('user_id');
 
         // 1. Consultation des commandes d'un utilisateur spécifique (ex: espace client / historique)
@@ -53,12 +59,6 @@ class CommandeController extends Controller
         } else {
             $query->where('utilisateur_id', $user->id);
         }
-
-        // Seules les commandes payées ou confirmées apparaissent
-        $query->where(function ($q) {
-            $q->whereIn('statut', ['payee', 'terminee', 'livree', 'annulee'])
-                ->orWhere('mode_paiement', 'livraison');
-        });
 
         $perPage = (int) $request->query('per_page', 50);
         return CommandeResource::collection($query->paginate($perPage));

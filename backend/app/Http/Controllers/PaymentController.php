@@ -112,17 +112,11 @@ class PaymentController extends Controller
             $amount = min($requestedAmount, $reste);
             $reference = 'DEP_CAG_'.$cagnotteId.'_'.(string) Str::uuid();
 
-            Transaction::create([
-                'cagnotte_id' => $cagnotte->id,
-                'reference_externe' => $reference,
-                'date' => now(),
-                'statut' => 'en_attente',
-                'montant' => $amount,
-                'prestataire' => 'FEEXPAY',
-                'type' => 'versement',
-                'moyen_paiement' => $request->input('moyen_paiement') ?? 'FEEXPAY',
-                'devise' => 'XOF',
-            ]);
+            // Nettoyer d'éventuelles tentatives de versement antérieures non abouties pour cette cagnotte
+            Transaction::where('cagnotte_id', $cagnotte->id)
+                ->where('statut', 'en_attente')
+                ->where('type', 'versement')
+                ->delete();
         }
         // Cas 2 : Nouvelle commande (Achat au comptant ou Démarrage cagnotte)
         elseif ($produitId) {
@@ -170,6 +164,14 @@ class PaymentController extends Controller
                 $createdData = DB::transaction(function () use ($user, $reference, $amount, $fullProductPrice, $produitId, $quantite, $isCod, $request, $typePaiement, $produit) {
                     $cmd = null;
                     if ($user) {
+                        if (! $isCod) {
+                            // Nettoyer les anciens brouillons de commande non finalisés pour cet utilisateur
+                            Commande::where('utilisateur_id', $user->id)
+                                ->where('statut', 'en_attente')
+                                ->where('mode_paiement', '!=', 'livraison')
+                                ->delete();
+                        }
+
                         $cmd = Commande::create([
                             'utilisateur_id' => $user->id,
                             'reference' => $reference,
@@ -191,20 +193,6 @@ class PaymentController extends Controller
                             'prix_unitaire' => $fullProductPrice,
                             'total' => $fullProductPrice * $quantite,
                         ]);
-
-                        if (! $isCod) {
-                            Transaction::create([
-                                'commande_id' => $cmd->id,
-                                'reference_externe' => $reference,
-                                'date' => now(),
-                                'statut' => 'en_attente',
-                                'montant' => $amount,
-                                'prestataire' => 'FEEXPAY',
-                                'type' => $typePaiement === 'cash' ? 'commande_cash' : 'commande_cagnotte',
-                                'moyen_paiement' => $request->input('moyen_paiement') ?? 'FEEXPAY',
-                                'devise' => 'XOF',
-                            ]);
-                        }
                     }
 
                     $cag = null;
@@ -1016,6 +1004,17 @@ class PaymentController extends Controller
                         'responsecode' => 'PENDING',
                         'message' => 'En attente de validation',
                     ], 200);
+                }
+
+                // Pour les détails de transaction, FeexPay v2 renvoie real_amount.
+                // Le widget React FeexPay attend explicitement la clé 'total' pour combiner le montant et les frais.
+                if ($path === '/api/transactions/details' && is_array($data)) {
+                    if (!isset($data['total']) && isset($data['real_amount'])) {
+                        $data['total'] = $data['real_amount'];
+                    }
+                    if (!isset($data['total']) && isset($data['fees']) && isset($body['amount'])) {
+                        $data['total'] = (float)$body['amount'] + (float)$data['fees'];
+                    }
                 }
 
                 return response()->json($data, $res->status());

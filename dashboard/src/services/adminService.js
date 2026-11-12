@@ -339,28 +339,30 @@ export const adminService = {
   async getNotifications(userId = null) {
     try {
       const query = userId ? `?user_id=${userId}` : '';
+      const token = userId ? (this.getClientToken() || this.getToken()) : (this.getToken() || this.getClientToken());
       const res = await fetch(`${API_BASE}/notifications${query}`, {
         headers: {
           Accept: 'application/json',
-          ...(this.getToken() ? { Authorization: `Bearer ${this.getToken()}` } : {}),
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
       });
-      if (!res.ok) return [];
+      if (!res.ok) return null;
       const json = await res.json();
       return json.data || json || [];
     } catch {
-      return [];
+      return null;
     }
   },
 
   async markNotificationAsRead(notifId) {
     try {
+      const token = this.getClientToken() || this.getToken();
       const res = await fetch(`${API_BASE}/notifications/${notifId}/lire`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
           Accept: 'application/json',
-          ...(this.getToken() ? { Authorization: `Bearer ${this.getToken()}` } : {}),
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
       });
       return res.ok;
@@ -371,12 +373,13 @@ export const adminService = {
 
   async markAllNotificationsAsRead(userId = null) {
     try {
+      const token = userId ? (this.getClientToken() || this.getToken()) : (this.getToken() || this.getClientToken());
       const res = await fetch(`${API_BASE}/notifications/tout-lire`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Accept: 'application/json',
-          ...(this.getToken() ? { Authorization: `Bearer ${this.getToken()}` } : {}),
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: JSON.stringify({ user_id: userId }),
       });
@@ -1568,7 +1571,7 @@ export const adminService = {
       });
       if (res.status === 401 || res.status === 403) {
         handleAuthError(res, Boolean(userId));
-        return [];
+        return null;
       }
       if (res.ok) {
         const json = await res.json();
@@ -1580,7 +1583,7 @@ export const adminService = {
     } catch (_error) {
       void _error;
     }
-    return [];
+    return null;
   },
 
   async deleteUnpaidCagnotte(cagnotteId) {
@@ -2033,7 +2036,7 @@ let activeTransactionRef = null;
 
 export const cancelFeexpayPayment = (reason = 'CANCELLED', wasSubmitted = null, reference = null) => {
   const refToCancel = reference || activeTransactionRef;
-  if (refToCancel && reason === 'CANCELLED' && wasSubmitted === false) {
+  if (refToCancel) {
     const token = adminService.getClientToken() || adminService.getToken();
     try {
       fetch(`${API_BASE}/payment/cancel`, {
