@@ -29,10 +29,22 @@ class CagnotteController extends Controller
             if ($accessToken && $accessToken->tokenable) {
                 $user = $accessToken->tokenable;
             }
+            
         }
 
         $query = Cagnotte::has('produit')
-            ->with(['utilisateur', 'produit.imageProduits', 'produit.parametreProduit', 'produit.sousCategorie.categorie', 'transactions'])
+            ->with([
+                'utilisateur',
+                'produit.imageProduits',
+                'produit.parametreProduit',
+                'produit.sousCategorie.categorie',
+                'transactions' => fn ($q) => $q->where(function ($sub) {
+                    $sub->whereIn('statut', ['succes', 'reussi'])
+                        ->orWhere('type', 'remboursement')
+                        ->orWhere('prestataire', 'LIVRAISON')
+                        ->orWhere('moyen_paiement', 'livraison');
+                })->orderByDesc('date')->orderByDesc('id'),
+            ])
             ->where(function ($q) {
                 $q->whereNotIn('statut', ['en_attente', 'initialisation'])
                     ->orWhere('montant_verse', '>', 0)
@@ -87,7 +99,12 @@ class CagnotteController extends Controller
                 'produit.imageProduits',
                 'produit.parametreProduit',
                 'produit.sousCategorie.categorie',
-                'transactions',
+                'transactions' => fn ($q) => $q->where(function ($sub) {
+                    $sub->whereIn('statut', ['succes', 'reussi'])
+                        ->orWhere('type', 'remboursement')
+                        ->orWhere('prestataire', 'LIVRAISON')
+                        ->orWhere('moyen_paiement', 'livraison');
+                })->orderByDesc('date')->orderByDesc('id'),
             ])
             ->where(function ($q) {
                 $q->whereNotIn('statut', ['en_attente', 'initialisation'])

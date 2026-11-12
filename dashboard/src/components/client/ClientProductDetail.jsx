@@ -37,7 +37,7 @@ export default function ClientProductDetail({
   // Utilisateur connecté
   const user = propUser || (() => {
     try {
-      const saved = localStorage.getItem('takapay-client-user');
+      const saved = localStorage.getItem('takapay-client-user') || localStorage.getItem('takapay_admin_user');
       return saved ? JSON.parse(saved) : null;
     } catch {
       return null;
@@ -47,11 +47,12 @@ export default function ClientProductDetail({
   // Modal de choix (Payer maintenant vs Payer à la livraison)
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [paymentModalStep, setPaymentModalStep] = useState('choice'); // 'choice' | 'delivery_form' | 'success'
-  const [deliveryAddress, setDeliveryAddress] = useState(user?.adresse || '');
-  const [deliveryPhone, setDeliveryPhone] = useState(user?.telephone || user?.phone || '');
-  const [deliveryCustomerName, setDeliveryCustomerName] = useState(
-    user?.nom ? `${user.prenom || ''} ${user.nom || ''}`.trim() : (user?.n || '')
-  );
+  const [deliveryAddress, setDeliveryAddress] = useState(() => user?.adresse || user?.address || '');
+  const [deliveryPhone, setDeliveryPhone] = useState(() => user?.telephone || user?.phone || '');
+  const [deliveryCustomerName, setDeliveryCustomerName] = useState(() => {
+    const fullName = `${user?.prenom || ''} ${user?.nom || ''}`.trim();
+    return fullName || user?.nom || user?.prenom || user?.name || user?.n || '';
+  });
   const [deliveryNote, setDeliveryNote] = useState('');
   const [deliveryCoords, setDeliveryCoords] = useState('');
   const [isLocating, setIsLocating] = useState(false);
@@ -60,14 +61,32 @@ export default function ClientProductDetail({
   const [completedOrderInfo, setCompletedOrderInfo] = useState(null);
 
   useEffect(() => {
-    if (user) {
-      if (!deliveryAddress && user.adresse) setDeliveryAddress(user.adresse);
-      if (!deliveryPhone && (user.telephone || user.phone)) setDeliveryPhone(user.telephone || user.phone);
-      if (!deliveryCustomerName && (user.prenom || user.nom || user.n)) {
-        setDeliveryCustomerName(`${user.prenom || ''} ${user.nom || ''}`.trim() || user.n || '');
+    const activeU = propUser || user || (() => {
+      try {
+        const saved = localStorage.getItem('takapay-client-user') || localStorage.getItem('takapay_admin_user');
+        return saved ? JSON.parse(saved) : null;
+      } catch {
+        return null;
       }
+    })();
+    if (activeU) {
+      const full = `${activeU.prenom || ''} ${activeU.nom || ''}`.trim() || activeU.nom || activeU.prenom || activeU.name || activeU.n || '';
+      const p = activeU.telephone || activeU.phone || '';
+      const adr = activeU.adresse || activeU.address || '';
+
+      if (full) setDeliveryCustomerName((prev) => prev || full);
+      if (p) setDeliveryPhone((prev) => prev || p);
+      if (adr) setDeliveryAddress((prev) => prev || adr);
+
+      const cleanP = p.replace(/\D/g, '').replace(/^229/, '');
+      const em = activeU.email && !activeU.email.endsWith('@client.takapay.bj') ? activeU.email : '';
+      window.__takapayPrefillUser = {
+        fullName: full || 'Client',
+        phoneDigits: cleanP,
+        email: em,
+      };
     }
-  }, [user]);
+  }, [propUser, user]);
 
   const handleChoosePayNow = () => {
     if (isOutOfStock) return;
@@ -81,6 +100,22 @@ export default function ClientProductDetail({
 
   const handleChoosePayOnDelivery = () => {
     if (isOutOfStock) return;
+    const activeU = propUser || user || (() => {
+      try {
+        const saved = localStorage.getItem('takapay-client-user') || localStorage.getItem('takapay_admin_user');
+        return saved ? JSON.parse(saved) : null;
+      } catch {
+        return null;
+      }
+    })();
+    if (activeU) {
+      const full = `${activeU.prenom || ''} ${activeU.nom || ''}`.trim() || activeU.nom || activeU.prenom || activeU.name || activeU.n || '';
+      const p = activeU.telephone || activeU.phone || '';
+      const adr = activeU.adresse || activeU.address || '';
+      if (full) setDeliveryCustomerName(full);
+      if (p) setDeliveryPhone(p);
+      if (adr) setDeliveryAddress(adr);
+    }
     setPaymentModalStep('delivery_form');
   };
 
@@ -1231,6 +1266,30 @@ export default function ClientProductDetail({
               }}
               onClick={() => {
                 if (isOutOfStock) return;
+                const activeU = propUser || user || (() => {
+                  try {
+                    const saved = localStorage.getItem('takapay-client-user') || localStorage.getItem('takapay_admin_user');
+                    return saved ? JSON.parse(saved) : null;
+                  } catch {
+                    return null;
+                  }
+                })();
+                if (activeU) {
+                  const full = `${activeU.prenom || ''} ${activeU.nom || ''}`.trim() || activeU.nom || activeU.prenom || activeU.name || activeU.n || '';
+                  const p = activeU.telephone || activeU.phone || '';
+                  const adr = activeU.adresse || activeU.address || '';
+                  if (full) setDeliveryCustomerName(full);
+                  if (p) setDeliveryPhone(p);
+                  if (adr) setDeliveryAddress(adr);
+
+                  const cleanP = p.replace(/\D/g, '').replace(/^229/, '');
+                  const em = activeU.email && !activeU.email.endsWith('@client.takapay.bj') ? activeU.email : '';
+                  window.__takapayPrefillUser = {
+                    fullName: full || 'Client',
+                    phoneDigits: cleanP,
+                    email: em,
+                  };
+                }
                 if (orderMode === 'cash') {
                   setShowPaymentModal(true);
                   setPaymentModalStep('choice');

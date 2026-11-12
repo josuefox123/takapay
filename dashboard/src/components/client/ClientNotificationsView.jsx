@@ -3,11 +3,23 @@ import { adminService } from '../../services/adminService';
 
 const getStoredUser = () => {
   try {
-    const saved = localStorage.getItem('takapay-client-user');
+    const saved = localStorage.getItem('takapay-client-user') || localStorage.getItem('takapay_admin_user');
     return saved ? JSON.parse(saved) : null;
   } catch {
     return null;
   }
+};
+
+const getStoredNotifications = (userId) => {
+  if (!userId) return [];
+  try {
+    const raw = localStorage.getItem(`takapay_notifications_${userId}`);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch {}
+  return [];
 };
 
 export default function ClientNotificationsView({
@@ -18,8 +30,8 @@ export default function ClientNotificationsView({
 }) {
   const user = propUser || getStoredUser();
   const [activeFilter, setActiveFilter] = useState('Tous'); // 'Tous' | 'Paiements' | 'Cagnotte' | 'Infos'
-  const [notifications, setNotifications] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [notifications, setNotifications] = useState(() => getStoredNotifications(user?.id));
+  const [loading, setLoading] = useState(() => getStoredNotifications(user?.id).length === 0);
   const [selectedNotif, setSelectedNotif] = useState(null);
 
   const loadNotifications = async () => {
@@ -28,7 +40,6 @@ export default function ClientNotificationsView({
       setLoading(false);
       return;
     }
-    setLoading(true);
     try {
       const data = await adminService.getNotifications(user.id);
       if (Array.isArray(data)) {
@@ -47,9 +58,12 @@ export default function ClientNotificationsView({
             iconType: item.type === 'paiements' ? 'success' : (item.type === 'cagnotte' ? 'warning' : 'info'),
           }));
         setNotifications(userNotifs);
+        try {
+          localStorage.setItem(`takapay_notifications_${user.id}`, JSON.stringify(userNotifs));
+        } catch {}
       }
     } catch {
-      setNotifications([]);
+      // Conserver les notifications actuelles en cas d'erreur réseau temporaire
     } finally {
       setLoading(false);
     }
@@ -57,6 +71,14 @@ export default function ClientNotificationsView({
 
   useEffect(() => {
     loadNotifications();
+
+    const handleNotifUpdate = () => {
+      loadNotifications();
+    };
+    window.addEventListener('takapay_notification_updated', handleNotifUpdate);
+    return () => {
+      window.removeEventListener('takapay_notification_updated', handleNotifUpdate);
+    };
   }, [user?.id]);
 
   const handleOpenDetail = async (notif) => {
@@ -64,9 +86,15 @@ export default function ClientNotificationsView({
     if (notif.unread) {
       try {
         await adminService.markNotificationAsRead(notif.id);
-        setNotifications((prev) =>
-          prev.map((n) => (n.id === notif.id ? { ...n, unread: false, statut: 'lu' } : n))
-        );
+        setNotifications((prev) => {
+          const next = prev.map((n) => (n.id === notif.id ? { ...n, unread: false, statut: 'lu' } : n));
+          if (user?.id) {
+            try {
+              localStorage.setItem(`takapay_notifications_${user.id}`, JSON.stringify(next));
+            } catch {}
+          }
+          return next;
+        });
         window.dispatchEvent(new CustomEvent('takapay_notification_updated'));
       } catch {
         // Ignorer
@@ -78,7 +106,13 @@ export default function ClientNotificationsView({
     if (!user?.id) return;
     try {
       await adminService.markAllNotificationsAsRead(user.id);
-      setNotifications((prev) => prev.map((n) => ({ ...n, unread: false, statut: 'lu' })));
+      setNotifications((prev) => {
+        const next = prev.map((n) => ({ ...n, unread: false, statut: 'lu' }));
+        try {
+          localStorage.setItem(`takapay_notifications_${user.id}`, JSON.stringify(next));
+        } catch {}
+        return next;
+      });
       window.dispatchEvent(new CustomEvent('takapay_notification_updated'));
     } catch {
       // Ignorer

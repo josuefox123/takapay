@@ -52,14 +52,24 @@ export default function ClientHeader({
       return;
     }
 
-    if (newLang === 'FR' && !hasPreferenceConsent) {
+    if (newLang === 'FR') {
       setLang('FR');
       removeTranslationCookie();
+      const host = window.location.hostname;
+      document.cookie = 'googtrans=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/';
+      document.cookie = `googtrans=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/; domain=${host}`;
+      if (host && host.includes('.')) {
+        document.cookie = `googtrans=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/; domain=.${host}`;
+      }
+      try {
+        localStorage.setItem('takapay_lang', 'FR');
+      } catch { /* ignore */ }
+      window.location.reload();
       return;
     }
 
     setLang(newLang);
-    const target = newLang === 'EN' ? '/fr/en' : '/fr/fr';
+    const target = '/fr/en';
     const expires = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toUTCString();
     const host = window.location.hostname;
 
@@ -69,15 +79,9 @@ export default function ClientHeader({
       document.cookie = `googtrans=${target}; expires=${expires}; path=/; domain=.${host}`;
       document.cookie = `googtrans=${target}; expires=${expires}; path=/; domain=${host}`;
     }
-
-    if (newLang === 'FR') {
-      document.cookie = `googtrans=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/`;
-      if (host && host.includes('.')) {
-        document.cookie = `googtrans=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/; domain=.${host}`;
-        document.cookie = `googtrans=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/; domain=${host}`;
-      }
-      document.cookie = `googtrans=/fr/fr; expires=${expires}; path=/`;
-    }
+    try {
+      localStorage.setItem('takapay_lang', 'EN');
+    } catch { /* ignore */ }
 
     const applyTranslate = () => {
       const select = document.querySelector('select.goog-te-combo') || document.querySelector('#google_translate_element select');
@@ -181,13 +185,13 @@ export default function ClientHeader({
         <div className="takapay-header-sec1">
           <div className="sec1-left-contacts">
             <a href="mailto:contact@takapay.bj" className="sec1-contact-link" title="Écrivez-nous par email">
-              <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>
+              <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '16px' }}>
                 mail
               </span>
               <span className="contact-text">contact@takapay.bj</span>
             </a>
             <a href="tel:+22990000000" className="sec1-contact-link" title="Appelez le service client">
-              <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>
+              <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '16px' }}>
                 call
               </span>
               <span className="contact-text">+229 90 00 00 00</span>
@@ -231,14 +235,14 @@ export default function ClientHeader({
 
             <div className="sec1-actions-bar">
               <div className="sec1-location-pill" title="Localisation active : Bénin">
-                <span className="material-symbols-outlined" style={{ fontSize: '15px' }}>
+                <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '15px' }}>
                   location_on
                 </span>
                 <span>🇧🇯 Bénin</span>
               </div>
 
               <div className="sec1-lang-wrap" style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
-                <span className="material-symbols-outlined" style={{ fontSize: '16px', opacity: 0.85 }}>
+                <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '16px', opacity: 0.85 }}>
                   language
                 </span>
                 <select
@@ -260,7 +264,7 @@ export default function ClientHeader({
                 aria-label="Favoris"
                 style={{ position: 'relative' }}
               >
-                <span className="material-symbols-outlined" style={{ fontSize: '20px' }}>
+                <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '20px' }}>
                   favorite
                 </span>
                 {favCount > 0 && (
@@ -277,7 +281,7 @@ export default function ClientHeader({
                 title="Mes Cagnottes & Cotisations"
                 aria-label="Cagnottes"
               >
-                <span className="material-symbols-outlined" style={{ fontSize: '20px' }}>
+                <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '20px' }}>
                   shopping_cart
                 </span>
                 {cagnotteCount > 0 && <span className="sec1-badge-count">{cagnotteCount}</span>}
@@ -290,7 +294,7 @@ export default function ClientHeader({
                 title="Mes Notifications"
                 aria-label="Notifications"
               >
-                <span className="material-symbols-outlined" style={{ fontSize: '21px' }}>
+                <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '21px' }}>
                   notifications
                 </span>
                 {unreadNotifCount > 0 && <span className="sec1-badge-count">{unreadNotifCount}</span>}
@@ -329,7 +333,7 @@ export default function ClientHeader({
                     {(user.nom || user.prenom || user.n || 'T').trim().charAt(0).toUpperCase()}
                   </span>
                 ) : (
-                  <span className="material-symbols-outlined" style={{ fontSize: '22px' }}>
+                  <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '22px' }}>
                     account_circle
                   </span>
                 )}
@@ -350,7 +354,7 @@ export default function ClientHeader({
               className={`sec2-nav-link ${activeTab === 'home' ? 'active' : ''}`}
               onClick={() => onSelectTab && onSelectTab('home')}
             >
-              <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>
+              <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '18px' }}>
                 home
               </span>
               <span>Accueil</span>
@@ -361,7 +365,7 @@ export default function ClientHeader({
               className={`sec2-nav-link ${activeTab === 'shop' || activeTab === 'subcat' || activeTab === 'product' ? 'active' : ''}`}
               onClick={() => onSelectTab && onSelectTab('shop')}
             >
-              <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>
+              <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '18px' }}>
                 storefront
               </span>
               <span>Catalogue</span>
@@ -372,7 +376,7 @@ export default function ClientHeader({
               className={`sec2-nav-link ${activeTab === 'cag' ? 'active' : ''}`}
               onClick={() => onSelectTab && onSelectTab('cag')}
             >
-              <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>
+              <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '18px' }}>
                 savings
               </span>
               <span>Cagnotte</span>
@@ -415,7 +419,7 @@ export default function ClientHeader({
               title="Mes Favoris"
               aria-label="Favoris"
             >
-              <span className="material-symbols-outlined" style={{ fontSize: '22px' }}>
+              <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '22px' }}>
                 favorite
               </span>
               {favCount > 0 && <span className="client-mobile-badge">{favCount}</span>}
@@ -429,7 +433,7 @@ export default function ClientHeader({
               title="Mes Cagnottes"
               aria-label="Cagnottes"
             >
-              <span className="material-symbols-outlined" style={{ fontSize: '22px' }}>
+              <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '22px' }}>
                 shopping_cart
               </span>
               {cagnotteCount > 0 && <span className="client-mobile-badge">{cagnotteCount}</span>}
@@ -450,7 +454,7 @@ export default function ClientHeader({
                   style={{ width: '24px', height: '24px', borderRadius: '50%', objectFit: 'cover' }}
                 />
               ) : (
-                <span className="material-symbols-outlined" style={{ fontSize: '22px' }}>
+                <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '22px' }}>
                   account_circle
                 </span>
               )}
@@ -548,7 +552,7 @@ export default function ClientHeader({
                   setIsMobileMenuOpen(false);
                 }}
               >
-                <span className="material-symbols-outlined">home</span>
+                <span className="material-symbols-outlined notranslate" translate="no">home</span>
                 <span>Accueil</span>
               </button>
 
@@ -560,7 +564,7 @@ export default function ClientHeader({
                   setIsMobileMenuOpen(false);
                 }}
               >
-                <span className="material-symbols-outlined">storefront</span>
+                <span className="material-symbols-outlined notranslate" translate="no">storefront</span>
                 <span>Catalogue des produits</span>
               </button>
 
@@ -572,7 +576,7 @@ export default function ClientHeader({
                   setIsMobileMenuOpen(false);
                 }}
               >
-                <span className="material-symbols-outlined">savings</span>
+                <span className="material-symbols-outlined notranslate" translate="no">savings</span>
                 <span>Mes Cagnottes & Versements</span>
                 {cagnotteCount > 0 && <span className="drawer-badge">{cagnotteCount}</span>}
               </button>
@@ -586,7 +590,7 @@ export default function ClientHeader({
                   setIsMobileMenuOpen(false);
                 }}
               >
-                <span className="material-symbols-outlined">person</span>
+                <span className="material-symbols-outlined notranslate" translate="no">person</span>
                 <span>Mon Profil</span>
               </button>
 
@@ -599,7 +603,7 @@ export default function ClientHeader({
                   setIsMobileMenuOpen(false);
                 }}
               >
-                <span className="material-symbols-outlined">notifications</span>
+                <span className="material-symbols-outlined notranslate" translate="no">notifications</span>
                 <span>Notifications</span>
                 {unreadNotifCount > 0 && <span className="sec1-badge-count" style={{ marginLeft: 'auto' }}>{unreadNotifCount}</span>}
               </button>
@@ -612,7 +616,7 @@ export default function ClientHeader({
                   setIsMobileMenuOpen(false);
                 }}
               >
-                <span className="material-symbols-outlined">favorite</span>
+                <span className="material-symbols-outlined notranslate" translate="no">favorite</span>
                 <span>Mes Favoris</span>
                 {favCount > 0 && <span className="sec1-badge-count" style={{ marginLeft: 'auto' }}>{favCount}</span>}
               </button>
@@ -622,13 +626,13 @@ export default function ClientHeader({
 
             <div className="client-drawer-settings">
               <div className="drawer-setting-row">
-                <span className="material-symbols-outlined" style={{ fontSize: '18px', color: '#c62828' }}>
+                <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '18px', color: '#c62828' }}>
                   location_on
                 </span>
                 <span>Localisation : 🇧🇯 Bénin</span>
               </div>
               <div className="drawer-setting-row">
-                <span className="material-symbols-outlined" style={{ fontSize: '18px', color: '#c62828' }}>
+                <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '18px', color: '#c62828' }}>
                   language
                 </span>
                 <span>Langue :</span>
@@ -649,11 +653,11 @@ export default function ClientHeader({
             <div className="client-drawer-contacts">
               <small className="drawer-contacts-title">Assistance & Service Clientèle</small>
               <a href="tel:+22990000000" className="drawer-contact-link">
-                <span className="material-symbols-outlined">call</span>
+                <span className="material-symbols-outlined notranslate" translate="no">call</span>
                 <span>+229 90 00 00 00</span>
               </a>
               <a href="mailto:contact@takapay.bj" className="drawer-contact-link">
-                <span className="material-symbols-outlined">mail</span>
+                <span className="material-symbols-outlined notranslate" translate="no">mail</span>
                 <span>contact@takapay.bj</span>
               </a>
             </div>
@@ -666,7 +670,7 @@ export default function ClientHeader({
           ========================================================================= */}
       <div className="takapay-header-sec3" aria-label="Bandeau d'annonces Takapay">
         <div className="sec3-badge-annonce">
-          <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>
+          <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '14px' }}>
             campaign
           </span>
           <span>ANNONCE</span>
@@ -700,7 +704,7 @@ export default function ClientHeader({
             animation: 'fadeInUp 0.25s ease',
           }}
         >
-          <span className="material-symbols-outlined" style={{ color: '#ef4444', fontSize: '18px' }}>
+          <span className="material-symbols-outlined notranslate" translate="no" style={{ color: '#ef4444', fontSize: '18px' }}>
             favorite
           </span>
           <span>Article ajouté à vos favoris Takapay !</span>
