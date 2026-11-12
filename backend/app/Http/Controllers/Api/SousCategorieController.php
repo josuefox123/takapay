@@ -11,6 +11,7 @@ use App\Models\Cagnotte;
 use App\Models\CommandeProduit;
 use App\Models\SousCategorie;
 use App\Services\ImageStorageService;
+use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 
 class SousCategorieController extends Controller
@@ -85,8 +86,14 @@ class SousCategorieController extends Controller
         return new SousCategorieResource($sous_category->fresh());
     }
 
-    public function destroy(SousCategorie $sous_category)
+    public function destroy(Request $request, SousCategorie $sous_category)
     {
+        if ($request->user()?->role !== 'super_admin') {
+            return response()->json([
+                'message' => 'Accès refusé. Seul le super administrateur peut supprimer une sous-catégorie.',
+            ], 403);
+        }
+
         $produits = $sous_category->produits()->get();
         $produitIds = $produits->pluck('id');
 

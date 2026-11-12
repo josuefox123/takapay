@@ -14,6 +14,7 @@ use App\Models\ImageProduit;
 use App\Models\Produit;
 use App\Services\ImageStorageService;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Support\Facades\DB;
 
@@ -107,10 +108,16 @@ class CategorieController extends Controller
 
     /**
      * Supprimer une catégorie et, par cascade, ses sous-catégories,
-     * produits et images — physiquement inclus.
+     * produits et images — physiquement inclus (Réservé Super Admin).
      */
-    public function destroy(Categorie $category): JsonResponse
+    public function destroy(Request $request, Categorie $category): JsonResponse
     {
+        if ($request->user()?->role !== 'super_admin') {
+            return response()->json([
+                'message' => 'Accès refusé. Seul le super administrateur peut supprimer une catégorie.',
+            ], 403);
+        }
+
         $produits = Produit::whereHas('sousCategorie', fn ($q) => $q->where('categorie_id', $category->id))->get();
         $produitIds = $produits->pluck('id');
 

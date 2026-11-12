@@ -34,8 +34,14 @@ class PaymentController extends Controller
             'type_paiement' => 'nullable|string|in:cash,cagnotte',
             'quantite' => 'nullable|integer|min:1',
             'moyen_paiement' => 'nullable|string',
-            'user_id' => 'nullable',
         ]);
+
+        $user = $request->user('sanctum') ?? $request->user();
+        if (! $user) {
+            return response()->json([
+                'message' => 'Veuillez vous connecter pour effectuer un paiement ou passer une commande.',
+            ], 401);
+        }
 
         $isCod = $request->input('moyen_paiement') === 'livraison';
         if (! $isCod && (! config('services.feexpay.shop_id') || ! config('services.feexpay.api_key'))) {
@@ -50,26 +56,10 @@ class PaymentController extends Controller
             ], 422);
         }
 
-        $user = $request->user('sanctum');
-        if (! $user && $request->filled('user_id')) {
-            $user = User::find($request->input('user_id'));
-        }
-        if (! $user && ($request->filled('telephone_livraison') || $request->filled('delivery_phone') || $request->filled('telephone'))) {
-            $phone = preg_replace('/\D/', '', $request->input('telephone_livraison') ?? $request->input('delivery_phone') ?? $request->input('telephone'));
-            if (strlen($phone) >= 8) {
-                $user = User::where('telephone', 'like', "%{$phone}%")->first();
-            }
-        }
-
         $typePaiement = $request->input('type_paiement', 'cagnotte');
         $cagnotteId = $request->input('cagnotte_id');
         $produitId = $request->input('produit_id');
         $quantite = (int) $request->input('quantite', 1);
-        if (! $cagnotteId && $produitId && ! $user && ! $isCod) {
-            return response()->json([
-                'message' => 'Connectez-vous à votre compte avant de démarrer une cagnotte.',
-            ], 422);
-        }
 
         $requestedAmount = (float) $request->input('amount', 0);
         if (! $isCod && $requestedAmount <= 0) {
@@ -85,6 +75,11 @@ class PaymentController extends Controller
         // Cas 1 : Versement ultérieur sur une cagnotte existante (ClientCagnotteView)
         if ($cagnotteId) {
             $cagnotte = Cagnotte::with(['produit.parametreProduit.promotion'])->findOrFail($cagnotteId);
+            if ((int) $cagnotte->utilisateur_id !== (int) $user->id) {
+                return response()->json([
+                    'message' => 'Accès refusé. Cette cagnotte ne vous appartient pas.',
+                ], 403);
+            }
             $produit = $cagnotte->produit;
             $param = $produit?->parametreProduit;
             $mode = $param?->mode_paiement ?? 'libre';
