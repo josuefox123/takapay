@@ -412,13 +412,20 @@ class PaymentController extends Controller
             }
 
             $expectedAmount = (float) $commande->prix_total;
-            if ($amount > 0 && abs($amount - $expectedAmount) > 0.01) {
+            if (str_starts_with($reference, 'CMD_CASH_')) {
+                if ($amount <= 0 || abs($amount - $expectedAmount) > 0.01) {
+                    return response()->json([
+                        'status' => 'unverified',
+                        'message' => 'Le montant confirmé par FeexPay ne correspond pas à la commande.',
+                    ], 422);
+                }
+                $amount = $expectedAmount;
+            } elseif ($amount <= 0 || $amount > $expectedAmount + 0.01) {
                 return response()->json([
                     'status' => 'unverified',
-                    'message' => 'Le montant confirmé par FeexPay ne correspond pas à la commande.',
+                    'message' => 'Le montant confirmé par FeexPay dépasse le montant de la commande.',
                 ], 422);
             }
-            $amount = $expectedAmount;
             $userId = $commande->utilisateur_id;
             $paymentUser = $commande->utilisateur;
         }
@@ -516,11 +523,14 @@ class PaymentController extends Controller
                 }
             } else {
                 $commande = Commande::with('utilisateur')->where('reference', $reference)->first();
-                if (
-                    ! $commande
-                    || (! str_starts_with((string) $reference, 'CMD_CAG_') && ! str_starts_with((string) $reference, 'CMD_CASH_'))
-                    || abs($amount - (float) $commande->prix_total) > 0.01
-                ) {
+                $isCashRef = str_starts_with((string) $reference, 'CMD_CASH_');
+                $isCagRef = str_starts_with((string) $reference, 'CMD_CAG_');
+                $expectedAmount = $commande ? (float) $commande->prix_total : 0.0;
+                $amountValid = $isCashRef
+                    ? abs($amount - $expectedAmount) <= 0.01
+                    : ($amount > 0 && $amount <= $expectedAmount + 0.01);
+
+                if (! $commande || (! $isCashRef && ! $isCagRef) || ! $amountValid) {
                     return response()->json(['status' => 'unverified'], 422);
                 }
                 if (

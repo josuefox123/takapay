@@ -113,9 +113,9 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
     Route::post('cagnottes/{cagnotte}/confirmer-reception', [CagnotteController::class, 'confirmerReception'])->name('cagnottes.confirmer-reception');
     Route::post('cagnottes/{cagnotte}/annuler', [CagnotteController::class, 'demanderAnnulation'])->name('cagnottes.annuler');
     Route::post('cagnottes/{cagnotte}/reactiver', [CagnotteController::class, 'reactiver'])->name('cagnottes.reactiver');
-    Route::post('/payment/initiate', [PaymentController::class, 'initiatePayment'])->middleware('throttle:10,1');
-    Route::post('/payment/feexpay-proxy', [PaymentController::class, 'feexpayProxy'])->middleware('throttle:30,1');
-    Route::post('/payment/confirm', [PaymentController::class, 'confirmPayment'])->middleware('throttle:15,1');
+    Route::post('/payment/initiate', [PaymentController::class, 'initiatePayment'])->middleware('throttle:20,1');
+    Route::post('/payment/feexpay-proxy', [PaymentController::class, 'feexpayProxy'])->middleware('throttle:120,1');
+    Route::post('/payment/confirm', [PaymentController::class, 'confirmPayment'])->middleware('throttle:60,1');
     Route::post('/payment/cancel', [PaymentController::class, 'cancelPayment'])->name('payment.cancel');
 
     /*

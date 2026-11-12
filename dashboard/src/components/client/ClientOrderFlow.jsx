@@ -662,6 +662,8 @@ export default function ClientOrderFlow({
     };
   }, [onBack, successModalData]);
 
+  const confirmingRef = useRef(false);
+
   const handleFeexpayCallback = async (response) => {
     console.log('FeexPay callback reçu :', response);
     const isSuccess = response && (
@@ -681,6 +683,11 @@ export default function ClientOrderFlow({
       setPaymentFailed(true);
       return;
     }
+
+    if (confirmingRef.current) {
+      return;
+    }
+    confirmingRef.current = true;
 
     const orderRef = paymentData?.reference || response.reference;
     const resolvedNetwork = response.reseau || window.__takapaySelectedNetwork || provider;
@@ -729,6 +736,7 @@ export default function ClientOrderFlow({
         window.dispatchEvent(new CustomEvent('takapay_products_updated'));
       } catch { /* ignore */ }
     } catch (err) {
+      confirmingRef.current = false;
       console.error('Erreur confirmation backend :', err);
       setPaymentData(null);
       setIsProcessingPayment(false);
