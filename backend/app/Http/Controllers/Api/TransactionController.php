@@ -37,22 +37,16 @@ class TransactionController extends Controller
             ->orderByDesc('date')
             ->orderByDesc('id');
 
-        $requestedUserId = $request->query('user_id');
-        if ($requestedUserId) {
-            $query->where(function ($q) use ($requestedUserId) {
-                $q->whereHas('cagnotte', fn ($c) => $c->where('utilisateur_id', $requestedUserId))
-                    ->orWhereHas('commande', fn ($cmd) => $cmd->where('utilisateur_id', $requestedUserId));
-            });
-
-            return TransactionResource::collection($query->get());
+        if (! $user) {
+            return TransactionResource::collection(collect());
         }
 
-        if ($user && $user->role === 'admin') {
+        if ($user->role === 'admin') {
             $query->where(function ($q) use ($user) {
                 $q->whereHas('cagnotte.produit', fn ($p) => $p->where('admin_id', $user->id))
                     ->orWhereHas('commande.commandeProduits.produit', fn ($p) => $p->where('admin_id', $user->id));
             });
-        } elseif ($user && ! $user->isAdmin()) {
+        } elseif (! $user->isAdmin()) {
             $query->where(function ($q) use ($user) {
                 $q->whereHas('cagnotte', fn ($c) => $c->where('utilisateur_id', $user->id))
                     ->orWhereHas('commande', fn ($cmd) => $cmd->where('utilisateur_id', $user->id));

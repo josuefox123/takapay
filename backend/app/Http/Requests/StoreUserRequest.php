@@ -51,10 +51,10 @@ class StoreUserRequest extends FormRequest
      */
     public function rules(): array
     {
-        // Seul un super_admin peut créer un super_admin
+        // Seul un super_admin peut créer un admin ou super_admin
         $allowedRoles = ($this->user()?->role ?? '') === 'super_admin'
             ? 'in:client,livreur,admin,super_admin'
-            : 'in:client,livreur,admin';
+            : 'in:client,livreur';
 
         return [
             'nom' => ['required', 'string', 'min:2', 'max:100', 'regex:/^[\p{L}\s\-\'\.]+$/u'],

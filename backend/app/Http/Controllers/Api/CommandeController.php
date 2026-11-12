@@ -29,16 +29,6 @@ class CommandeController extends Controller
 
         $query = Commande::with(['utilisateur', 'commandeProduits.produit', 'transactions.cagnotte'])->latest();
 
-        $requestedUserId = $request->query('user_id');
-
-        // 1. Consultation des commandes d'un utilisateur spécifique (ex: espace client / historique)
-        if ($requestedUserId) {
-            $query->where('utilisateur_id', $requestedUserId);
-            $perPage = (int) $request->query('per_page', 50);
-
-            return CommandeResource::collection($query->paginate($perPage));
-        }
-
         if (! $user) {
             return CommandeResource::collection(collect());
         }

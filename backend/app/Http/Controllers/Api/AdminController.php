@@ -48,15 +48,27 @@ class AdminController extends Controller
     }
 
     /**
-     * Modifier le statut d'un compte utilisateur (actif, inactif, suspendu)
+     * Modifier le statut d'un compte utilisateur (actif, inactif, suspendu) — Réservé Super Admin.
      */
     public function updateUserStatus(Request $request, User $user): JsonResponse
     {
+        if ($request->user()?->role !== 'super_admin') {
+            return response()->json([
+                'message' => 'Accès refusé. Seul le super administrateur peut modifier le statut d\'un compte.',
+            ], 403);
+        }
+
         $request->validate([
             'statut_compte' => ['required', 'string', 'in:actif,inactif,suspendu'],
         ]);
 
         $newStatus = $request->statut_compte;
+
+        if ($request->user()->id === $user->id && $newStatus !== 'actif') {
+            return response()->json([
+                'message' => 'Vous ne pouvez pas suspendre ou désactiver votre propre compte.',
+            ], 422);
+        }
 
         $user->update([
             'statut_compte' => $newStatus,

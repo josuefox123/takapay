@@ -44,15 +44,6 @@ class CagnotteController extends Controller
             })
             ->latest();
 
-        $requestedUserId = $request->query('user_id');
-
-        // 1. Consultation des cagnottes d'un utilisateur spécifique (ex: espace client)
-        if ($requestedUserId) {
-            $query->where('utilisateur_id', $requestedUserId);
-
-            return CagnotteResource::collection($query->get());
-        }
-
         if (! $user) {
             return CagnotteResource::collection(collect());
         }
