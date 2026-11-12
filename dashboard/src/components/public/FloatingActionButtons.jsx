@@ -71,8 +71,6 @@ export default function FloatingActionButtons() {
     try {
       const u1 = localStorage.getItem('takapay-client-user');
       if (u1) return JSON.parse(u1);
-      const u2 = localStorage.getItem('takapay_admin_user');
-      if (u2) return JSON.parse(u2);
     } catch { /* ignore */ }
     return null;
   };

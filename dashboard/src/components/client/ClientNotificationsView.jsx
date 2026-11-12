@@ -3,7 +3,7 @@ import { adminService } from '../../services/adminService';
 
 const getStoredUser = () => {
   try {
-    const saved = localStorage.getItem('takapay-client-user') || localStorage.getItem('takapay_admin_user');
+    const saved = localStorage.getItem('takapay-client-user');
     return saved ? JSON.parse(saved) : null;
   } catch {
     return null;

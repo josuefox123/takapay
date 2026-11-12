@@ -134,7 +134,7 @@ if (typeof window !== 'undefined') {
   const getActiveClientInfo = () => {
     let u = null;
     try {
-      const s1 = localStorage.getItem('takapay-client-user') || localStorage.getItem('takapay_admin_user');
+      const s1 = localStorage.getItem('takapay-client-user');
       if (s1) u = JSON.parse(s1);
     } catch {
       // Ignorer

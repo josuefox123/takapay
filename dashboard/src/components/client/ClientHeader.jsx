@@ -302,10 +302,11 @@ export default function ClientHeader({
 
               <button
                 type="button"
-                className="sec1-action-icon-btn"
+                className={`sec1-action-icon-btn ${!user ? 'sec1-login-btn' : ''}`}
                 onClick={onOpenProfile}
-                title={user ? `Mon Profil (${user.prenom || user.nom || user.n || 'Connecté'})` : 'Mon Profil'}
-                aria-label="Profil utilisateur"
+                title={user ? `Mon Profil (${user.prenom || user.nom || user.n || 'Connecté'})` : 'Se connecter / S’inscrire'}
+                aria-label={user ? 'Profil utilisateur' : 'Se connecter'}
+                style={!user ? { display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 12px', width: 'auto', borderRadius: '20px', background: 'rgba(217, 119, 6, 0.12)', color: '#d97706', border: '1px solid rgba(217, 119, 6, 0.35)', fontWeight: 700, fontSize: '13px' } : undefined}
               >
                 {user && (user.photo_profil || user.avatar) ? (
                   <img
@@ -333,9 +334,12 @@ export default function ClientHeader({
                     {(user.nom || user.prenom || user.n || 'T').trim().charAt(0).toUpperCase()}
                   </span>
                 ) : (
-                  <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '22px' }}>
-                    account_circle
-                  </span>
+                  <>
+                    <span className="material-symbols-outlined notranslate" translate="no" style={{ fontSize: '19px' }}>
+                      account_circle
+                    </span>
+                    <span className="sec1-login-text" style={{ whiteSpace: 'nowrap' }}>Se connecter</span>
+                  </>
                 )}
               </button>
             </div>
@@ -520,16 +524,25 @@ export default function ClientHeader({
         <div className="client-drawer-backdrop" onClick={() => setIsMobileMenuOpen(false)}>
           <div className="client-drawer-panel" onClick={(e) => e.stopPropagation()}>
             <div className="client-drawer-head">
-              <div className="client-drawer-user-info">
+              <div
+                className="client-drawer-user-info"
+                onClick={() => {
+                  if (!user && onOpenProfile) {
+                    onOpenProfile();
+                    setIsMobileMenuOpen(false);
+                  }
+                }}
+                style={{ cursor: !user ? 'pointer' : 'default' }}
+              >
                 <span className="material-symbols-outlined" style={{ fontSize: '24px', color: '#c62828' }}>
                   account_circle
                 </span>
                 <div>
                   <b style={{ display: 'block', fontSize: '14px', color: '#1b1716' }}>
-                    {user ? user.prenom ? `${user.prenom} ${user.nom || ''}` : user.nom || 'Client Connecté' : 'Espace Client Takapay'}
+                    {user ? (user.prenom ? `${user.prenom} ${user.nom || ''}` : user.nom || 'Client Connecté') : 'Se connecter / S’inscrire'}
                   </b>
                   <small style={{ color: '#706966', fontSize: '11px' }}>
-                    {user ? user.phone || user.telephone || user.email : 'Épargne progressive d\'achats'}
+                    {user ? (user.phone || user.telephone || user.email) : 'Accéder à vos cagnottes & profil'}
                   </small>
                 </div>
               </div>
@@ -590,8 +603,8 @@ export default function ClientHeader({
                   setIsMobileMenuOpen(false);
                 }}
               >
-                <span className="material-symbols-outlined notranslate" translate="no">person</span>
-                <span>Mon Profil</span>
+                <span className="material-symbols-outlined notranslate" translate="no">{user ? 'person' : 'login'}</span>
+                <span>{user ? 'Mon Profil' : 'Se connecter'}</span>
               </button>
 
               <button
