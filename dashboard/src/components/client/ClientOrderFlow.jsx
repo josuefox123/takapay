@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { FeexPayProvider, FeexPayButton } from '@feexpay/react-sdk';
 import '@feexpay/react-sdk/style.css';
-import { formatFCFA } from '../../data/clientStore';
+import { formatFCFA, normalizeBeninPhoneDigits } from '../../data/clientStore';
 import { adminService, registerFeexpayWatchdog, cancelFeexpayPayment } from '../../services/adminService';
 import ClientForgotPinModal from './ClientForgotPinModal';
 import useLoginLockout, { formatLockoutTime } from './useLoginLockout';
@@ -519,7 +519,7 @@ export default function ClientOrderFlow({
     setPaymentFailed(false);
     try {
       const rawUserPhone = paymentPhone.trim() || activeUser?.telephone || user?.telephone || phone || '';
-      const cleanPhone = rawUserPhone.replace(/\D/g, '').replace(/^229/, '');
+      const cleanPhone = normalizeBeninPhoneDigits(rawUserPhone, provider);
       const userFullName = paymentName.trim() || `${activeUser?.prenom || user?.prenom || prenom || ''} ${activeUser?.nom || user?.nom || nom || ''}`.trim() || 'Client';
       const userEmail = (email && email.trim()) || (activeUser?.email && !activeUser.email.endsWith('@client.takapay.bj') ? activeUser.email : '') || '';
 
@@ -1185,8 +1185,8 @@ export default function ClientOrderFlow({
                           first_name: (paymentName.trim().split(' ')[0]) || activeUser?.prenom || user?.prenom || prenom || 'Client',
                           last_name: (paymentName.trim().split(' ').slice(1).join(' ')) || activeUser?.nom || user?.nom || nom || '',
                           email: (email && email.trim()) || (activeUser?.email && !activeUser.email.endsWith('@client.takapay.bj') ? activeUser.email : '') || '',
-                          phone: (paymentPhone.trim() || activeUser?.telephone || activeUser?.phone || user?.telephone || user?.phone || phone || '').replace(/\D/g, '').replace(/^229/, ''),
-                          phoneNumber: (paymentPhone.trim() || activeUser?.telephone || activeUser?.phone || user?.telephone || user?.phone || phone || '').replace(/\D/g, '').replace(/^229/, ''),
+                          phone: normalizeBeninPhoneDigits(paymentPhone.trim() || activeUser?.telephone || activeUser?.phone || user?.telephone || user?.phone || phone || '', provider),
+                          phoneNumber: normalizeBeninPhoneDigits(paymentPhone.trim() || activeUser?.telephone || activeUser?.phone || user?.telephone || user?.phone || phone || '', provider),
                           reseau: provider,
                           network: provider,
                         }}

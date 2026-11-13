@@ -459,6 +459,18 @@ export const formatFCFA = (val) => {
   return Number.isFinite(num) ? `${Math.round(num).toLocaleString('fr-FR')} FCFA` : 'À confirmer';
 };
 
+/**
+ * Normalise un numéro béninois au format 10 chiffres (migration nationale 2024).
+ * Ex: 66956694 -> 0166956694
+ */
+export const normalizeBeninPhoneDigits = (rawPhone) => {
+  let clean = String(rawPhone || '').replace(/\D/g, '').replace(/^229/, '');
+  if (clean.length === 8) {
+    return '01' + clean;
+  }
+  return clean;
+};
+
 export const discountPercentage = (p, optNewPrice) => {
   if (typeof p === 'number' && typeof optNewPrice === 'number') {
     if (p <= optNewPrice || p <= 0) return 0;

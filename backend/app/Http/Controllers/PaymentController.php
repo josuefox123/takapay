@@ -257,16 +257,9 @@ class PaymentController extends Controller
             || in_array(strtolower((string) $request->input('mode_reglement')), ['livraison', 'cod', 'especes']);
         if (!$isCod && $request->boolean('direct_push')) {
             $rawPhone = $request->input('telephone') ?? $request->input('telephone_livraison') ?? $request->input('delivery_phone') ?? $user?->telephone;
-            $cleanPhone = preg_replace('/\D/', '', (string) $rawPhone);
-            if (str_starts_with($cleanPhone, '229229')) {
-                $cleanPhone = substr($cleanPhone, 3);
-            }
-            if (!str_starts_with($cleanPhone, '229') && !empty($cleanPhone)) {
-                $cleanPhone = '229' . $cleanPhone;
-            }
-
             $moyen = strtoupper((string) $request->input('moyen_paiement', 'MTN'));
             $network = str_contains($moyen, 'MOOV') ? 'MOOV' : (str_contains($moyen, 'CELTIIS') ? 'CELTIIS' : 'MTN');
+            $cleanPhone = $this->normalizeBeninPhone($rawPhone, $network);
 
             $shopId = config('services.feexpay.shop_id');
             $apiKey = config('services.feexpay.api_key');
@@ -1101,16 +1094,10 @@ class PaymentController extends Controller
             $body['amount'] = $validatedAmount;
             $body['customId'] = $customId;
 
-            // Formatage sécurisé du numéro de téléphone
+            // Formatage sécurisé du numéro de téléphone (migration 10 chiffres Bénin)
             if (! empty($body['phoneNumber'])) {
-                $cleanPhone = preg_replace('/\D/', '', (string) $body['phoneNumber']);
-                if (str_starts_with($cleanPhone, '229229')) {
-                    $cleanPhone = substr($cleanPhone, 3);
-                }
-                if (! str_starts_with($cleanPhone, '229') && ! empty($cleanPhone)) {
-                    $cleanPhone = '229'.$cleanPhone;
-                }
-                $body['phoneNumber'] = $cleanPhone;
+                $network = $body['reseau'] ?? $body['network'] ?? null;
+                $body['phoneNumber'] = $this->normalizeBeninPhone((string) $body['phoneNumber'], $network);
             }
         }
 
@@ -1283,5 +1270,35 @@ class PaymentController extends Controller
         }
 
         return $cleaned;
+    }
+
+    /**
+     * Normalise un numéro béninois au format 10 chiffres international (ex: 2290166956694).
+     */
+    private function normalizeBeninPhone(?string $phone, ?string $network = null): string
+    {
+        if (empty($phone)) {
+            return '';
+        }
+
+        $clean = preg_replace('/\D/', '', $phone);
+        if (str_starts_with($clean, '229229')) {
+            $clean = substr($clean, 3);
+        }
+        if (str_starts_with($clean, '229')) {
+            $clean = substr($clean, 3);
+        }
+
+        // Si le numéro a déjà 10 chiffres avec le préfixe béninois 01
+        if (strlen($clean) === 10 && str_starts_with($clean, '01')) {
+            return '229'.$clean;
+        }
+
+        // Si le numéro a 8 chiffres (ancien format béninois), ajouter le préfixe national 01
+        if (strlen($clean) === 8) {
+            return '22901'.$clean;
+        }
+
+        return ! empty($clean) ? '229'.$clean : '';
     }
 }
