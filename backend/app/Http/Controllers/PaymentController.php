@@ -293,10 +293,10 @@ class PaymentController extends Controller
                         ]);
                     $feexpayResponse = $fpRes->json();
                     Log::info('FeexPay RequestToPay trigger :', [
-                        'phone' => $cleanPhone,
+                        'phone' => $this->maskPhone($cleanPhone),
                         'reseau' => $network,
                         'status' => $fpRes->status(),
-                        'data' => $feexpayResponse,
+                        'data' => $this->sanitizeForLog($feexpayResponse),
                     ]);
                 } catch (\Throwable $e) {
                     Log::error('FeexPay RequestToPay Exception :', [
@@ -456,8 +456,24 @@ class PaymentController extends Controller
      */
     public function handleWebhook(Request $request): JsonResponse
     {
+        // 1. Authentification optionnelle par secret (si configuré dans FEEXPAY_WEBHOOK_SECRET)
+        $configuredSecret = config('services.feexpay.webhook_secret');
+        if (! empty($configuredSecret)) {
+            $receivedSecret = $request->header('X-Webhook-Secret')
+                ?? $request->header('X-Feexpay-Secret')
+                ?? $request->query('secret')
+                ?? $request->query('token')
+                ?? $request->input('secret');
+
+            if (! hash_equals((string) $configuredSecret, (string) $receivedSecret)) {
+                Log::warning('Webhook FeexPay rejeté : secret invalide ou absent.');
+
+                return response()->json(['status' => 'error', 'message' => 'Non autorisé.'], 403);
+            }
+        }
+
         $data = $request->all();
-        Log::info('Webhook FeexPay reçu :', $data);
+        Log::info('Webhook FeexPay reçu :', $this->sanitizeForLog($data));
 
         $reference = $data['reference'] ?? $data['custom_id'] ?? $data['customId'] ?? null;
         $transactionId = $data['transaction_id'] ?? $data['id'] ?? null;
@@ -465,95 +481,112 @@ class PaymentController extends Controller
         $clientEmail = $data['email'] ?? null;
 
         if (! $reference || ! $transactionId) {
-            Log::warning('Webhook FeexPay sans référence valide', $data);
+            Log::warning('Webhook FeexPay sans référence valide', $this->sanitizeForLog($data));
 
             return response()->json(['status' => 'error', 'message' => 'Référence ou transaction manquante.'], 400);
         }
 
-        $providerTransaction = $this->fetchFeexPayTransaction((string) $transactionId);
-        if ($providerTransaction === null) {
-            return response()->json(['status' => 'unverified'], 503);
+        // 2. Protection anti-rejeu et concurrence atomique
+        $lockKey = 'feexpay_webhook_lock_'.md5((string) $transactionId);
+        $lock = Cache::lock($lockKey, 30);
+
+        if (! $lock->get()) {
+            return response()->json(['status' => 'already_processing', 'message' => 'Paiement déjà en cours de traitement.'], 200);
         }
 
-        $status = strtoupper((string) ($providerTransaction['status'] ?? $providerTransaction['statut'] ?? ''));
-        $providerReference = $providerTransaction['custom_id']
-            ?? $providerTransaction['customId']
-            ?? $providerTransaction['custom_reference']
-            ?? null;
-        if ($providerReference !== null && (string) $providerReference !== (string) $reference) {
-            Log::warning('Référence du webhook différente de celle vérifiée auprès de FeexPay.', [
-                'reference' => $reference,
-                'provider_reference' => $providerReference,
-            ]);
+        try {
+            // Si la transaction est déjà marquée avec succès en base de données, retour immédiat sans duplication
+            if (Transaction::where('reference_externe', (string) $transactionId)->where('statut', 'succes')->exists()) {
+                return response()->json(['status' => 'already_processed', 'message' => 'Ce paiement a déjà été validé.'], 200);
+            }
 
-            return response()->json(['status' => 'unverified'], 422);
-        }
+            $providerTransaction = $this->fetchFeexPayTransaction((string) $transactionId);
+            if ($providerTransaction === null) {
+                return response()->json(['status' => 'unverified'], 503);
+            }
 
-        $providerTransactionReferences = array_filter([
-            $providerTransaction['transref'] ?? null,
-            $providerTransaction['serviceref'] ?? null,
-            $providerTransaction['reference'] ?? null,
-            $providerTransaction['transaction_id'] ?? null,
-            $providerTransaction['id'] ?? null,
-        ], fn ($value) => $value !== null && $value !== '');
-        if (
-            $providerReference === null
-            && ! in_array((string) $transactionId, array_map('strval', $providerTransactionReferences), true)
-        ) {
-            return response()->json(['status' => 'unverified'], 422);
-        }
+            $status = strtoupper((string) ($providerTransaction['status'] ?? $providerTransaction['statut'] ?? ''));
+            $providerReference = $providerTransaction['custom_id']
+                ?? $providerTransaction['customId']
+                ?? $providerTransaction['custom_reference']
+                ?? null;
+            if ($providerReference !== null && (string) $providerReference !== (string) $reference) {
+                Log::warning('Référence du webhook différente de celle vérifiée auprès de FeexPay.', [
+                    'reference' => $reference,
+                    'provider_reference' => $providerReference,
+                ]);
 
-        if (in_array($status, ['SUCCESSFUL', 'SUCCESS', 'PAID'], true)) {
-            $amount = (float) ($providerTransaction['amount'] ?? $providerTransaction['montant'] ?? 0);
-            if ($amount <= 0) {
                 return response()->json(['status' => 'unverified'], 422);
             }
-            if (preg_match('/^DEP_CAG_(\d+)_/', (string) $reference, $matches) === 1) {
-                $cagnotte = Cagnotte::with('utilisateur')->find((int) $matches[1]);
-                $remaining = $cagnotte
-                    ? max(0, (float) $cagnotte->prix_unitaire - (float) $cagnotte->montant_verse)
-                    : 0;
-                if (! $cagnotte || $cagnotte->statut === 'annulee' || $amount > $remaining) {
-                    return response()->json(['status' => 'unverified'], 422);
-                }
-                if (
-                    $providerReference === null
-                    && ! $this->providerTransactionMatchesCustomer($providerTransaction, $cagnotte->utilisateur)
-                ) {
-                    return response()->json(['status' => 'unverified'], 422);
-                }
-            } else {
-                $commande = Commande::with('utilisateur')->where('reference', $reference)->first();
-                $isCashRef = str_starts_with((string) $reference, 'CMD_CASH_');
-                $isCagRef = str_starts_with((string) $reference, 'CMD_CAG_');
-                $expectedAmount = $commande ? (float) $commande->prix_total : 0.0;
-                $amountValid = $isCashRef
-                    ? abs($amount - $expectedAmount) <= 0.01
-                    : ($amount > 0 && $amount <= $expectedAmount + 0.01);
 
-                if (! $commande || (! $isCashRef && ! $isCagRef) || ! $amountValid) {
-                    return response()->json(['status' => 'unverified'], 422);
-                }
-                if (
-                    $providerReference === null
-                    && ! $this->providerTransactionMatchesCustomer($providerTransaction, $commande->utilisateur)
-                ) {
-                    return response()->json(['status' => 'unverified'], 422);
-                }
-            }
-            $this->applySuccessfulPayment($reference, $amount, $transactionId, $network, null, $clientEmail);
-        } elseif (in_array($status, ['FAILED', 'CANCELLED'], true)) {
-            $commande = Commande::where('reference', $reference)->first();
-            if ($commande && $commande->statut === 'en_attente') {
-                $commande->update(['statut' => 'annulee']);
+            $providerTransactionReferences = array_filter([
+                $providerTransaction['transref'] ?? null,
+                $providerTransaction['serviceref'] ?? null,
+                $providerTransaction['reference'] ?? null,
+                $providerTransaction['transaction_id'] ?? null,
+                $providerTransaction['id'] ?? null,
+            ], fn ($value) => $value !== null && $value !== '');
+            if (
+                $providerReference === null
+                && ! in_array((string) $transactionId, array_map('strval', $providerTransactionReferences), true)
+            ) {
+                return response()->json(['status' => 'unverified'], 422);
             }
 
-            Transaction::where('reference_externe', $reference)
-                ->where('statut', 'en_attente')
-                ->update(['statut' => 'annulee']);
+            if (in_array($status, ['SUCCESSFUL', 'SUCCESS', 'PAID'], true)) {
+                $amount = (float) ($providerTransaction['amount'] ?? $providerTransaction['montant'] ?? 0);
+                if ($amount <= 0) {
+                    return response()->json(['status' => 'unverified'], 422);
+                }
+                if (preg_match('/^DEP_CAG_(\d+)_/', (string) $reference, $matches) === 1) {
+                    $cagnotte = Cagnotte::with('utilisateur')->find((int) $matches[1]);
+                    $remaining = $cagnotte
+                        ? max(0, (float) $cagnotte->prix_unitaire - (float) $cagnotte->montant_verse)
+                        : 0;
+                    if (! $cagnotte || $cagnotte->statut === 'annulee' || $amount > $remaining) {
+                        return response()->json(['status' => 'unverified'], 422);
+                    }
+                    if (
+                        $providerReference === null
+                        && ! $this->providerTransactionMatchesCustomer($providerTransaction, $cagnotte->utilisateur)
+                    ) {
+                        return response()->json(['status' => 'unverified'], 422);
+                    }
+                } else {
+                    $commande = Commande::with('utilisateur')->where('reference', $reference)->first();
+                    $isCashRef = str_starts_with((string) $reference, 'CMD_CASH_');
+                    $isCagRef = str_starts_with((string) $reference, 'CMD_CAG_');
+                    $expectedAmount = $commande ? (float) $commande->prix_total : 0.0;
+                    $amountValid = $isCashRef
+                        ? abs($amount - $expectedAmount) <= 0.01
+                        : ($amount > 0 && $amount <= $expectedAmount + 0.01);
+
+                    if (! $commande || (! $isCashRef && ! $isCagRef) || ! $amountValid) {
+                        return response()->json(['status' => 'unverified'], 422);
+                    }
+                    if (
+                        $providerReference === null
+                        && ! $this->providerTransactionMatchesCustomer($providerTransaction, $commande->utilisateur)
+                    ) {
+                        return response()->json(['status' => 'unverified'], 422);
+                    }
+                }
+                $this->applySuccessfulPayment($reference, $amount, $transactionId, $network, null, $clientEmail);
+            } elseif (in_array($status, ['FAILED', 'CANCELLED'], true)) {
+                $commande = Commande::where('reference', $reference)->first();
+                if ($commande && $commande->statut === 'en_attente') {
+                    $commande->update(['statut' => 'annulee']);
+                }
+
+                Transaction::where('reference_externe', $reference)
+                    ->where('statut', 'en_attente')
+                    ->update(['statut' => 'annulee']);
+            }
+
+            return response()->json(['status' => 'success'], 200);
+        } finally {
+            $lock->release();
         }
-
-        return response()->json(['status' => 'success'], 200);
     }
 
     /**
@@ -857,7 +890,7 @@ class PaymentController extends Controller
                             $resolvedCagnotte
                         )
                     );
-                    Log::info('Email de confirmation envoyé au client : '.$targetClientEmail);
+                    Log::info('Email de confirmation envoyé au client : '.$this->maskEmail($targetClientEmail));
                 } else {
                     Log::warning('Aucun email client valide pour la commande : '.$resolvedCommande->reference);
                 }
@@ -1151,5 +1184,77 @@ class PaymentController extends Controller
                 'message' => 'Erreur de communication avec FeexPay.',
             ], 502);
         }
+    }
+
+    /**
+     * Masque un numéro de téléphone pour la journalisation sécurisée (ex: 229***6888).
+     */
+    private function maskPhone(?string $phone): string
+    {
+        if (empty($phone)) {
+            return '';
+        }
+
+        $phone = preg_replace('/\s+/', '', (string) $phone);
+        $len = strlen($phone);
+        if ($len <= 4) {
+            return '***';
+        }
+
+        $prefix = substr($phone, 0, min(3, $len - 4));
+        $suffix = substr($phone, -4);
+
+        return $prefix.'***'.$suffix;
+    }
+
+    /**
+     * Masque une adresse email pour la journalisation sécurisée (ex: c***@domain.com).
+     */
+    private function maskEmail(?string $email): string
+    {
+        if (empty($email) || ! str_contains($email, '@')) {
+            return '***';
+        }
+
+        [$name, $domain] = explode('@', $email, 2);
+        $maskedName = strlen($name) > 1 ? substr($name, 0, 1).'***' : '***';
+
+        return $maskedName.'@'.$domain;
+    }
+
+    /**
+     * Nettoie récursivement un tableau de données pour masquer les données personnelles (PII).
+     */
+    private function sanitizeForLog(mixed $data): mixed
+    {
+        if (! is_array($data)) {
+            return $data;
+        }
+
+        $sensitiveFields = [
+            'phone', 'phonenumber', 'telephone', 'telephone_livraison', 'delivery_phone',
+            'email', 'client_email', 'token', 'api_key', 'apikey', 'secret',
+            'first_name', 'last_name', 'nom', 'prenom', 'client_nom', 'password', 'pin',
+        ];
+
+        $cleaned = [];
+        foreach ($data as $key => $value) {
+            $lowerKey = strtolower((string) $key);
+            if (is_array($value)) {
+                $cleaned[$key] = $this->sanitizeForLog($value);
+            } elseif (in_array($lowerKey, $sensitiveFields, true)) {
+                if (str_contains($lowerKey, 'phone') || str_contains($lowerKey, 'tel')) {
+                    $cleaned[$key] = $this->maskPhone((string) $value);
+                } elseif (str_contains($lowerKey, 'email') || str_contains($lowerKey, 'courriel')) {
+                    $cleaned[$key] = $this->maskEmail((string) $value);
+                } else {
+                    $cleaned[$key] = '***';
+                }
+            } else {
+                $cleaned[$key] = $value;
+            }
+        }
+
+        return $cleaned;
     }
 }
