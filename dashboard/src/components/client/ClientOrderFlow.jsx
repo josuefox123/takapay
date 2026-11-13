@@ -528,6 +528,7 @@ export default function ClientOrderFlow({
         phoneDigits: cleanPhone,
         email: userEmail,
       };
+      window.__takapayCurrentDepositAmount = paymentAmount;
 
       const initRes = await adminService.initiatePayment({
         amount: paymentAmount,

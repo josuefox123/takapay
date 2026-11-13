@@ -2223,66 +2223,67 @@ export const registerFeexpayWatchdog = (callback) => {
         el.style.display = 'none';
       });
 
-      // Injection du champ d'insertion du montant
+      // Injection et affichage en lecture seule du montant validé
       const formBody = modal.querySelector('div.overflow-y-auto');
-      if (formBody && !formBody.querySelector('[data-takapay-amount-box]')) {
-        const amountBox = document.createElement('div');
-        amountBox.dataset.takapayAmountBox = 'true';
-        amountBox.style.cssText = 'background: #ffffff; padding: 12px 14px; border-radius: 14px; border: 1.5px solid #fed7aa; margin-bottom: 14px; box-shadow: 0 2px 8px rgba(0,0,0,0.03);';
-        
+      if (formBody) {
         const curAmount = window.__takapayCurrentDepositAmount || 10000;
-        
-        amountBox.innerHTML = `
-          <label style="display: block; font-size: 12.5px; font-weight: 800; color: #1e293b; margin-bottom: 6px;">
-            Montant du versement (FCFA) :
-          </label>
-          <div style="position: relative; display: flex; align-items: center;">
-            <input
-              type="number"
-              min="1"
-              step="1"
-              value="${curAmount}"
-              data-takapay-amount-input="true"
-              placeholder="Ex: 25000"
-              style="width: 100%; padding: 10px 56px 10px 14px; border: 1.5px solid #fdba74; border-radius: 10px; font-size: 16px; font-weight: 800; color: #0f172a; outline: none; background: #fffcf9; box-sizing: border-box;"
-            />
-            <span style="position: absolute; right: 12px; font-size: 12px; font-weight: 800; color: #ea580c; pointer-events: none;">FCFA</span>
-          </div>
-        `;
+        const formattedAmount = `${Number(curAmount).toLocaleString('fr-FR')} FCFA`;
 
-        formBody.insertBefore(amountBox, formBody.firstChild);
+        let existingInput = formBody.querySelector('[data-takapay-amount-input]');
+        if (existingInput) {
+          if (existingInput.value !== formattedAmount) {
+            existingInput.value = formattedAmount;
+          }
+        } else if (!formBody.querySelector('[data-takapay-amount-box]')) {
+          const amountBox = document.createElement('div');
+          amountBox.dataset.takapayAmountBox = 'true';
+          amountBox.style.cssText = 'background: #f8fafc; padding: 12px 14px; border-radius: 14px; border: 1.5px solid #fed7aa; margin-bottom: 14px; box-shadow: 0 2px 8px rgba(0,0,0,0.03);';
+          
+          amountBox.innerHTML = `
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+              <label style="display: block; font-size: 12.5px; font-weight: 800; color: #1e293b;">
+                Montant validé à régler :
+              </label>
+              <span style="font-size: 11px; font-weight: 700; color: #16a34a; background: #dcfce7; padding: 2px 8px; border-radius: 6px;">Verrouillé</span>
+            </div>
+            <div style="position: relative; display: flex; align-items: center;">
+              <input
+                type="text"
+                readonly
+                value="${formattedAmount}"
+                data-takapay-amount-input="true"
+                style="width: 100%; padding: 10px 56px 10px 14px; border: 1.5px solid #fed7aa; border-radius: 10px; font-size: 16px; font-weight: 800; color: #0f172a; outline: none; background: #ffffff; box-sizing: border-box; cursor: not-allowed;"
+              />
+              <span style="position: absolute; right: 12px; font-size: 12px; font-weight: 800; color: #ea580c; pointer-events: none;">FCFA</span>
+            </div>
+          `;
+
+          formBody.insertBefore(amountBox, formBody.firstChild);
+        }
 
         // Masquer le texte d'origine "Vous allez payer X OF" pour un affichage épuré
         formBody.querySelectorAll('p.text-sm.text-gray-600.text-center.mb-4, h2.font-bold.text-center').forEach((el) => {
           el.style.display = 'none';
         });
 
-        const input = amountBox.querySelector('input');
-        input.addEventListener('input', (e) => {
-          const val = parseInt(e.target.value, 10);
-          if (val > 0) {
-            window.__takapayCurrentDepositAmount = val;
+        // Mettre à jour les récapitulatifs dans la modale FeexPay
+        const recapBox = modal.querySelector('div.bg-gray-50.p-4.rounded-md');
+        if (recapBox) {
+          const rows = recapBox.querySelectorAll('div.flex.justify-between');
+          if (rows.length >= 1) {
+            const amountSpan = rows[0].querySelector('span.font-medium, span:last-child');
+            if (amountSpan) amountSpan.textContent = `${Number(curAmount).toLocaleString('fr-FR')} XOF`;
+          }
+          if (rows.length >= 3) {
+            const totalSpan = rows[2].querySelector('span:last-child');
+            if (totalSpan) totalSpan.textContent = `${Number(curAmount).toLocaleString('fr-FR')} XOF`;
+          }
+        }
 
-            // Mettre à jour les récapitulatifs dans la modale FeexPay
-            const recapBox = modal.querySelector('div.bg-gray-50.p-4.rounded-md');
-            if (recapBox) {
-              const rows = recapBox.querySelectorAll('div.flex.justify-between');
-              if (rows.length >= 1) {
-                const amountSpan = rows[0].querySelector('span.font-medium, span:last-child');
-                if (amountSpan) amountSpan.textContent = `${val.toLocaleString('fr-FR')} XOF`;
-              }
-              if (rows.length >= 3) {
-                const totalSpan = rows[2].querySelector('span:last-child');
-                if (totalSpan) totalSpan.textContent = `${val.toLocaleString('fr-FR')} XOF`;
-              }
-            }
-
-            // Mettre à jour le texte du bouton Payer
-            modal.querySelectorAll('button').forEach((btn) => {
-              if (btn.textContent.includes('Payer')) {
-                btn.textContent = `Payer ${val.toLocaleString('fr-FR')} XOF`;
-              }
-            });
+        // Mettre à jour le texte du bouton Payer
+        modal.querySelectorAll('button').forEach((btn) => {
+          if (btn.textContent.includes('Payer')) {
+            btn.textContent = `Payer ${Number(curAmount).toLocaleString('fr-FR')} XOF`;
           }
         });
       }

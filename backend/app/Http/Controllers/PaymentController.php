@@ -13,6 +13,7 @@ use App\Models\Transaction;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -923,9 +924,15 @@ class PaymentController extends Controller
 
     /**
      * Relais sécurisé côté serveur pour le widget client FeexPay afin de ne jamais exposer FEEXPAY_API_KEY au navigateur.
+     * Valide rigoureusement les ordres requesttopay et restreint la consultation de statut au propriétaire.
      */
     public function feexpayProxy(Request $request): JsonResponse
     {
+        $user = $request->user();
+        if (! $user) {
+            return response()->json(['message' => 'Non authentifié.'], 401);
+        }
+
         $request->validate([
             'url' => ['required', 'string', 'max:500'],
             'method' => ['nullable', 'string', 'in:GET,POST'],
@@ -975,6 +982,104 @@ class PaymentController extends Controller
 
         $method = strtoupper((string) $request->input('method', 'GET'));
         $body = $request->input('body', []);
+        $customId = null;
+
+        // 1. SÉCURISATION STRICTE DE REQUESTTOPAY (ANTI-SPAM & ANTI-FALSIFICATION DE MONTANT)
+        if ($path === '/api/transactions/requesttopay/integration') {
+            $customId = $body['customId'] ?? $body['custom_id'] ?? null;
+            if (! $customId || ! is_string($customId)) {
+                return response()->json(['message' => 'Référence de commande manquante.'], 422);
+            }
+
+            $validatedAmount = null;
+
+            // Cas A : Nouvelle commande (Cash ou démarrage cagnotte)
+            if (str_starts_with($customId, 'CMD_')) {
+                $commande = Commande::where('reference', $customId)
+                    ->where('utilisateur_id', $user->id)
+                    ->where('statut', 'en_attente')
+                    ->first();
+
+                if (! $commande) {
+                    return response()->json(['message' => 'Commande introuvable, expirée ou non autorisée.'], 403);
+                }
+
+                $validatedAmount = (int) round((float) $commande->prix_total);
+            }
+            // Cas B : Versement sur cagnotte existante
+            elseif (preg_match('/^DEP_CAG_(\d+)_/', $customId, $cagMatches)) {
+                $cagnotteId = (int) $cagMatches[1];
+                $cagnotte = Cagnotte::where('id', $cagnotteId)
+                    ->where('utilisateur_id', $user->id)
+                    ->whereNotIn('statut', ['annulee', 'terminee'])
+                    ->first();
+
+                if (! $cagnotte) {
+                    return response()->json(['message' => 'Cagnotte introuvable, soldée ou non autorisée.'], 403);
+                }
+
+                $reste = max(0, (float) $cagnotte->prix_unitaire - (float) $cagnotte->montant_verse);
+                if ($reste <= 0) {
+                    return response()->json(['message' => 'Cette cagnotte est déjà soldée.'], 422);
+                }
+
+                $requestedAmt = (float) ($body['amount'] ?? 0);
+                if ($requestedAmt <= 0) {
+                    return response()->json(['message' => 'Montant de versement invalide.'], 422);
+                }
+
+                $validatedAmount = (int) round(min($requestedAmt, $reste));
+            } else {
+                return response()->json(['message' => 'Format de référence de paiement non autorisé.'], 403);
+            }
+
+            if (! $validatedAmount || $validatedAmount <= 0) {
+                return response()->json(['message' => 'Montant de versement non valide.'], 422);
+            }
+
+            // Écrasement strict côté serveur du montant et de la référence (aucune falsification possible)
+            $body['amount'] = $validatedAmount;
+            $body['customId'] = $customId;
+
+            // Formatage sécurisé du numéro de téléphone
+            if (! empty($body['phoneNumber'])) {
+                $cleanPhone = preg_replace('/\D/', '', (string) $body['phoneNumber']);
+                if (str_starts_with($cleanPhone, '229229')) {
+                    $cleanPhone = substr($cleanPhone, 3);
+                }
+                if (! str_starts_with($cleanPhone, '229') && ! empty($cleanPhone)) {
+                    $cleanPhone = '229'.$cleanPhone;
+                }
+                $body['phoneNumber'] = $cleanPhone;
+            }
+        }
+
+        // 2. SÉCURISATION DU POLLING DE STATUT (ANTI-ÉNUMÉRATION)
+        if (str_starts_with($path, '/api/transactions/public/single/status/')) {
+            $txId = substr($path, strlen('/api/transactions/public/single/status/'));
+            $txId = explode('?', $txId)[0];
+            $txId = trim($txId, '/');
+
+            if (! $user->isAdmin()) {
+                $cachedOwner = Cache::get('feexpay_owner_'.$txId);
+                $isOwner = false;
+
+                if ($cachedOwner && (int) $cachedOwner === (int) $user->id) {
+                    $isOwner = true;
+                } else {
+                    $isOwner = Commande::where('reference', $txId)->where('utilisateur_id', $user->id)->exists()
+                        || Transaction::where('reference_externe', $txId)->where(function ($q) use ($user) {
+                            $q->whereHas('cagnotte', fn ($c) => $c->where('utilisateur_id', $user->id))
+                              ->orWhereHas('commande', fn ($cmd) => $cmd->where('utilisateur_id', $user->id));
+                        })->exists();
+                }
+
+                if (! $isOwner) {
+                    return response()->json(['message' => 'Accès refusé à cette transaction.'], 403);
+                }
+            }
+        }
+
         if (is_array($body)) {
             if (isset($body['token'])) {
                 $body['token'] = $apiKey;
@@ -1003,6 +1108,17 @@ class PaymentController extends Controller
 
             $data = $res->json();
             if ($data !== null) {
+                // Si FeexPay a initié la transaction, mémoriser la propriété pour les vérifications de statut
+                if ($path === '/api/transactions/requesttopay/integration' && is_array($data)) {
+                    $fpRef = $data['reference'] ?? $data['id'] ?? $data['transaction_id'] ?? null;
+                    if ($fpRef) {
+                        Cache::put('feexpay_owner_'.(string) $fpRef, (int) $user->id, now()->addHours(6));
+                    }
+                    if (! empty($customId)) {
+                        Cache::put('feexpay_owner_'.(string) $customId, (int) $user->id, now()->addHours(6));
+                    }
+                }
+
                 if (str_starts_with($path, '/api/transactions/public/single/status/') && $res->status() === 404) {
                     return response()->json([
                         'status' => 'PENDING',
