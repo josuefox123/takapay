@@ -181,6 +181,15 @@ class AuthController extends Controller
         return 'auth-login:'.hash_hmac('sha256', $principal.'|'.$ip, (string) config('app.key'));
     }
 
+    private function loginAccountKey(string $identifiant, ?User $user = null): string
+    {
+        $principal = $user
+            ? 'user:'.$user->getKey()
+            : 'identifier:'.hash('sha256', mb_strtolower(trim($identifiant)));
+
+        return 'auth-login-account:'.hash_hmac('sha256', $principal, (string) config('app.key'));
+    }
+
     private function loginLockoutResponse(array $state): JsonResponse
     {
         $retryAfter = max(1, (int) ($state['locked_until'] ?? 0) - now()->timestamp);
@@ -193,52 +202,78 @@ class AuthController extends Controller
         ], 429)->header('Retry-After', (string) $retryAfter);
     }
 
-    private function recordFailedLogin(string $key, bool $knownUser): JsonResponse
+    private function recordFailedLogin(string $ipKey, string $accountKey, bool $knownUser): JsonResponse
     {
-        return Cache::lock($key.':mutex', 10)->block(5, function () use ($key, $knownUser) {
-            $state = Cache::get($key, [
+        return Cache::lock($accountKey.':mutex', 10)->block(5, function () use ($ipKey, $accountKey, $knownUser) {
+            // 1. Mise à jour de l'état par IP (seuil local : 3 échecs consécutifs)
+            $ipState = Cache::get($ipKey, [
                 'failures' => 0,
                 'lockouts' => 0,
                 'locked_until' => 0,
             ]);
 
-            if (($state['locked_until'] ?? 0) > now()->timestamp) {
-                return $this->loginLockoutResponse($state);
-            }
-
-            $state['locked_until'] = 0;
-            $state['failures'] = (int) ($state['failures'] ?? 0) + 1;
-
-            if ($state['failures'] >= 3) {
-                $state['lockouts'] = (int) ($state['lockouts'] ?? 0) + 1;
-                $lockoutMinutes = $state['lockouts'] >= 3 ? 45 : 15;
-                $state['failures'] = 0;
-                $state['locked_until'] = now()->addMinutes($lockoutMinutes)->timestamp;
-                if ($knownUser) {
-                    Cache::forever($key, $state);
-                } else {
-                    Cache::put($key, $state, now()->addDay());
-                }
-
-                return $this->loginLockoutResponse($state);
+            $ipState['failures'] = (int) ($ipState['failures'] ?? 0) + 1;
+            if ($ipState['failures'] >= 3) {
+                $ipState['lockouts'] = (int) ($ipState['lockouts'] ?? 0) + 1;
+                $lockoutMinutes = $ipState['lockouts'] >= 3 ? 45 : 15;
+                $ipState['failures'] = 0;
+                $ipState['locked_until'] = now()->addMinutes($lockoutMinutes)->timestamp;
             }
 
             if ($knownUser) {
-                Cache::forever($key, $state);
+                Cache::forever($ipKey, $ipState);
             } else {
-                Cache::put($key, $state, now()->addDay());
+                Cache::put($ipKey, $ipState, now()->addDay());
             }
+
+            // 2. Mise à jour de l'état global du Compte (seuil global anti-bruteforce distribué : 5 échecs)
+            $accountState = Cache::get($accountKey, [
+                'failures' => 0,
+                'lockouts' => 0,
+                'locked_until' => 0,
+            ]);
+
+            $accountState['failures'] = (int) ($accountState['failures'] ?? 0) + 1;
+            if ($accountState['failures'] >= 5) {
+                $accountState['lockouts'] = (int) ($accountState['lockouts'] ?? 0) + 1;
+                $lockoutMinutes = $accountState['lockouts'] >= 3 ? 45 : 15;
+                $accountState['failures'] = 0;
+                $accountState['locked_until'] = now()->addMinutes($lockoutMinutes)->timestamp;
+            }
+
+            if ($knownUser) {
+                Cache::forever($accountKey, $accountState);
+            } else {
+                Cache::put($accountKey, $accountState, now()->addDay());
+            }
+
+            // Si le compte ou l'IP est verrouillé, répondre avec 429
+            if (($ipState['locked_until'] ?? 0) > now()->timestamp) {
+                return $this->loginLockoutResponse($ipState);
+            }
+            if (($accountState['locked_until'] ?? 0) > now()->timestamp) {
+                return $this->loginLockoutResponse($accountState);
+            }
+
+            $remainingIp = max(0, 3 - (int) ($ipState['failures'] ?? 0));
+            $remainingAccount = max(0, 5 - (int) ($accountState['failures'] ?? 0));
+            $attemptsRemaining = min($remainingIp, $remainingAccount);
 
             return response()->json([
                 'message' => 'Les identifiants ou le code PIN fournis sont incorrects.',
-                'attempts_remaining' => 3 - $state['failures'],
+                'attempts_remaining' => $attemptsRemaining,
             ], 422);
         });
     }
 
-    private function clearLoginAttempts(string $key): void
+    private function clearLoginAttempts(string $ipKey, ?string $accountKey = null): void
     {
-        Cache::lock($key.':mutex', 10)->block(5, fn () => Cache::forget($key));
+        Cache::lock($ipKey.':mutex', 10)->block(5, function () use ($ipKey, $accountKey) {
+            Cache::forget($ipKey);
+            if ($accountKey) {
+                Cache::forget($accountKey);
+            }
+        });
     }
 
     /**
@@ -247,30 +282,30 @@ class AuthController extends Controller
     public function login(LoginRequest $request): JsonResponse
     {
         $identifiant = trim($request->identifiant);
-        $rawPassword = trim((string) $request->password);
+        $rawPassword = (string) $request->password;
 
         if (str_contains($identifiant, '@')) {
             $user = User::where('email', strtolower($identifiant))
                 ->orWhere('email', $identifiant)
                 ->first();
         } else {
-            $cleanPhone = preg_replace('/[^\d+]/', '', $identifiant);
-            $digitsOnly = preg_replace('/\D/', '', $cleanPhone);
-
-            $user = User::where('telephone', $identifiant)
-                ->when(! empty($cleanPhone), function ($query) use ($cleanPhone) {
-                    $query->orWhere('telephone', $cleanPhone);
-                })
-                ->when(strlen($digitsOnly) >= 8, function ($query) use ($digitsOnly) {
-                    $query->orWhere('telephone', 'like', "%{$digitsOnly}%");
-                })
-                ->first();
+            $candidates = $this->resolvePhoneCandidates($identifiant);
+            $user = User::whereIn('telephone', $candidates)->first();
         }
 
         $loginAttemptKey = $this->loginAttemptKey($request, $identifiant, $user);
+        $loginAccountKey = $this->loginAccountKey($identifiant, $user);
+
+        // 1. Vérification du verrouillage par IP
         $loginState = Cache::get($loginAttemptKey, []);
         if (($loginState['locked_until'] ?? 0) > now()->timestamp) {
             return $this->loginLockoutResponse($loginState);
+        }
+
+        // 2. Vérification du verrouillage global du compte (anti-bruteforce distribué)
+        $accountState = Cache::get($loginAccountKey, []);
+        if (($accountState['locked_until'] ?? 0) > now()->timestamp) {
+            return $this->loginLockoutResponse($accountState);
         }
 
         $storedPasswordHash = $user?->password ?? self::DUMMY_HASH;
@@ -278,10 +313,10 @@ class AuthController extends Controller
             || Hash::check($request->password, $storedPasswordHash);
 
         if (! $user || ! $passwordValid) {
-            return $this->recordFailedLogin($loginAttemptKey, $user !== null);
+            return $this->recordFailedLogin($loginAttemptKey, $loginAccountKey, $user !== null);
         }
 
-        $this->clearLoginAttempts($loginAttemptKey);
+        $this->clearLoginAttempts($loginAttemptKey, $loginAccountKey);
 
         if ($user->statut_compte !== 'actif') {
             return response()->json([
@@ -462,8 +497,12 @@ class AuthController extends Controller
 
         $request->validate([
             'current_password' => ['nullable', 'string'],
-            'new_password' => ['required', 'string', 'min:8'],
+            'new_password' => ['required', 'string', 'min:8', 'regex:/[A-Z]/', 'regex:/[0-9]/'],
             'confirm_password' => ['required', 'string', 'same:new_password'],
+        ], [
+            'new_password.min' => 'Le nouveau mot de passe doit comporter au moins 8 caractères.',
+            'new_password.regex' => 'Le nouveau mot de passe doit contenir au moins une lettre majuscule et un chiffre.',
+            'confirm_password.same' => 'La confirmation du mot de passe ne correspond pas.',
         ]);
 
         if (! $user->must_change_password) {
@@ -554,10 +593,8 @@ class AuthController extends Controller
             return null;
         }
 
-        $user = User::where('telephone', $cleanPhone)
-            ->orWhere('telephone', $identifiant)
-            ->orWhere('telephone', 'like', "%{$digitsOnly}%")
-            ->first();
+        $candidates = $this->resolvePhoneCandidates($identifiant);
+        $user = User::whereIn('telephone', $candidates)->first();
 
         if (! $user) {
             $error = 'Aucun compte TakaPay n\'a été trouvé avec ce numéro de téléphone.';
@@ -566,6 +603,55 @@ class AuthController extends Controller
         }
 
         return $user;
+    }
+
+    /**
+     * Génère les variantes canoniques exactes d'un numéro de téléphone (formats Bénin et international).
+     * Évite les recherches partielles par LIKE qui provoquent des collisions de comptes.
+     *
+     * @return array<int, string>
+     */
+    private function resolvePhoneCandidates(string $identifiant): array
+    {
+        $cleanPhone = preg_replace('/[^\d+]/', '', $identifiant);
+        $digits = preg_replace('/\D/', '', $cleanPhone);
+
+        if (str_starts_with($digits, '229')) {
+            $local = substr($digits, 3);
+        } elseif (str_starts_with($digits, '00229')) {
+            $local = substr($digits, 5);
+        } else {
+            $local = $digits;
+        }
+
+        $candidates = [$identifiant, $cleanPhone];
+
+        // Format Bénin 8 chiffres (ancien format national)
+        if (strlen($local) === 8) {
+            $candidates[] = $local;
+            $candidates[] = '01'.$local;
+            $candidates[] = '229'.$local;
+            $candidates[] = '22901'.$local;
+            $candidates[] = '+229'.$local;
+            $candidates[] = '+22901'.$local;
+            $candidates[] = '+229 '.$local;
+            $candidates[] = '+229 01 '.implode(' ', str_split($local, 2));
+            $candidates[] = '+229 '.implode(' ', str_split('01'.$local, 2));
+        } elseif (strlen($local) === 10 && str_starts_with($local, '01')) {
+            // Format Bénin 10 chiffres (nouveau format national avec préfixe 01)
+            $sub8 = substr($local, 2);
+            $candidates[] = $local;
+            $candidates[] = $sub8;
+            $candidates[] = '229'.$local;
+            $candidates[] = '229'.$sub8;
+            $candidates[] = '+229'.$local;
+            $candidates[] = '+229'.$sub8;
+            $candidates[] = '+229 '.$sub8;
+            $candidates[] = '+229 01 '.implode(' ', str_split($sub8, 2));
+            $candidates[] = '+229 '.implode(' ', str_split($local, 2));
+        }
+
+        return array_values(array_unique(array_filter($candidates)));
     }
 
     private function pinResetAttemptKey(Request $request, string $identifiant, ?User $user, string $purpose): string
@@ -769,7 +855,10 @@ class AuthController extends Controller
         Cache::forget('pin_reset_'.$user->id);
         RateLimiter::clear($key);
         RateLimiter::clear($this->pinResetAttemptKey($request, $request->identifiant, $user, 'send'));
-        $this->clearLoginAttempts($this->loginAttemptKey($request, $request->identifiant, $user));
+        $this->clearLoginAttempts(
+            $this->loginAttemptKey($request, $request->identifiant, $user),
+            $this->loginAccountKey($request->identifiant, $user)
+        );
 
         $this->notifyPinChanged($user);
 

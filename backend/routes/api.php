@@ -77,14 +77,8 @@ Route::get('videos/{filename}', function ($filename) {
         'Accept-Ranges' => 'bytes',
     ]);
 })->name('videos.stream');
-Route::get('cagnottes', [CagnotteController::class, 'index'])->name('cagnottes.index');
-Route::get('commandes', [CommandeController::class, 'index'])->name('commandes.index');
-Route::get('transactions', [TransactionController::class, 'index'])->name('transactions.index');
 Route::get('carousels', [CarouselController::class, 'index'])->name('carousels.index');
 Route::get('partenaires', [PartenaireController::class, 'index'])->name('partenaires.index');
-Route::get('notifications', [NotificationController::class, 'index'])->name('notifications.index');
-Route::put('notifications/{notification}/lire', [NotificationController::class, 'marquerCommeLu'])->name('notifications.marquer-lu');
-Route::post('notifications/tout-lire', [NotificationController::class, 'toutMarquerCommeLu'])->name('notifications.tout-lire');
 
 /*
 |--------------------------------------------------------------------------
@@ -215,8 +209,13 @@ Route::middleware(['auth:sanctum', 'active'])->group(function () {
     Route::apiResource('adresses', AdresseController::class)
         ->parameters(['adresses' => 'adresse']);
     Route::apiResource('documents', DocumentController::class);
+    Route::get('cagnottes', [CagnotteController::class, 'index'])->name('cagnottes.index');
+    Route::get('transactions', [TransactionController::class, 'index'])->name('transactions.index');
+    Route::get('notifications', [NotificationController::class, 'index'])->name('notifications.index');
+    Route::put('notifications/{notification}/lire', [NotificationController::class, 'marquerCommeLu'])->name('notifications.marquer-lu');
+    Route::post('notifications/tout-lire', [NotificationController::class, 'toutMarquerCommeLu'])->name('notifications.tout-lire');
     Route::apiResource('notifications', NotificationController::class)->except(['index']);
-    Route::apiResource('commandes', CommandeController::class)->except(['index']);
+    Route::apiResource('commandes', CommandeController::class);
     Route::apiResource('commande-produits', CommandeProduitController::class);
 });
 

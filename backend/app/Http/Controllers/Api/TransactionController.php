@@ -18,13 +18,7 @@ class TransactionController extends Controller
 {
     public function index(Request $request): AnonymousResourceCollection
     {
-        $user = $request->user('sanctum') ?? $request->user();
-        if (! $user && $request->bearerToken()) {
-            $accessToken = \Laravel\Sanctum\PersonalAccessToken::findToken($request->bearerToken());
-            if ($accessToken && $accessToken->tokenable) {
-                $user = $accessToken->tokenable;
-            }
-        }
+        $user = $request->user();
 
         $query = Transaction::with([
             'cagnotte.produit',
@@ -36,10 +30,6 @@ class TransactionController extends Controller
             ->whereIn('statut', ['succes', 'reussi'])
             ->orderByDesc('date')
             ->orderByDesc('id');
-
-        if (! $user) {
-            return TransactionResource::collection(collect());
-        }
 
         if ($user->role === 'admin') {
             $query->where(function ($q) use ($user) {

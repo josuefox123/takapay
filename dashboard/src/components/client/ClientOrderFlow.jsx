@@ -528,6 +528,7 @@ export default function ClientOrderFlow({
         phoneDigits: cleanPhone,
         email: userEmail,
       };
+      window.__takapayCurrentDepositAmount = paymentAmount;
 
       const initRes = await adminService.initiatePayment({
         amount: paymentAmount,
@@ -729,6 +730,8 @@ export default function ClientOrderFlow({
         date: new Date().toISOString(),
         isCash: orderType === 'cash',
         quantity: effectiveQuantity,
+        backendId: confirmation.cagnotte_id || null,
+        commandeId: confirmation.commande_id || null,
       });
 
       try {
@@ -1156,13 +1159,18 @@ export default function ClientOrderFlow({
                 </button>
               </div>
             ) : (
-              <div style={{ textAlign: 'center', padding: '32px 16px' }}>
-                <div style={{ fontSize: '14px', fontWeight: 600, color: '#475569' }}>
-                  Ouverture du module de paiement...
+              <div style={{ textAlign: 'center', padding: '24px 16px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
+                  <div style={{ width: '32px', height: '32px', border: '3px solid #ea580c', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+                  <div style={{ fontSize: '15px', fontWeight: 700, color: '#1e293b' }}>
+                    Ouverture du module de paiement...
+                  </div>
+                  <p style={{ fontSize: '13px', color: '#64748b', maxWidth: '340px', margin: '0' }}>
+                    Patientez un instant pendant la connexion aux services Mobile Money.
+                  </p>
                 </div>
                 {paymentData && (
-                  <div id="feexpay-button-container">
-                    <style>{`#feexpay-button-container > div > button { display: none !important; }`}</style>
+                  <div id="feexpay-button-container" style={{ maxWidth: '360px', margin: '0 auto' }}>
                     <FeexPayProvider>
                       <FeexPayButton
                         id={paymentData.shop_id}
@@ -1189,6 +1197,23 @@ export default function ClientOrderFlow({
                     </FeexPayProvider>
                   </div>
                 )}
+                <div style={{ marginTop: '20px' }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPaymentData(null);
+                      setAutoOpenFeexpay(false);
+                      if (onBack) {
+                        onBack();
+                      } else {
+                        setStep('auth');
+                      }
+                    }}
+                    style={{ background: 'none', border: 'none', color: '#64748b', fontSize: '13px', textDecoration: 'underline', cursor: 'pointer', padding: '6px 12px' }}
+                  >
+                    ← Retourner en arrière
+                  </button>
+                </div>
               </div>
             )}
           </div>

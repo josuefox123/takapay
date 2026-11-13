@@ -19,13 +19,7 @@ class CommandeController extends Controller
      */
     public function index(Request $request): AnonymousResourceCollection
     {
-        $user = $request->user('sanctum') ?? $request->user();
-        if (! $user && $request->bearerToken()) {
-            $accessToken = \Laravel\Sanctum\PersonalAccessToken::findToken($request->bearerToken());
-            if ($accessToken && $accessToken->tokenable) {
-                $user = $accessToken->tokenable;
-            }
-        }
+        $user = $request->user();
 
         $query = Commande::with(['utilisateur', 'commandeProduits.produit', 'transactions.cagnotte'])->latest();
 
@@ -34,10 +28,6 @@ class CommandeController extends Controller
             $q->whereIn('statut', ['payee', 'terminee', 'livree', 'annulee'])
                 ->orWhere('mode_paiement', 'livraison');
         });
-
-        if (! $user) {
-            return CommandeResource::collection(collect());
-        }
 
         if ($user->isAdmin()) {
             if ($user->role === 'admin') {

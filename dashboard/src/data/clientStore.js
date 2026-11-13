@@ -485,7 +485,10 @@ export const createCagnotteFromOrder = (orderData, user = null) => {
   const initialPaid = Number(orderData?.initialAmount) || 0;
   const totalOrderPrice = Number(orderData?.totalPrice) || Number(prod.p) || 0;
   const remaining = Math.max(0, totalOrderPrice - initialPaid);
-  const percent = totalOrderPrice > 0 ? Math.min(100, Math.round((initialPaid / totalOrderPrice) * 100)) : 100;
+  const rawPct = totalOrderPrice > 0 ? (initialPaid / totalOrderPrice) * 100 : 0;
+  const percent = totalOrderPrice > 0
+    ? (initialPaid >= totalOrderPrice ? 100 : (initialPaid > 0 ? Math.max(1, Math.round(rawPct)) : 0))
+    : 100;
   const now = new Date();
   const dateFormatted =
     now.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' }) +
@@ -627,7 +630,10 @@ export const mapBackendCagnotteToClient = (c) => {
   const total = Number(c.prix_unitaire || param.prix_total || 0);
   const paid = Number(c.montant_verse || 0);
   const remaining = Math.max(0, total - paid);
-  const percent = total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : 0;
+  const rawPct = total > 0 ? (paid / total) * 100 : 0;
+  const percent = total > 0
+    ? (paid >= total ? 100 : (paid > 0 ? Math.max(1, Math.round(rawPct)) : 0))
+    : 0;
 
   const rawImages = Array.isArray(prod.image_produits) && prod.image_produits.length > 0
     ? prod.image_produits
@@ -766,7 +772,10 @@ export const mapBackendCagnotteToClient = (c) => {
   );
   const displayedPaid = isCash && !isCod ? (isCashPaid ? total : paid) : paid;
   const displayedRemaining = Math.max(0, total - displayedPaid);
-  const displayedPercent = total > 0 ? Math.min(100, Math.round((displayedPaid / total) * 100)) : 0;
+  const rawDisplayedPct = total > 0 ? (displayedPaid / total) * 100 : 0;
+  const displayedPercent = total > 0
+    ? (displayedPaid >= total ? 100 : (displayedPaid > 0 ? Math.max(1, Math.round(rawDisplayedPct)) : 0))
+    : 0;
   const canDelete = displayedPaid <= 0
     && !hasConfirmedPayment
     && !isCod
@@ -922,13 +931,48 @@ export const getStoredCagnottes = (_user = null) => {
     }
   } catch { /* ignore */ }
 
-  // Filtrer pour ne garder que les cagnottes avec un produit réel valide
-  const validList = backendList.filter(
-    (c) => c && c.product && (c.product.n || c.product.nom) && (c.backendId || c.id)
+  // Filtrer pour ne garder que les cagnottes avec un produit réel valide et appartenant à l'utilisateur
+  const userList = backendList.filter(
+    (c) => c && c.product && (c.product.n || c.product.nom) && (c.backendId || c.id) && c.userId && String(c.userId) === String(_user.id)
   );
 
-  // Filtrer strictement par l'utilisateur connecté
-  return validList.filter((c) => c && c.userId && String(c.userId) === String(_user.id));
+  // Déduplication stricte :
+  // Priorité absolue aux cagnottes ayant un backendId réel.
+  // Déduplication par backendId, référence, ou id du produit pour éviter l'apparition en double.
+  const seenBackendIds = new Set();
+  const seenRefs = new Set();
+  const seenProductIds = new Set();
+  const deduped = [];
+
+  // Premier passage : les cagnottes avec backendId officiel (issues de la BDD)
+  for (const c of userList) {
+    if (c.backendId) {
+      const bKey = String(c.backendId);
+      if (!seenBackendIds.has(bKey)) {
+        seenBackendIds.add(bKey);
+        if (c.reference) seenRefs.add(String(c.reference));
+        if (c.product?.id) seenProductIds.add(String(c.product.id));
+        deduped.push(c);
+      }
+    }
+  }
+
+  // Deuxième passage : les cagnottes locales sans backendId (en attente de synchro)
+  for (const c of userList) {
+    if (!c.backendId) {
+      const ref = c.reference ? String(c.reference) : null;
+      const prodId = c.product?.id ? String(c.product.id) : null;
+
+      if (ref && seenRefs.has(ref)) continue;
+      if (prodId && seenProductIds.has(prodId)) continue;
+
+      if (ref) seenRefs.add(ref);
+      if (prodId) seenProductIds.add(prodId);
+      deduped.push(c);
+    }
+  }
+
+  return deduped;
 };
 
 

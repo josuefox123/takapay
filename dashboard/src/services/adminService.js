@@ -2223,182 +2223,169 @@ export const registerFeexpayWatchdog = (callback) => {
         el.style.display = 'none';
       });
 
-      // Injection du champ d'insertion du montant
+      // Injection et affichage en lecture seule du montant validé
       const formBody = modal.querySelector('div.overflow-y-auto');
-      if (formBody && !formBody.querySelector('[data-takapay-amount-box]')) {
-        const amountBox = document.createElement('div');
-        amountBox.dataset.takapayAmountBox = 'true';
-        amountBox.style.cssText = 'background: #ffffff; padding: 12px 14px; border-radius: 14px; border: 1.5px solid #fed7aa; margin-bottom: 14px; box-shadow: 0 2px 8px rgba(0,0,0,0.03);';
-        
+      if (formBody) {
         const curAmount = window.__takapayCurrentDepositAmount || 10000;
-        
-        amountBox.innerHTML = `
-          <label style="display: block; font-size: 12.5px; font-weight: 800; color: #1e293b; margin-bottom: 6px;">
-            Montant du versement (FCFA) :
-          </label>
-          <div style="position: relative; display: flex; align-items: center;">
-            <input
-              type="number"
-              min="1"
-              step="1"
-              value="${curAmount}"
-              data-takapay-amount-input="true"
-              placeholder="Ex: 25000"
-              style="width: 100%; padding: 10px 56px 10px 14px; border: 1.5px solid #fdba74; border-radius: 10px; font-size: 16px; font-weight: 800; color: #0f172a; outline: none; background: #fffcf9; box-sizing: border-box;"
-            />
-            <span style="position: absolute; right: 12px; font-size: 12px; font-weight: 800; color: #ea580c; pointer-events: none;">FCFA</span>
-          </div>
-        `;
+        const formattedAmount = `${Number(curAmount).toLocaleString('fr-FR')} FCFA`;
 
-        formBody.insertBefore(amountBox, formBody.firstChild);
+        let existingInput = formBody.querySelector('[data-takapay-amount-input]');
+        if (existingInput) {
+          if (existingInput.value !== formattedAmount) {
+            existingInput.value = formattedAmount;
+          }
+        } else if (!formBody.querySelector('[data-takapay-amount-box]')) {
+          const amountBox = document.createElement('div');
+          amountBox.dataset.takapayAmountBox = 'true';
+          amountBox.style.cssText = 'background: #f8fafc; padding: 12px 14px; border-radius: 14px; border: 1.5px solid #fed7aa; margin-bottom: 14px; box-shadow: 0 2px 8px rgba(0,0,0,0.03);';
+          
+          amountBox.innerHTML = `
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+              <label style="display: block; font-size: 12.5px; font-weight: 800; color: #1e293b;">
+                Montant validé à régler :
+              </label>
+              <span style="font-size: 11px; font-weight: 700; color: #16a34a; background: #dcfce7; padding: 2px 8px; border-radius: 6px;">Verrouillé</span>
+            </div>
+            <div style="position: relative; display: flex; align-items: center;">
+              <input
+                type="text"
+                readonly
+                value="${formattedAmount}"
+                data-takapay-amount-input="true"
+                style="width: 100%; padding: 10px 56px 10px 14px; border: 1.5px solid #fed7aa; border-radius: 10px; font-size: 16px; font-weight: 800; color: #0f172a; outline: none; background: #ffffff; box-sizing: border-box; cursor: not-allowed;"
+              />
+              <span style="position: absolute; right: 12px; font-size: 12px; font-weight: 800; color: #ea580c; pointer-events: none;">FCFA</span>
+            </div>
+          `;
+
+          formBody.insertBefore(amountBox, formBody.firstChild);
+        }
 
         // Masquer le texte d'origine "Vous allez payer X OF" pour un affichage épuré
         formBody.querySelectorAll('p.text-sm.text-gray-600.text-center.mb-4, h2.font-bold.text-center').forEach((el) => {
           el.style.display = 'none';
         });
 
-        const input = amountBox.querySelector('input');
-        input.addEventListener('input', (e) => {
-          const val = parseInt(e.target.value, 10);
-          if (val > 0) {
-            window.__takapayCurrentDepositAmount = val;
+        // Mettre à jour les récapitulatifs dans la modale FeexPay
+        const recapBox = modal.querySelector('div.bg-gray-50.p-4.rounded-md');
+        if (recapBox) {
+          const rows = recapBox.querySelectorAll('div.flex.justify-between');
+          if (rows.length >= 1) {
+            const amountSpan = rows[0].querySelector('span.font-medium, span:last-child');
+            if (amountSpan) amountSpan.textContent = `${Number(curAmount).toLocaleString('fr-FR')} XOF`;
+          }
+          if (rows.length >= 3) {
+            const totalSpan = rows[2].querySelector('span:last-child');
+            if (totalSpan) totalSpan.textContent = `${Number(curAmount).toLocaleString('fr-FR')} XOF`;
+          }
+        }
 
-            // Mettre à jour les récapitulatifs dans la modale FeexPay
-            const recapBox = modal.querySelector('div.bg-gray-50.p-4.rounded-md');
-            if (recapBox) {
-              const rows = recapBox.querySelectorAll('div.flex.justify-between');
-              if (rows.length >= 1) {
-                const amountSpan = rows[0].querySelector('span.font-medium, span:last-child');
-                if (amountSpan) amountSpan.textContent = `${val.toLocaleString('fr-FR')} XOF`;
-              }
-              if (rows.length >= 3) {
-                const totalSpan = rows[2].querySelector('span:last-child');
-                if (totalSpan) totalSpan.textContent = `${val.toLocaleString('fr-FR')} XOF`;
-              }
-            }
-
-            // Mettre à jour le texte du bouton Payer
-            modal.querySelectorAll('button').forEach((btn) => {
-              if (btn.textContent.includes('Payer')) {
-                btn.textContent = `Payer ${val.toLocaleString('fr-FR')} XOF`;
-              }
-            });
+        // Mettre à jour le texte du bouton Payer
+        modal.querySelectorAll('button').forEach((btn) => {
+          if (btn.textContent.includes('Payer')) {
+            btn.textContent = `Payer ${Number(curAmount).toLocaleString('fr-FR')} XOF`;
           }
         });
       }
 
-      // Remplacement de Mobile Money / Carte Bancaire / Wallet par MTN / MOOV / CELTIS
-      const allTabBars = Array.from(modal.querySelectorAll('div.flex.justify-center.mb-6.border-b.pb-4, [data-takapay-networks="true"]'));
-      const tabsContainer = allTabBars[0];
-
-      const applyNetworkSelection = (netValue) => {
-        window.__takapaySelectedNetwork = netValue;
-        const displayLabel = netValue === 'CELTIIS' ? 'CELTIS' : netValue;
-
-        modal.querySelectorAll('select').forEach((sel) => {
-          const hasOption = Array.from(sel.options || []).some((opt) => opt.value === netValue);
-          if (hasOption && sel.value !== netValue) {
-            const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value')?.set;
-            if (nativeSetter) {
-              nativeSetter.call(sel, netValue);
-            } else {
-              sel.value = netValue;
-            }
-            sel.dispatchEvent(new Event('change', { bubbles: true }));
+      // 1. Centrage harmonieux de la barre d'onglets FeexPay (Mobile Money, Carte Bancaire, Wallet)
+      modal.querySelectorAll('div.flex.justify-center.mb-6.border-b.pb-4, div.flex.justify-center.mb-6.border-b').forEach((tabBar) => {
+        tabBar.style.cssText = 'display: flex !important; justify-content: center !important; align-items: stretch !important; width: 100% !important; margin: 0 auto 20px auto !important; gap: 12px !important; padding-bottom: 14px !important;';
+        Array.from(tabBar.children).forEach((card) => {
+          card.style.flex = '1 1 0';
+          card.style.maxWidth = '130px';
+          card.style.padding = '10px 8px';
+          card.style.borderRadius = '10px';
+          card.style.textAlign = 'center';
+          const title = card.querySelector('span');
+          if (title) {
+            title.style.fontSize = '13px';
+            title.style.fontWeight = '700';
           }
         });
-
-        modal.querySelectorAll('[data-takapay-network-display]').forEach((el) => {
-          el.textContent = displayLabel;
-        });
-
-        if (tabsContainer) {
-          Array.from(tabsContainer.children).forEach((card) => {
-            const cardNet = card.dataset.netValue || (card.textContent.includes('MOOV') ? 'MOOV' : card.textContent.includes('CELTIS') ? 'CELTIIS' : 'MTN');
-            card.dataset.netValue = cardNet;
-            const isSelected = cardNet === netValue;
-            card.className = `flex flex-col items-center justify-center flex-1 px-4 py-2 cursor-pointer rounded border ${
-              isSelected ? 'bg-[#fff7ed] border-[#D45D00] border-2' : 'bg-white border-[#D45D00]'
-            }`;
-          });
-        }
-      };
-
-      if (tabsContainer && !tabsContainer.dataset.takapayBound) {
-        if (tabsContainer.textContent.includes('Carte Bancaire') || tabsContainer.textContent.includes('Wallet')) {
-          const mobileTab = Array.from(tabsContainer.children).find((c) => c.textContent.includes('Mobile Money'));
-          if (mobileTab) mobileTab.click();
-
-          tabsContainer.dataset.takapayNetworks = 'true';
-          tabsContainer.className = 'flex justify-center mb-6 border-b pb-4 w-full gap-3';
-          tabsContainer.innerHTML = '';
-
-          const networks = [
-            { label: 'MTN', value: 'MTN', logo: '/assets/mtn logo.png' },
-            { label: 'MOOV', value: 'MOOV', logo: '/assets/logo moov.png' },
-            { label: 'CELTIS', value: 'CELTIIS', logo: '/assets/logo celtis.jpeg' },
-          ];
-
-          const initialNet = window.__takapaySelectedNetwork || 'MTN';
-          networks.forEach((net) => {
-            const isSelected = initialNet === net.value;
-            const card = document.createElement('div');
-            card.dataset.netValue = net.value;
-            card.className = `flex flex-col items-center justify-center flex-1 px-4 py-2 cursor-pointer rounded border ${
-              isSelected ? 'bg-[#fff7ed] border-[#D45D00] border-2' : 'bg-white border-[#D45D00]'
-            }`;
-            card.innerHTML = `
-              <div class="w-12 h-8 flex items-center justify-center mb-1">
-                <img src="${net.logo}" alt="${net.label}" style="max-height:28px;max-width:44px;object-fit:contain;" />
-              </div>
-              <span class="text-xs font-bold">${net.label}</span>
-            `;
-            tabsContainer.appendChild(card);
-          });
-        }
-
-        tabsContainer.dataset.takapayBound = 'true';
-        Array.from(tabsContainer.children).forEach((card) => {
-          const cardNet = card.dataset.netValue || (card.textContent.includes('MOOV') ? 'MOOV' : card.textContent.includes('CELTIS') ? 'CELTIIS' : 'MTN');
-          card.dataset.netValue = cardNet;
-          card.addEventListener('click', () => applyNetworkSelection(cardNet));
-        });
-      }
-
-      // Remplacer tout <select> de réseau (MTN/MOOV/CELTIIS) par l'affichage statique du nom du réseau choisi
-      modal.querySelectorAll('select').forEach((sel) => {
-        const isNetworkSelect = Array.from(sel.options || []).some((opt) => opt.value === 'MTN');
-        if (isNetworkSelect) {
-          const wrapper = sel.parentElement;
-          if (wrapper) {
-            sel.style.display = 'none';
-            const arrow = wrapper.querySelector('div.pointer-events-none');
-            if (arrow) arrow.style.display = 'none';
-            let labelBox = wrapper.querySelector('[data-takapay-network-display]');
-            if (!labelBox) {
-              labelBox = document.createElement('div');
-              labelBox.dataset.takapayNetworkDisplay = 'true';
-              labelBox.className = 'block w-full px-3 py-2 border rounded-md bg-gray-50 font-bold text-gray-800 text-xs flex items-center';
-              wrapper.appendChild(labelBox);
-            }
-            const cur = window.__takapaySelectedNetwork || sel.value || 'MTN';
-            const expectedText = cur === 'CELTIIS' ? 'CELTIS' : cur;
-            if (labelBox.textContent !== expectedText) {
-              labelBox.textContent = expectedText;
-            }
-          }
-        }
       });
+
+      // 2. Agrandissement des typographies des champs de saisie pour une meilleure lisibilité
+      modal.querySelectorAll('input:not([data-takapay-amount-input]), select').forEach((el) => {
+        el.style.fontSize = '14.5px';
+        el.style.padding = '10px 12px';
+        el.style.borderRadius = '8px';
+      });
+
+      modal.querySelectorAll('h2').forEach((el) => {
+        el.style.fontSize = '15px';
+        el.style.fontWeight = '800';
+      });
+
+      // 3. Pré-remplissage des champs avec les données client si disponibles
+      if (window.__takapayPrefillUser) {
+        const { fullName, phoneDigits, email } = window.__takapayPrefillUser;
+        if (fullName) {
+          modal.querySelectorAll('input[placeholder*="Nom"], input[placeholder*="nom"], input[name*="name"]').forEach((inp) => {
+            if (!inp.value) {
+              inp.value = fullName;
+              inp.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+          });
+        }
+        if (phoneDigits) {
+          modal.querySelectorAll('input[type="tel"]').forEach((inp) => {
+            if (!inp.value) {
+              inp.value = phoneDigits;
+              inp.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+          });
+        }
+        if (email) {
+          modal.querySelectorAll('input[type="email"]').forEach((inp) => {
+            if (!inp.value) {
+              inp.value = email;
+              inp.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+          });
+        }
+      }
     });
   };
 
-  const modalObs = new MutationObserver(customizeFeexpayModal);
+  let customizeRaf = null;
+  let isCustomizing = false;
+
+  const scheduleCustomize = () => {
+    if (customizeRaf || isCustomizing) return;
+    customizeRaf = requestAnimationFrame(() => {
+      customizeRaf = null;
+      if (isCustomizing) return;
+      isCustomizing = true;
+      try {
+        customizeFeexpayModal();
+      } finally {
+        isCustomizing = false;
+      }
+    });
+  };
+
+  const modalObs = new MutationObserver((mutations) => {
+    if (isCustomizing) return;
+    const hasModal = mutations.some((m) =>
+      m.addedNodes.length > 0 &&
+      Array.from(m.addedNodes).some(
+        (n) => n.nodeType === 1 && (n.classList?.contains('fixed') || n.querySelector?.('div.fixed.inset-0.z-50'))
+      )
+    );
+    if (hasModal) {
+      scheduleCustomize();
+    }
+  });
+
   if (document.body) {
     modalObs.observe(document.body, { childList: true, subtree: true });
-    customizeFeexpayModal();
+    scheduleCustomize();
   }
 
   return () => {
+    if (customizeRaf) cancelAnimationFrame(customizeRaf);
+    modalObs.disconnect();
     if (currentWatchdogCallback === callback) {
       currentWatchdogCallback = null;
     }
