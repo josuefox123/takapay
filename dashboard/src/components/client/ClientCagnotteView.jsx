@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import { FeexPayProvider, FeexPayButton } from '@feexpay/react-sdk';
 import '@feexpay/react-sdk/style.css';
-import { formatFCFA, getStoredCagnottes, mapBackendCagnotteToClient } from '../../data/clientStore';
+import { formatFCFA, getStoredCagnottes, mapBackendCagnotteToClient, normalizeBeninPhoneDigits } from '../../data/clientStore';
 import { adminService, registerFeexpayWatchdog, cancelFeexpayPayment } from '../../services/adminService';
 
 // ---------- Styles partagés ----------
@@ -473,7 +473,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
     setIsOpeningDeposit(true);
 
     try {
-      const cleanPhone = (user?.telephone || user?.phone || depositPhone || '').replace(/\D/g, '').replace(/^229/, '');
+      const cleanPhone = normalizeBeninPhoneDigits(user?.telephone || user?.phone || depositPhone || '');
       const userFullName = `${user?.prenom || ''} ${user?.nom || ''}`.trim() || user?.nom || 'Client';
       const userEmail = (user?.email && !user.email.endsWith('@client.takapay.bj')) ? user.email : '';
 
@@ -788,7 +788,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
     setIsSubmitting(true);
     setPaymentFailed(false);
     try {
-      const cleanPhone = (user?.telephone || user?.phone || depositPhone || '').replace(/\D/g, '').replace(/^229/, '');
+      const cleanPhone = normalizeBeninPhoneDigits(user?.telephone || user?.phone || depositPhone || '');
       const userFullName = `${user?.prenom || ''} ${user?.nom || ''}`.trim() || user?.nom || 'Client';
       const userEmail = (user?.email && !user.email.endsWith('@client.takapay.bj')) ? user.email : '';
 
@@ -2852,8 +2852,8 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                 first_name: user?.prenom || user?.nom || 'Client',
                 last_name: user?.nom || '',
                 email: (user?.email && !user.email.endsWith('@client.takapay.bj')) ? user.email : '',
-                phone: (user?.telephone || user?.phone || depositPhone || '').replace(/\D/g, '').replace(/^229/, ''),
-                phoneNumber: (user?.telephone || user?.phone || depositPhone || '').replace(/\D/g, '').replace(/^229/, ''),
+                phone: normalizeBeninPhoneDigits(user?.telephone || user?.phone || depositPhone || ''),
+                phoneNumber: normalizeBeninPhoneDigits(user?.telephone || user?.phone || depositPhone || ''),
               }}
               callback={handleFeexpayCallback}
               buttonText="FeexPay"

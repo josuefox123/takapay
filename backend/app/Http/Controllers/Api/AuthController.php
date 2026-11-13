@@ -359,6 +359,19 @@ class AuthController extends Controller
     }
 
     /**
+     * Déconnecter l'utilisateur (révocation du jeton Sanctum actif).
+     */
+    public function logout(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        if ($user) {
+            $user->currentAccessToken()?->delete();
+        }
+
+        return response()->json(['message' => 'Déconnexion réussie.']);
+    }
+
+    /**
      * Mettre à jour le profil de l'utilisateur (nom, prénom, téléphone, email).
      */
     public function updateProfile(Request $request): JsonResponse
