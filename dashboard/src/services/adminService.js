@@ -2326,9 +2326,12 @@ export const registerFeexpayWatchdog = (callback) => {
       };
 
       if (tabsContainer && !tabsContainer.dataset.takapayBound) {
+        tabsContainer.dataset.takapayBound = 'true';
         if (tabsContainer.textContent.includes('Carte Bancaire') || tabsContainer.textContent.includes('Wallet')) {
           const mobileTab = Array.from(tabsContainer.children).find((c) => c.textContent.includes('Mobile Money'));
-          if (mobileTab) mobileTab.click();
+          if (mobileTab) {
+            try { mobileTab.click(); } catch {}
+          }
 
           tabsContainer.dataset.takapayNetworks = 'true';
           tabsContainer.className = 'flex justify-center mb-6 border-b pb-4 w-full gap-3';
@@ -2369,7 +2372,6 @@ export const registerFeexpayWatchdog = (callback) => {
           });
         }
 
-        tabsContainer.dataset.takapayBound = 'true';
         Array.from(tabsContainer.children).forEach((card) => {
           const cardNet = card.dataset.netValue || (card.textContent.includes('MOOV') ? 'MOOV' : card.textContent.includes('CELTIS') ? 'CELTIIS' : 'MTN');
           card.dataset.netValue = cardNet;
@@ -2404,13 +2406,44 @@ export const registerFeexpayWatchdog = (callback) => {
     });
   };
 
-  const modalObs = new MutationObserver(customizeFeexpayModal);
+  let customizeRaf = null;
+  let isCustomizing = false;
+
+  const scheduleCustomize = () => {
+    if (customizeRaf || isCustomizing) return;
+    customizeRaf = requestAnimationFrame(() => {
+      customizeRaf = null;
+      if (isCustomizing) return;
+      isCustomizing = true;
+      try {
+        customizeFeexpayModal();
+      } finally {
+        isCustomizing = false;
+      }
+    });
+  };
+
+  const modalObs = new MutationObserver((mutations) => {
+    if (isCustomizing) return;
+    const hasModal = mutations.some((m) =>
+      m.addedNodes.length > 0 &&
+      Array.from(m.addedNodes).some(
+        (n) => n.nodeType === 1 && (n.classList?.contains('fixed') || n.querySelector?.('div.fixed.inset-0.z-50'))
+      )
+    );
+    if (hasModal) {
+      scheduleCustomize();
+    }
+  });
+
   if (document.body) {
     modalObs.observe(document.body, { childList: true, subtree: true });
-    customizeFeexpayModal();
+    scheduleCustomize();
   }
 
   return () => {
+    if (customizeRaf) cancelAnimationFrame(customizeRaf);
+    modalObs.disconnect();
     if (currentWatchdogCallback === callback) {
       currentWatchdogCallback = null;
     }
