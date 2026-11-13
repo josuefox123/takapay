@@ -2332,7 +2332,7 @@ export const registerFeexpayWatchdog = (callback) => {
 
           tabsContainer.dataset.takapayNetworks = 'true';
           tabsContainer.className = 'flex justify-center mb-6 border-b pb-4 w-full gap-3';
-          tabsContainer.innerHTML = '';
+          tabsContainer.replaceChildren();
 
           const networks = [
             { label: 'MTN', value: 'MTN', logo: '/assets/mtn logo.png' },
@@ -2348,12 +2348,23 @@ export const registerFeexpayWatchdog = (callback) => {
             card.className = `flex flex-col items-center justify-center flex-1 px-4 py-2 cursor-pointer rounded border ${
               isSelected ? 'bg-[#fff7ed] border-[#D45D00] border-2' : 'bg-white border-[#D45D00]'
             }`;
-            card.innerHTML = `
-              <div class="w-12 h-8 flex items-center justify-center mb-1">
-                <img src="${net.logo}" alt="${net.label}" style="max-height:28px;max-width:44px;object-fit:contain;" />
-              </div>
-              <span class="text-xs font-bold">${net.label}</span>
-            `;
+
+            const imgContainer = document.createElement('div');
+            imgContainer.className = 'w-12 h-8 flex items-center justify-center mb-1';
+            const img = document.createElement('img');
+            img.src = net.logo;
+            img.alt = net.label;
+            img.style.maxHeight = '28px';
+            img.style.maxWidth = '44px';
+            img.style.objectFit = 'contain';
+            imgContainer.appendChild(img);
+
+            const labelSpan = document.createElement('span');
+            labelSpan.className = 'text-xs font-bold';
+            labelSpan.textContent = net.label;
+
+            card.appendChild(imgContainer);
+            card.appendChild(labelSpan);
             tabsContainer.appendChild(card);
           });
         }
