@@ -74,7 +74,7 @@ class StoreUserRequest extends FormRequest
                 },
             ],
             'telephone' => ['nullable', 'string', 'regex:/^\+?[0-9]{8,15}$/', 'unique:users,telephone'],
-            'password' => ['required', 'string', 'min:8'],
+            'password' => ['required', 'string', 'min:8', 'regex:/[A-Z]/', 'regex:/[0-9]/'],
             'photo_profil' => ['nullable', 'string', 'max:255'],
             'role' => ['nullable', 'string', $allowedRoles],
             'latitude' => ['nullable', 'numeric', 'between:-90,90'],
@@ -92,6 +92,8 @@ class StoreUserRequest extends FormRequest
             'telephone.regex' => 'Veuillez saisir un numéro de téléphone valide (8 à 15 chiffres).',
             'telephone.unique' => 'Ce numéro de téléphone est déjà utilisé par un autre compte.',
             'email.unique' => 'Cette adresse e-mail est déjà utilisée par un autre compte.',
+            'password.min' => 'Le mot de passe doit comporter au moins 8 caractères.',
+            'password.regex' => 'Le mot de passe doit contenir au moins une lettre majuscule et un chiffre.',
         ];
     }
 }
