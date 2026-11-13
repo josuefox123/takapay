@@ -282,24 +282,15 @@ class AuthController extends Controller
     public function login(LoginRequest $request): JsonResponse
     {
         $identifiant = trim($request->identifiant);
-        $rawPassword = trim((string) $request->password);
+        $rawPassword = (string) $request->password;
 
         if (str_contains($identifiant, '@')) {
             $user = User::where('email', strtolower($identifiant))
                 ->orWhere('email', $identifiant)
                 ->first();
         } else {
-            $cleanPhone = preg_replace('/[^\d+]/', '', $identifiant);
-            $digitsOnly = preg_replace('/\D/', '', $cleanPhone);
-
-            $user = User::where('telephone', $identifiant)
-                ->when(! empty($cleanPhone), function ($query) use ($cleanPhone) {
-                    $query->orWhere('telephone', $cleanPhone);
-                })
-                ->when(strlen($digitsOnly) >= 8, function ($query) use ($digitsOnly) {
-                    $query->orWhere('telephone', 'like', "%{$digitsOnly}%");
-                })
-                ->first();
+            $candidates = $this->resolvePhoneCandidates($identifiant);
+            $user = User::whereIn('telephone', $candidates)->first();
         }
 
         $loginAttemptKey = $this->loginAttemptKey($request, $identifiant, $user);
@@ -602,10 +593,8 @@ class AuthController extends Controller
             return null;
         }
 
-        $user = User::where('telephone', $cleanPhone)
-            ->orWhere('telephone', $identifiant)
-            ->orWhere('telephone', 'like', "%{$digitsOnly}%")
-            ->first();
+        $candidates = $this->resolvePhoneCandidates($identifiant);
+        $user = User::whereIn('telephone', $candidates)->first();
 
         if (! $user) {
             $error = 'Aucun compte TakaPay n\'a été trouvé avec ce numéro de téléphone.';
@@ -614,6 +603,55 @@ class AuthController extends Controller
         }
 
         return $user;
+    }
+
+    /**
+     * Génère les variantes canoniques exactes d'un numéro de téléphone (formats Bénin et international).
+     * Évite les recherches partielles par LIKE qui provoquent des collisions de comptes.
+     *
+     * @return array<int, string>
+     */
+    private function resolvePhoneCandidates(string $identifiant): array
+    {
+        $cleanPhone = preg_replace('/[^\d+]/', '', $identifiant);
+        $digits = preg_replace('/\D/', '', $cleanPhone);
+
+        if (str_starts_with($digits, '229')) {
+            $local = substr($digits, 3);
+        } elseif (str_starts_with($digits, '00229')) {
+            $local = substr($digits, 5);
+        } else {
+            $local = $digits;
+        }
+
+        $candidates = [$identifiant, $cleanPhone];
+
+        // Format Bénin 8 chiffres (ancien format national)
+        if (strlen($local) === 8) {
+            $candidates[] = $local;
+            $candidates[] = '01'.$local;
+            $candidates[] = '229'.$local;
+            $candidates[] = '22901'.$local;
+            $candidates[] = '+229'.$local;
+            $candidates[] = '+22901'.$local;
+            $candidates[] = '+229 '.$local;
+            $candidates[] = '+229 01 '.implode(' ', str_split($local, 2));
+            $candidates[] = '+229 '.implode(' ', str_split('01'.$local, 2));
+        } elseif (strlen($local) === 10 && str_starts_with($local, '01')) {
+            // Format Bénin 10 chiffres (nouveau format national avec préfixe 01)
+            $sub8 = substr($local, 2);
+            $candidates[] = $local;
+            $candidates[] = $sub8;
+            $candidates[] = '229'.$local;
+            $candidates[] = '229'.$sub8;
+            $candidates[] = '+229'.$local;
+            $candidates[] = '+229'.$sub8;
+            $candidates[] = '+229 '.$sub8;
+            $candidates[] = '+229 01 '.implode(' ', str_split($sub8, 2));
+            $candidates[] = '+229 '.implode(' ', str_split($local, 2));
+        }
+
+        return array_values(array_unique(array_filter($candidates)));
     }
 
     private function pinResetAttemptKey(Request $request, string $identifiant, ?User $user, string $purpose): string
