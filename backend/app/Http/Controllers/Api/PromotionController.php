@@ -19,12 +19,9 @@ class PromotionController extends Controller
      */
     public function index(Request $request): AnonymousResourceCollection
     {
-        $user = $request->user('sanctum') ?? $request->user();
-        if (! $user && $request->bearerToken()) {
-            $accessToken = \Laravel\Sanctum\PersonalAccessToken::findToken($request->bearerToken());
-            if ($accessToken && $accessToken->tokenable) {
-                $user = $accessToken->tokenable;
-            }
+        $user = auth('sanctum')->user();
+        if ($user && $user->statut_compte !== 'actif') {
+            $user = null;
         }
 
         $query = Promotion::with('produit')->latest();

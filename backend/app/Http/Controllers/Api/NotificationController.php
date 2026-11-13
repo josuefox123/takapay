@@ -16,35 +16,19 @@ class NotificationController extends Controller
      */
     public function index(Request $request)
     {
-        $user = $request->user('sanctum') ?? $request->user();
-        if (! $user && $request->bearerToken()) {
-            $accessToken = \Laravel\Sanctum\PersonalAccessToken::findToken($request->bearerToken());
-            if ($accessToken && $accessToken->tokenable) {
-                $user = $accessToken->tokenable;
-            }
-        }
-
+        $user = $request->user();
         $query = Notification::query()->latest();
 
-        $requestedUserId = $request->query('user_id');
-
-        // 1. Consultation filtrée par utilisateur spécifique (espace client)
-        if ($requestedUserId) {
-            $query->where('utilisateur_id', $requestedUserId);
-
-            return NotificationResource::collection($query->get());
-        }
-
-        if (! $user) {
-            return NotificationResource::collection(collect());
-        }
-
-        // 2. Administrateur sans paramètre : toutes les notifications
+        // 1. Administrateur : toutes les notifications ou filtrées par user_id
         if ($user->isAdmin()) {
+            if ($request->filled('user_id')) {
+                $query->where('utilisateur_id', $request->query('user_id'));
+            }
+
             return NotificationResource::collection($query->get());
         }
 
-        // 3. Client authentifié : ses propres notifications
+        // 2. Client authentifié : STRICTEMENT ses propres notifications (IDOR impossible)
         $query->where('utilisateur_id', $user->id);
 
         return NotificationResource::collection($query->get());
@@ -99,16 +83,7 @@ class NotificationController extends Controller
      */
     public function marquerCommeLu(Request $request, Notification $notification)
     {
-        $user = $request->user('sanctum') ?? $request->user();
-        if (! $user && $request->bearerToken()) {
-            $accessToken = \Laravel\Sanctum\PersonalAccessToken::findToken($request->bearerToken());
-            if ($accessToken && $accessToken->tokenable) {
-                $user = $accessToken->tokenable;
-            }
-        }
-        if (! $user) {
-            abort(401, 'Non authentifié.');
-        }
+        $user = $request->user();
         if (! $user->isAdmin() && (int) $notification->utilisateur_id !== (int) $user->id) {
             abort(403, 'Accès refusé.');
         }
@@ -122,16 +97,7 @@ class NotificationController extends Controller
      */
     public function toutMarquerCommeLu(Request $request)
     {
-        $user = $request->user('sanctum') ?? $request->user();
-        if (! $user && $request->bearerToken()) {
-            $accessToken = \Laravel\Sanctum\PersonalAccessToken::findToken($request->bearerToken());
-            if ($accessToken && $accessToken->tokenable) {
-                $user = $accessToken->tokenable;
-            }
-        }
-        if (! $user) {
-            abort(401, 'Non authentifié.');
-        }
+        $user = $request->user();
 
         $userId = ($user->isAdmin() && ($request->filled('user_id') || $request->query('user_id')))
             ? ($request->input('user_id') ?? $request->query('user_id'))
