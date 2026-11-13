@@ -523,8 +523,18 @@ export default function AppHome({ initialTab = 'home' }) {
             if (rawStored) {
               const parsed = JSON.parse(rawStored);
               if (Array.isArray(parsed)) {
-                const knownIds = new Set(converted.map((c) => String(c.backendId || c.id)));
-                pendingLocal = parsed.filter((c) => c && !knownIds.has(String(c.backendId || c.id)));
+                const knownBackendIds = new Set(converted.map((c) => String(c.backendId || c.id)));
+                const knownRefs = new Set(converted.map((c) => String(c.reference || '')));
+                const knownProductIds = new Set(converted.map((c) => String(c.product?.id || '')));
+
+                pendingLocal = parsed.filter((c) => {
+                  if (!c) return false;
+                  const bId = String(c.backendId || c.id || '');
+                  if (knownBackendIds.has(bId)) return false;
+                  if (c.reference && knownRefs.has(String(c.reference))) return false;
+                  if (!c.backendId && c.product?.id && knownProductIds.has(String(c.product.id))) return false;
+                  return true;
+                });
               }
             }
             const finalMerged = [...converted, ...pendingLocal];
@@ -754,7 +764,17 @@ export default function AppHome({ initialTab = 'home' }) {
   } catch { /* ignore */ }
   if (!Array.isArray(allCagnottes)) allCagnottes = [];
 
-  const updatedCagnottes = [newCagnotte, ...allCagnottes.filter((c) => c && c.id !== newCagnotte.id)];
+  const updatedCagnottes = [
+    newCagnotte,
+    ...allCagnottes.filter((c) => {
+      if (!c) return false;
+      if (newCagnotte.backendId && String(c.backendId) === String(newCagnotte.backendId)) return false;
+      if (newCagnotte.id && String(c.id) === String(newCagnotte.id)) return false;
+      if (newCagnotte.reference && c.reference && String(c.reference) === String(newCagnotte.reference)) return false;
+      if (!newCagnotte.backendId && !c.backendId && newCagnotte.product?.id && String(c.product?.id) === String(newCagnotte.product?.id)) return false;
+      return true;
+    }),
+  ];
   setCagnotteCount(updatedCagnottes.length);
   try {
     localStorage.setItem('takapay_backend_cagnottes', JSON.stringify(updatedCagnottes));
@@ -888,9 +908,7 @@ export default function AppHome({ initialTab = 'home' }) {
                 user={user}
                 onShowToast={showToast}
                 onBack={() => {
-                  if (window.history.state && window.history.state.idx > 0) {
-                    navigate(-1);
-                  } else if (previousView === 'home') {
+                  if (previousView === 'home') {
                     setView('home');
                     navigate('/app');
                   } else if (previousView === 'subcat' && isFavoritesOnly) {
@@ -933,11 +951,15 @@ export default function AppHome({ initialTab = 'home' }) {
               onBack={() => {
                 if (activeProductId) {
                   setView('product');
-                  navigate(`/app/produits/${activeProductId}`);
+                  navigate(`/app/produits/${activeProductId}`, { replace: true });
                 } else {
                   setView('shop');
-                  navigate('/app/produits');
+                  navigate('/app/produits', { replace: true });
                 }
+              }}
+              onGoCatalog={() => {
+                setView('shop');
+                navigate('/app/produits');
               }}
             />
           )}

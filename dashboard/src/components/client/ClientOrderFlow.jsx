@@ -730,6 +730,8 @@ export default function ClientOrderFlow({
         date: new Date().toISOString(),
         isCash: orderType === 'cash',
         quantity: effectiveQuantity,
+        backendId: confirmation.cagnotte_id || null,
+        commandeId: confirmation.commande_id || null,
       });
 
       try {

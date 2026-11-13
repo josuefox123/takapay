@@ -154,8 +154,18 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
           if (rawStored) {
             const parsed = JSON.parse(rawStored);
             if (Array.isArray(parsed)) {
-              const knownIds = new Set(converted.map((c) => String(c.backendId || c.id)));
-              pendingLocal = parsed.filter((c) => c && !knownIds.has(String(c.backendId || c.id)));
+              const knownBackendIds = new Set(converted.map((c) => String(c.backendId || c.id)));
+              const knownRefs = new Set(converted.map((c) => String(c.reference || '')));
+              const knownProductIds = new Set(converted.map((c) => String(c.product?.id || '')));
+
+              pendingLocal = parsed.filter((c) => {
+                if (!c) return false;
+                const bId = String(c.backendId || c.id || '');
+                if (knownBackendIds.has(bId)) return false;
+                if (c.reference && knownRefs.has(String(c.reference))) return false;
+                if (!c.backendId && c.product?.id && knownProductIds.has(String(c.product.id))) return false;
+                return true;
+              });
             }
           }
           const finalMerged = [...converted, ...pendingLocal];
@@ -356,7 +366,10 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
 
   const cagnotte = activeCagnotte || {};
   const p = cagnotte.product || {};
-  const pct = cagnotte.pourcentage || 0;
+  const paidVal = Number(cagnotte.montantVerse) || 0;
+  const totalVal = Number(cagnotte.prixTotal || cagnotte.product?.p) || 0;
+  const calcPct = totalVal > 0 ? (paidVal >= totalVal ? 100 : (paidVal > 0 ? Math.max(1, Math.round((paidVal / totalVal) * 100)) : 0)) : 0;
+  const pct = cagnotte.pourcentage !== undefined ? Number(cagnotte.pourcentage) : calcPct;
   const isCash = Boolean(cagnotte.isCash || cagnotte.mode === 'cash' || cagnotte.mode === 'cash_cod');
   const isCod = Boolean(cagnotte.isCod || cagnotte.mode === 'cash_cod');
   const isPaymentFailed = Boolean(cagnotte.isPaymentFailed || cagnotte.statut === 'payment_failed');
@@ -1034,7 +1047,10 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
             >
               {cagnottesList.map((item) => {
                 const prod = item.product || {};
-                const itemPct = item.pourcentage || 0;
+                const itemPaid = Number(item.montantVerse) || 0;
+                const itemTotal = Number(item.prixTotal || item.product?.p) || 0;
+                const itemCalcPct = itemTotal > 0 ? (itemPaid >= itemTotal ? 100 : (itemPaid > 0 ? Math.max(1, Math.round((itemPaid / itemTotal) * 100)) : 0)) : 0;
+                const itemPct = item.pourcentage !== undefined ? Number(item.pourcentage) : itemCalcPct;
                 const isItemCash = Boolean(item.isCash || item.mode === 'cash' || item.mode === 'cash_cod');
                 const isItemCod = Boolean(item.isCod || item.mode === 'cash_cod');
                 const isItemReceived = Boolean(item.articleRecu || item.statut === 'recu');
@@ -1264,7 +1280,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                               <div
                                 style={{
                                   height: '100%',
-                                  width: `${Math.min(100, itemPct)}%`,
+                                  width: `${Math.min(100, Math.max(itemPaid > 0 ? 2 : 0, itemPct))}%`,
                                   background: isItemFinished
                                     ? 'linear-gradient(90deg, #16a34a, #22c55e)'
                                     : 'linear-gradient(90deg, #dc2626, #ef4444)',
@@ -2377,7 +2393,7 @@ export default function ClientCagnotteView({ onBack, onShowToast, onGoCatalog, u
                       <div style={{ height: '9px', background: '#ece5dc', borderRadius: '99px', overflow: 'hidden', marginBottom: '18px' }}>
                         <div
                           style={{
-                            width: `${Math.min(100, pct)}%`,
+                            width: `${Math.min(100, Math.max(paidVal > 0 ? 2 : 0, pct))}%`,
                             height: '100%',
                             background: '#dc2626',
                             borderRadius: '99px',

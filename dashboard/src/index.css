@@ -1660,3 +1660,62 @@ div.fixed.inset-0.z-50 div.border-b div.text-right,
 .feexpay-modal div.border-b div.text-right {
   display: none !important;
 }
+
+/* Centrage élégant des onglets FeexPay (Mobile Money, Carte Bancaire, Wallet) */
+div.fixed.inset-0.z-50 div.border-b.pb-4.w-fit,
+div.fixed.inset-0.z-50 div.flex.justify-center.mb-6.border-b {
+  width: 100% !important;
+  max-width: 100% !important;
+  display: flex !important;
+  justify-content: center !important;
+  align-items: center !important;
+  gap: 12px !important;
+  margin: 0 auto 20px auto !important;
+}
+
+div.fixed.inset-0.z-50 div.flex.justify-center.mb-6.border-b > div {
+  flex: 1 1 0 !important;
+  max-width: 130px !important;
+  padding: 10px 8px !important;
+  border-radius: 10px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: center !important;
+  text-align: center !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04) !important;
+  transition: all 0.2s ease !important;
+}
+
+div.fixed.inset-0.z-50 div.flex.justify-center.mb-6.border-b > div span {
+  font-size: 13px !important;
+  font-weight: 700 !important;
+  margin-top: 2px !important;
+}
+
+/* Agrandissement des typographies et champs pour une meilleure lisibilité */
+div.fixed.inset-0.z-50 input:not([data-takapay-amount-input]),
+div.fixed.inset-0.z-50 select {
+  font-size: 14.5px !important;
+  padding-top: 10px !important;
+  padding-bottom: 10px !important;
+  border-radius: 8px !important;
+}
+
+div.fixed.inset-0.z-50 h2 {
+  font-size: 15px !important;
+  font-weight: 800 !important;
+  color: #1e293b !important;
+}
+
+div.fixed.inset-0.z-50 p {
+  font-size: 13.5px !important;
+}
+
+div.fixed.inset-0.z-50 button:not([aria-label]) {
+  font-size: 16px !important;
+  font-weight: 700 !important;
+  padding-top: 12px !important;
+  padding-bottom: 12px !important;
+  border-radius: 10px !important;
+}

@@ -49,7 +49,7 @@ class AppServiceProvider extends ServiceProvider
             // Mutations (POST, PUT, DELETE, PATCH) :
             // 1. Plafond court terme : max 60 mutations par minute par utilisateur/IP
             // 2. Plafond d'endurance : max 500 mutations par heure par utilisateur/IP
-            // 3. Anti-doublon : max 9 requêtes strictement identiques par minute
+            // 3. Anti-doublon : max 15 requêtes strictement identiques par minute
             return [
                 Limit::perMinute(60)->by($principal)->response(function (Request $request, array $headers) {
                     return response()->json([
@@ -61,7 +61,7 @@ class AppServiceProvider extends ServiceProvider
                         'message' => 'Quota horaire d’actions dépassé. Veuillez patienter avant de réessayer.',
                     ], 429, $headers);
                 }),
-                Limit::perMinute(9)->by($fingerprint)->response(function (Request $request, array $headers) {
+                Limit::perMinute(15)->by($fingerprint)->response(function (Request $request, array $headers) {
                     return response()->json([
                         'message' => 'Trop de requêtes identiques envoyées en moins d’une minute. Veuillez patienter avant de réessayer.',
                     ], 429, $headers);

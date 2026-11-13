@@ -2288,121 +2288,63 @@ export const registerFeexpayWatchdog = (callback) => {
         });
       }
 
-      // Remplacement de Mobile Money / Carte Bancaire / Wallet par MTN / MOOV / CELTIS
-      const allTabBars = Array.from(modal.querySelectorAll('div.flex.justify-center.mb-6.border-b.pb-4, [data-takapay-networks="true"]'));
-      const tabsContainer = allTabBars[0];
-
-      const applyNetworkSelection = (netValue) => {
-        window.__takapaySelectedNetwork = netValue;
-        const displayLabel = netValue === 'CELTIIS' ? 'CELTIS' : netValue;
-
-        modal.querySelectorAll('select').forEach((sel) => {
-          const hasOption = Array.from(sel.options || []).some((opt) => opt.value === netValue);
-          if (hasOption && sel.value !== netValue) {
-            const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value')?.set;
-            if (nativeSetter) {
-              nativeSetter.call(sel, netValue);
-            } else {
-              sel.value = netValue;
-            }
-            sel.dispatchEvent(new Event('change', { bubbles: true }));
+      // 1. Centrage harmonieux de la barre d'onglets FeexPay (Mobile Money, Carte Bancaire, Wallet)
+      modal.querySelectorAll('div.flex.justify-center.mb-6.border-b.pb-4, div.flex.justify-center.mb-6.border-b').forEach((tabBar) => {
+        tabBar.style.cssText = 'display: flex !important; justify-content: center !important; align-items: stretch !important; width: 100% !important; margin: 0 auto 20px auto !important; gap: 12px !important; padding-bottom: 14px !important;';
+        Array.from(tabBar.children).forEach((card) => {
+          card.style.flex = '1 1 0';
+          card.style.maxWidth = '130px';
+          card.style.padding = '10px 8px';
+          card.style.borderRadius = '10px';
+          card.style.textAlign = 'center';
+          const title = card.querySelector('span');
+          if (title) {
+            title.style.fontSize = '13px';
+            title.style.fontWeight = '700';
           }
         });
-
-        modal.querySelectorAll('[data-takapay-network-display]').forEach((el) => {
-          el.textContent = displayLabel;
-        });
-
-        if (tabsContainer) {
-          Array.from(tabsContainer.children).forEach((card) => {
-            const cardNet = card.dataset.netValue || (card.textContent.includes('MOOV') ? 'MOOV' : card.textContent.includes('CELTIS') ? 'CELTIIS' : 'MTN');
-            card.dataset.netValue = cardNet;
-            const isSelected = cardNet === netValue;
-            card.className = `flex flex-col items-center justify-center flex-1 px-4 py-2 cursor-pointer rounded border ${
-              isSelected ? 'bg-[#fff7ed] border-[#D45D00] border-2' : 'bg-white border-[#D45D00]'
-            }`;
-          });
-        }
-      };
-
-      if (tabsContainer && !tabsContainer.dataset.takapayBound) {
-        tabsContainer.dataset.takapayBound = 'true';
-        if (tabsContainer.textContent.includes('Carte Bancaire') || tabsContainer.textContent.includes('Wallet')) {
-          const mobileTab = Array.from(tabsContainer.children).find((c) => c.textContent.includes('Mobile Money'));
-          if (mobileTab) {
-            try { mobileTab.click(); } catch {}
-          }
-
-          tabsContainer.dataset.takapayNetworks = 'true';
-          tabsContainer.className = 'flex justify-center mb-6 border-b pb-4 w-full gap-3';
-          tabsContainer.replaceChildren();
-
-          const networks = [
-            { label: 'MTN', value: 'MTN', logo: '/assets/mtn logo.png' },
-            { label: 'MOOV', value: 'MOOV', logo: '/assets/logo moov.png' },
-            { label: 'CELTIS', value: 'CELTIIS', logo: '/assets/logo celtis.jpeg' },
-          ];
-
-          const initialNet = window.__takapaySelectedNetwork || 'MTN';
-          networks.forEach((net) => {
-            const isSelected = initialNet === net.value;
-            const card = document.createElement('div');
-            card.dataset.netValue = net.value;
-            card.className = `flex flex-col items-center justify-center flex-1 px-4 py-2 cursor-pointer rounded border ${
-              isSelected ? 'bg-[#fff7ed] border-[#D45D00] border-2' : 'bg-white border-[#D45D00]'
-            }`;
-
-            const imgContainer = document.createElement('div');
-            imgContainer.className = 'w-12 h-8 flex items-center justify-center mb-1';
-            const img = document.createElement('img');
-            img.src = net.logo;
-            img.alt = net.label;
-            img.style.maxHeight = '28px';
-            img.style.maxWidth = '44px';
-            img.style.objectFit = 'contain';
-            imgContainer.appendChild(img);
-
-            const labelSpan = document.createElement('span');
-            labelSpan.className = 'text-xs font-bold';
-            labelSpan.textContent = net.label;
-
-            card.appendChild(imgContainer);
-            card.appendChild(labelSpan);
-            tabsContainer.appendChild(card);
-          });
-        }
-
-        Array.from(tabsContainer.children).forEach((card) => {
-          const cardNet = card.dataset.netValue || (card.textContent.includes('MOOV') ? 'MOOV' : card.textContent.includes('CELTIS') ? 'CELTIIS' : 'MTN');
-          card.dataset.netValue = cardNet;
-          card.addEventListener('click', () => applyNetworkSelection(cardNet));
-        });
-      }
-
-      // Remplacer tout <select> de réseau (MTN/MOOV/CELTIIS) par l'affichage statique du nom du réseau choisi
-      modal.querySelectorAll('select').forEach((sel) => {
-        const isNetworkSelect = Array.from(sel.options || []).some((opt) => opt.value === 'MTN');
-        if (isNetworkSelect) {
-          const wrapper = sel.parentElement;
-          if (wrapper) {
-            sel.style.display = 'none';
-            const arrow = wrapper.querySelector('div.pointer-events-none');
-            if (arrow) arrow.style.display = 'none';
-            let labelBox = wrapper.querySelector('[data-takapay-network-display]');
-            if (!labelBox) {
-              labelBox = document.createElement('div');
-              labelBox.dataset.takapayNetworkDisplay = 'true';
-              labelBox.className = 'block w-full px-3 py-2 border rounded-md bg-gray-50 font-bold text-gray-800 text-xs flex items-center';
-              wrapper.appendChild(labelBox);
-            }
-            const cur = window.__takapaySelectedNetwork || sel.value || 'MTN';
-            const expectedText = cur === 'CELTIIS' ? 'CELTIS' : cur;
-            if (labelBox.textContent !== expectedText) {
-              labelBox.textContent = expectedText;
-            }
-          }
-        }
       });
+
+      // 2. Agrandissement des typographies des champs de saisie pour une meilleure lisibilité
+      modal.querySelectorAll('input:not([data-takapay-amount-input]), select').forEach((el) => {
+        el.style.fontSize = '14.5px';
+        el.style.padding = '10px 12px';
+        el.style.borderRadius = '8px';
+      });
+
+      modal.querySelectorAll('h2').forEach((el) => {
+        el.style.fontSize = '15px';
+        el.style.fontWeight = '800';
+      });
+
+      // 3. Pré-remplissage des champs avec les données client si disponibles
+      if (window.__takapayPrefillUser) {
+        const { fullName, phoneDigits, email } = window.__takapayPrefillUser;
+        if (fullName) {
+          modal.querySelectorAll('input[placeholder*="Nom"], input[placeholder*="nom"], input[name*="name"]').forEach((inp) => {
+            if (!inp.value) {
+              inp.value = fullName;
+              inp.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+          });
+        }
+        if (phoneDigits) {
+          modal.querySelectorAll('input[type="tel"]').forEach((inp) => {
+            if (!inp.value) {
+              inp.value = phoneDigits;
+              inp.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+          });
+        }
+        if (email) {
+          modal.querySelectorAll('input[type="email"]').forEach((inp) => {
+            if (!inp.value) {
+              inp.value = email;
+              inp.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+          });
+        }
+      }
     });
   };
 

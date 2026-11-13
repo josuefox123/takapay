@@ -475,8 +475,18 @@ class PaymentController extends Controller
         $data = $request->all();
         Log::info('Webhook FeexPay reçu :', $this->sanitizeForLog($data));
 
-        $reference = $data['reference'] ?? $data['custom_id'] ?? $data['customId'] ?? null;
-        $transactionId = $data['transaction_id'] ?? $data['id'] ?? null;
+        // Détection de la référence de commande interne (Takapay) vs identifiant de transaction FeexPay
+        $customId = $data['custom_id'] ?? $data['customId'] ?? $data['custom_reference'] ?? null;
+        $feexpayRef = $data['transaction_id'] ?? $data['id'] ?? $data['transref'] ?? null;
+
+        if ($customId !== null) {
+            $reference = $customId;
+            $transactionId = $feexpayRef ?? ($data['reference'] ?? null);
+        } else {
+            $reference = $data['reference'] ?? null;
+            $transactionId = $feexpayRef ?? $data['reference'] ?? null;
+        }
+
         $network = $data['reseau'] ?? $data['network'] ?? 'MOBILE_MONEY';
         $clientEmail = $data['email'] ?? null;
 
@@ -571,7 +581,7 @@ class PaymentController extends Controller
                         return response()->json(['status' => 'unverified'], 422);
                     }
                 }
-                $this->applySuccessfulPayment($reference, $amount, $transactionId, $network, null, $clientEmail);
+                $applied = $this->applySuccessfulPayment($reference, $amount, $transactionId, $network, null, $clientEmail);
             } elseif (in_array($status, ['FAILED', 'CANCELLED'], true)) {
                 $commande = Commande::where('reference', $reference)->first();
                 if ($commande && $commande->statut === 'en_attente') {
@@ -583,7 +593,12 @@ class PaymentController extends Controller
                     ->update(['statut' => 'annulee']);
             }
 
-            return response()->json(['status' => 'success'], 200);
+            return response()->json([
+                'status' => 'success',
+                'cagnotte_id' => $applied['cagnotte']?->id ?? null,
+                'commande_id' => $applied['commande']?->id ?? null,
+                'amount' => $applied['amount'] ?? $amount,
+            ], 200);
         } finally {
             $lock->release();
         }
@@ -717,8 +732,10 @@ class PaymentController extends Controller
 
     /**
      * Valide la commande / cagnotte et enregistre la transaction comptable.
+     *
+     * @return array{commande: ?Commande, cagnotte: ?Cagnotte, amount: float}
      */
-    protected function applySuccessfulPayment(string $reference, float $amount, string $transactionId, string $network, ?int $userId = null, ?string $clientEmail = null): void
+    protected function applySuccessfulPayment(string $reference, float $amount, string $transactionId, string $network, ?int $userId = null, ?string $clientEmail = null): array
     {
         $resolvedCommande = null;
         $resolvedCagnotte = null;
@@ -840,7 +857,11 @@ class PaymentController extends Controller
         });
 
         if ($alreadyProcessed) {
-            return;
+            return [
+                'commande' => $resolvedCommande,
+                'cagnotte' => $resolvedCagnotte,
+                'amount' => $finalAmount,
+            ];
         }
 
         // Enregistrement de la notification interne pour le client
@@ -924,6 +945,12 @@ class PaymentController extends Controller
                 Log::error("Erreur lors de l'envoi des emails de confirmation : ".$e->getMessage());
             }
         }
+
+        return [
+            'commande' => $resolvedCommande,
+            'cagnotte' => $resolvedCagnotte,
+            'amount' => $finalAmount,
+        ];
     }
 
     /**
